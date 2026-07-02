@@ -4,27 +4,32 @@ import type { RawData, WebSocket } from "ws";
 
 import { buildApp } from "./app.js";
 
-type ServerMessage = {
-  type: "welcome" | "pong";
-  message: string;
-  sentAt: string;
+type RoomStateMessage = {
+  type: "room-state";
+  room: {
+    code: string;
+    members: Array<{ id: string; name: string; connected: boolean }>;
+  };
 };
 
-function nextMessage(socket: WebSocket): Promise<ServerMessage> {
+function nextRoomState(socket: WebSocket): Promise<RoomStateMessage> {
   return new Promise((resolve) => {
-    socket.once("message", (data: RawData) => {
-      resolve(JSON.parse(data.toString()) as ServerMessage);
-    });
+    const onMessage = (data: RawData) => {
+      const message = JSON.parse(data.toString()) as { type: string };
+
+      if (message.type === "room-state") {
+        socket.off("message", onMessage);
+        resolve(message as RoomStateMessage);
+      }
+    };
+
+    socket.on("message", onMessage);
   });
 }
 
 test("GET /health reports that the server is healthy", async () => {
   const app = await buildApp();
-
-  const response = await app.inject({
-    method: "GET",
-    url: "/health",
-  });
+  const response = await app.inject({ method: "GET", url: "/health" });
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { status: "ok" });
@@ -32,18 +37,39 @@ test("GET /health reports that the server is healthy", async () => {
   await app.close();
 });
 
-test("WebSocket clients receive a pong", async () => {
+test("clients can create and join a room with live presence", async () => {
   const app = await buildApp();
   await app.ready();
 
-  const socket = await app.injectWS("/ws");
-  const pongPromise = nextMessage(socket);
+  const hostSocket = await app.injectWS("/ws");
+  const createdRoomPromise = nextRoomState(hostSocket);
+  hostSocket.send(JSON.stringify({ type: "create-room", clientId: "host-id" }));
+  const createdRoom = await createdRoomPromise;
 
-  socket.send(JSON.stringify({ type: "ping" }));
-  const pong = await pongPromise;
-  assert.equal(pong.type, "pong");
-  assert.equal(pong.message, "Pong from WikiDuel server");
+  assert.match(createdRoom.room.code, /^[A-Z2-9]{5}$/);
+  assert.deepEqual(createdRoom.room.members, [
+    { id: "host-id", name: "Host", connected: true },
+  ]);
 
-  socket.terminate();
+  const guestSocket = await app.injectWS("/ws");
+  const hostUpdatePromise = nextRoomState(hostSocket);
+  const guestUpdatePromise = nextRoomState(guestSocket);
+  guestSocket.send(JSON.stringify({
+    type: "join-room",
+    clientId: "guest-id",
+    roomCode: createdRoom.room.code,
+  }));
+
+  const [hostUpdate, guestUpdate] = await Promise.all([hostUpdatePromise, guestUpdatePromise]);
+  assert.equal(hostUpdate.room.members.length, 2);
+  assert.equal(guestUpdate.room.members.length, 2);
+  assert.equal(guestUpdate.room.members[1]?.name, "Player 2");
+
+  const disconnectedUpdatePromise = nextRoomState(hostSocket);
+  guestSocket.terminate();
+  const disconnectedUpdate = await disconnectedUpdatePromise;
+  assert.equal(disconnectedUpdate.room.members[1]?.connected, false);
+
+  hostSocket.terminate();
   await app.close();
 });
