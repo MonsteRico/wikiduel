@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { ConnectionStatus, Room, ServerMessage } from './roomTypes'
+import type { ConnectionStatus, Room, ServerMessage } from './types'
 
 const websocketUrl =
   import.meta.env.VITE_WS_URL ??
@@ -8,9 +8,8 @@ const websocketUrl =
 
 const clientId = crypto.randomUUID()
 
-export function useRoomSocket(initialRoomCode: string | null) {
+export function useRoomSocket() {
   const socketRef = useRef<WebSocket | null>(null)
-  const initialRoomCodeRef = useRef(initialRoomCode)
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [room, setRoom] = useState<Room | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -58,16 +57,7 @@ export function useRoomSocket(initialRoomCode: string | null) {
     socketRef.current = socket
 
     socket.addEventListener('open', () => {
-      if (!active) return
-
-      setStatus('connected')
-      if (initialRoomCodeRef.current) {
-        socket.send(JSON.stringify({
-          type: 'join-room',
-          clientId,
-          roomCode: initialRoomCodeRef.current,
-        }))
-      }
+      if (active) setStatus('connected')
     })
 
     socket.addEventListener('message', (event) => {
