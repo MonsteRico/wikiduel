@@ -21,11 +21,20 @@ function ConnectionBadge({ status }: { status: ConnectionStatus }) {
 type HomePageProps = {
   status: ConnectionStatus
   error: string | null
+  notice: string | null
   onCreateRoom: () => void
   onJoinRoom: (roomCode: string) => void
+  onDismissNotice: () => void
 }
 
-function HomePage({ status, error, onCreateRoom, onJoinRoom }: HomePageProps) {
+function HomePage({
+  status,
+  error,
+  notice,
+  onCreateRoom,
+  onJoinRoom,
+  onDismissNotice,
+}: HomePageProps) {
   const [roomCode, setRoomCode] = useState('')
   const canSubmit = status === 'connected'
 
@@ -40,6 +49,13 @@ function HomePage({ status, error, onCreateRoom, onJoinRoom }: HomePageProps) {
         <a className="brand" href="/" aria-label="WikiDuel home">WD<span>●</span></a>
         <ConnectionBadge status={status} />
       </header>
+
+      {notice ? (
+        <div className="notice" role="alert">
+          <p><strong>Room closed.</strong> {notice}</p>
+          <button type="button" onClick={onDismissNotice} aria-label="Dismiss message">×</button>
+        </div>
+      ) : null}
 
       <section className="home-hero">
         <p className="kicker">The shortest path wins</p>
@@ -93,10 +109,27 @@ type RoomPageProps = {
   room: Room | null
   roomCode: string
   error: string | null
+  currentMemberId: string
   onLeave: () => void
+  onSetReady: (ready: boolean) => void
+  onStartGame: () => void
 }
 
-function RoomPage({ status, room, roomCode, error, onLeave }: RoomPageProps) {
+function RoomPage({
+  status,
+  room,
+  roomCode,
+  error,
+  currentMemberId,
+  onLeave,
+  onSetReady,
+  onStartGame,
+}: RoomPageProps) {
+  const currentMember = room?.members.find((member) => member.id === currentMemberId)
+  const bothPlayersReady = room?.members.length === 2
+    && room.members.every((member) => member.connected && member.ready)
+  const isHost = currentMember?.role === 'host'
+
   return (
     <main className="room-page">
       <header className="site-header">
@@ -137,15 +170,50 @@ function RoomPage({ status, room, roomCode, error, onLeave }: RoomPageProps) {
               <div className="player-avatar" aria-hidden="true">{member.name.charAt(0)}</div>
               <div className="player-name">
                 <strong>{member.name}</strong>
-                <span>Waiting for the duel to begin</span>
+                <span>{member.role === 'host' ? 'Room host' : 'Challenger'}</span>
               </div>
-              <div className={`presence ${member.connected ? 'presence--online' : ''}`}>
-                <span aria-hidden="true" />
-                {member.connected ? 'Connected' : 'Offline'}
+              <div className="player-state">
+                <div className={`presence ${member.connected ? 'presence--online' : ''}`}>
+                  <span aria-hidden="true" />
+                  {member.connected ? 'Connected' : 'Offline'}
+                </div>
+                <div className={`readiness ${member.ready ? 'readiness--ready' : ''}`}>
+                  {member.ready ? 'Ready' : 'Not ready'}
+                </div>
               </div>
             </li>
           ))}
         </ul>
+
+        {currentMember ? (
+          <div className="lobby-controls">
+            <div>
+              <p className="action-label">Your status</p>
+              <strong>{bothPlayersReady ? 'Both players are ready.' : 'Ready when you are.'}</strong>
+            </div>
+            <div className="lobby-buttons">
+              <button
+                className="ready-button"
+                type="button"
+                onClick={() => onSetReady(!currentMember.ready)}
+              >
+                {currentMember.ready ? 'Cancel ready' : "I'm ready"}
+              </button>
+              {isHost ? (
+                <button
+                  className="start-button"
+                  type="button"
+                  onClick={onStartGame}
+                  disabled={!bothPlayersReady}
+                >
+                  Start game <span aria-hidden="true">→</span>
+                </button>
+              ) : (
+                <p className="host-waiting">The host starts the game.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <footer className="room-footer">
@@ -158,7 +226,19 @@ function RoomPage({ status, room, roomCode, error, onLeave }: RoomPageProps) {
 
 function App() {
   const [activeRoomCode, setActiveRoomCode] = useState(roomCodeFromPath)
-  const { status, room, error, createRoom, joinRoom, leaveRoom } = useRoomSocket(activeRoomCode)
+  const {
+    status,
+    room,
+    error,
+    notice,
+    clientId,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    setReady,
+    startGame,
+    clearNotice,
+  } = useRoomSocket(activeRoomCode)
 
   useEffect(() => {
     if (!room || room.code === activeRoomCode) return
@@ -166,6 +246,13 @@ function App() {
     window.history.pushState({}, '', `/room/${room.code}`)
     setActiveRoomCode(room.code)
   }, [activeRoomCode, room])
+
+  useEffect(() => {
+    if (!notice || !activeRoomCode) return
+
+    window.history.pushState({}, '', '/')
+    setActiveRoomCode(null)
+  }, [activeRoomCode, notice])
 
   useEffect(() => {
     const handlePopState = () => {
@@ -185,10 +272,30 @@ function App() {
   }
 
   if (activeRoomCode) {
-    return <RoomPage status={status} room={room} roomCode={activeRoomCode} error={error} onLeave={handleLeave} />
+    return (
+      <RoomPage
+        status={status}
+        room={room}
+        roomCode={activeRoomCode}
+        error={error}
+        currentMemberId={clientId}
+        onLeave={handleLeave}
+        onSetReady={setReady}
+        onStartGame={startGame}
+      />
+    )
   }
 
-  return <HomePage status={status} error={error} onCreateRoom={createRoom} onJoinRoom={joinRoom} />
+  return (
+    <HomePage
+      status={status}
+      error={error}
+      notice={notice}
+      onCreateRoom={createRoom}
+      onJoinRoom={joinRoom}
+      onDismissNotice={clearNotice}
+    />
+  )
 }
 
 export default App

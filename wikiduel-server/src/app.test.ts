@@ -8,18 +8,29 @@ type RoomStateMessage = {
   type: "room-state";
   room: {
     code: string;
-    members: Array<{ id: string; name: string; connected: boolean }>;
+    members: Array<{
+      id: string;
+      name: string;
+      role: "host" | "opponent";
+      connected: boolean;
+      ready: boolean;
+    }>;
   };
 };
 
-function nextRoomState(socket: WebSocket): Promise<RoomStateMessage> {
+type RoomClosedMessage = {
+  type: "room-closed";
+  message: string;
+};
+
+function nextMessage<T>(socket: WebSocket, type: string): Promise<T> {
   return new Promise((resolve) => {
     const onMessage = (data: RawData) => {
       const message = JSON.parse(data.toString()) as { type: string };
 
-      if (message.type === "room-state") {
+      if (message.type === type) {
         socket.off("message", onMessage);
-        resolve(message as RoomStateMessage);
+        resolve(message as T);
       }
     };
 
@@ -37,39 +48,91 @@ test("GET /health reports that the server is healthy", async () => {
   await app.close();
 });
 
-test("clients can create and join a room with live presence", async () => {
+test("a two-player room supports readiness, starting, and closure", async () => {
   const app = await buildApp();
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");
-  const createdRoomPromise = nextRoomState(hostSocket);
+  const createdRoomPromise = nextMessage<RoomStateMessage>(hostSocket, "room-state");
   hostSocket.send(JSON.stringify({ type: "create-room", clientId: "host-id" }));
   const createdRoom = await createdRoomPromise;
 
   assert.match(createdRoom.room.code, /^[A-Z2-9]{5}$/);
-  assert.deepEqual(createdRoom.room.members, [
-    { id: "host-id", name: "Host", connected: true },
-  ]);
+  assert.deepEqual(createdRoom.room.members, [{
+    id: "host-id",
+    name: "host",
+    role: "host",
+    connected: true,
+    ready: false,
+  }]);
 
-  const guestSocket = await app.injectWS("/ws");
-  const hostUpdatePromise = nextRoomState(hostSocket);
-  const guestUpdatePromise = nextRoomState(guestSocket);
-  guestSocket.send(JSON.stringify({
+  const opponentSocket = await app.injectWS("/ws");
+  const hostJoinedUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
+  const opponentJoinedUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  opponentSocket.send(JSON.stringify({
     type: "join-room",
-    clientId: "guest-id",
+    clientId: "opponent-id",
     roomCode: createdRoom.room.code,
   }));
 
-  const [hostUpdate, guestUpdate] = await Promise.all([hostUpdatePromise, guestUpdatePromise]);
-  assert.equal(hostUpdate.room.members.length, 2);
-  assert.equal(guestUpdate.room.members.length, 2);
-  assert.equal(guestUpdate.room.members[1]?.name, "Player 2");
+  const [, opponentRoom] = await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
+  assert.deepEqual(
+    opponentRoom.room.members.map(({ name, role }) => ({ name, role })),
+    [
+      { name: "host", role: "host" },
+      { name: "Opponent", role: "opponent" },
+    ],
+  );
 
-  const disconnectedUpdatePromise = nextRoomState(hostSocket);
-  guestSocket.terminate();
-  const disconnectedUpdate = await disconnectedUpdatePromise;
-  assert.equal(disconnectedUpdate.room.members[1]?.connected, false);
+  const hostReadyUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
+  const opponentSeesHostReady = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  hostSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
+  await Promise.all([hostReadyUpdate, opponentSeesHostReady]);
+
+  const hostSeesBothReady = nextMessage<RoomStateMessage>(hostSocket, "room-state");
+  const opponentReadyUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  opponentSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
+  const [readyRoom] = await Promise.all([hostSeesBothReady, opponentReadyUpdate]);
+  assert.equal(readyRoom.room.members.every((member) => member.ready), true);
+
+  const hostGameStarted = nextMessage(hostSocket, "game-started");
+  const opponentGameStarted = nextMessage(opponentSocket, "game-started");
+  hostSocket.send(JSON.stringify({ type: "start-game" }));
+  await Promise.all([hostGameStarted, opponentGameStarted]);
+
+  const roomClosedPromise = nextMessage<RoomClosedMessage>(hostSocket, "room-closed");
+  opponentSocket.terminate();
+  const roomClosed = await roomClosedPromise;
+  assert.equal(roomClosed.message, "The other player left. The room has been closed.");
 
   hostSocket.terminate();
+  await app.close();
+});
+
+test("the opponent is notified when the host leaves", async () => {
+  const app = await buildApp();
+  await app.ready();
+
+  const hostSocket = await app.injectWS("/ws");
+  const createdRoomPromise = nextMessage<RoomStateMessage>(hostSocket, "room-state");
+  hostSocket.send(JSON.stringify({ type: "create-room", clientId: "departing-host" }));
+  const createdRoom = await createdRoomPromise;
+
+  const opponentSocket = await app.injectWS("/ws");
+  const hostJoinedUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
+  const opponentJoinedUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  opponentSocket.send(JSON.stringify({
+    type: "join-room",
+    clientId: "remaining-opponent",
+    roomCode: createdRoom.room.code,
+  }));
+  await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
+
+  const roomClosedPromise = nextMessage<RoomClosedMessage>(opponentSocket, "room-closed");
+  hostSocket.terminate();
+  const roomClosed = await roomClosedPromise;
+  assert.equal(roomClosed.message, "The other player left. The room has been closed.");
+
+  opponentSocket.terminate();
   await app.close();
 });

@@ -66,6 +66,33 @@
   background: var(--danger);
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--ink);
+  background: var(--signal);
+  color: var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.notice p { margin: 0; }
+.notice button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .home-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.55fr);
@@ -384,6 +411,88 @@ button:disabled {
   font-size: 12px;
 }
 
+.player-state {
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+}
+
+.readiness {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.readiness--ready {
+  border-color: var(--ink);
+  background: var(--signal);
+  color: var(--ink);
+}
+
+.lobby-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 26px 32px;
+  border-top: 1px solid var(--ink);
+  background: var(--canvas);
+}
+
+.lobby-controls .action-label { margin-bottom: 5px; }
+.lobby-controls strong { color: var(--ink); }
+.lobby-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ready-button,
+.start-button {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ready-button {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.start-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 28px;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.start-button:not(:disabled):hover,
+.ready-button:hover {
+  box-shadow: 4px 4px 0 var(--signal);
+  transform: translate(-2px, -2px);
+}
+
+.host-waiting {
+  margin: 0;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+}
+
 .room-message {
   margin: 0;
   padding: 24px 32px;
@@ -427,6 +536,9 @@ button:disabled {
   .player-index { display: none; }
   .player-name span { display: none; }
   .presence { font-size: 10px; }
+  .lobby-controls { align-items: stretch; flex-direction: column; padding: 22px 18px; }
+  .lobby-buttons { align-items: stretch; flex-direction: column; }
+  .ready-button, .start-button { justify-content: center; width: 100%; }
   .room-footer { align-items: flex-start; gap: 18px; }
   .room-footer p { text-align: right; }
 }

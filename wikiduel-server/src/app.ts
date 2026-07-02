@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -8,12 +8,16 @@ type ClientMessage =
   | { type: "ping" }
   | { type: "create-room"; clientId: string }
   | { type: "join-room"; clientId: string; roomCode: string }
+  | { type: "set-ready"; ready: boolean }
+  | { type: "start-game" }
   | { type: "leave-room" };
 
 type RoomMember = {
   id: string;
   name: string;
+  role: "host" | "opponent";
   connected: boolean;
+  ready: boolean;
 };
 
 type MemberRecord = RoomMember & {
@@ -22,6 +26,7 @@ type MemberRecord = RoomMember & {
 
 type RoomRecord = {
   code: string;
+  matched: boolean;
   members: Map<string, MemberRecord>;
 };
 
@@ -93,23 +98,41 @@ export async function buildApp(): Promise<FastifyInstance> {
       const member = room?.members.get(session.memberId);
 
       if (room && member?.socket === socket) {
-        member.connected = false;
-        member.socket = undefined;
-        broadcastRoom(room);
+        if (room.matched) {
+          rooms.delete(room.code);
+
+          for (const remainingMember of room.members.values()) {
+            if (
+              remainingMember.id !== member.id
+              && remainingMember.connected
+              && remainingMember.socket?.readyState === 1
+            ) {
+              remainingMember.socket.send(serializeMessage({
+                type: "room-closed",
+                message: "The other player left. The room has been closed.",
+              }));
+            }
+          }
+        } else {
+          room.members.delete(member.id);
+          if (room.members.size === 0) rooms.delete(room.code);
+        }
       }
 
       session.roomCode = undefined;
       session.memberId = undefined;
     };
 
-    const joinRoom = (room: RoomRecord, clientId: string, isHost: boolean) => {
+    const joinRoom = (room: RoomRecord, clientId: string, role: "host" | "opponent") => {
       leaveCurrentRoom();
 
       const existingMember = room.members.get(clientId);
       const member: MemberRecord = existingMember ?? {
-        id: clientId || randomUUID(),
-        name: isHost ? "Host" : `Player ${room.members.size + 1}`,
+        id: clientId,
+        name: role === "host" ? "host" : "Opponent",
+        role,
         connected: true,
+        ready: false,
       };
 
       member.connected = true;
@@ -117,6 +140,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       room.members.set(member.id, member);
       session.roomCode = room.code;
       session.memberId = member.id;
+      if (room.members.size === 2) room.matched = true;
       broadcastRoom(room);
     };
 
@@ -131,9 +155,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
         if (message.type === "create-room") {
           const code = generateRoomCode(rooms);
-          const room: RoomRecord = { code, members: new Map() };
+          const room: RoomRecord = { code, matched: false, members: new Map() };
           rooms.set(code, room);
-          joinRoom(room, message.clientId, true);
+          joinRoom(room, message.clientId, "host");
           return;
         }
 
@@ -146,7 +170,45 @@ export async function buildApp(): Promise<FastifyInstance> {
             return;
           }
 
-          joinRoom(room, message.clientId, false);
+          if (!room.members.has(message.clientId) && room.members.size >= 2) {
+            socket.send(serializeMessage({ type: "room-error", message: "Room is full" }));
+            return;
+          }
+
+          joinRoom(room, message.clientId, "opponent");
+          return;
+        }
+
+        if (message.type === "set-ready") {
+          if (!session.roomCode || !session.memberId) return;
+
+          const room = rooms.get(session.roomCode);
+          const member = room?.members.get(session.memberId);
+          if (!room || !member) return;
+
+          member.ready = message.ready;
+          broadcastRoom(room);
+          return;
+        }
+
+        if (message.type === "start-game") {
+          if (!session.roomCode || !session.memberId) return;
+
+          const room = rooms.get(session.roomCode);
+          const member = room?.members.get(session.memberId);
+          const canStart = room
+            && member?.role === "host"
+            && room.members.size === 2
+            && Array.from(room.members.values()).every(
+              (roomMember) => roomMember.connected && roomMember.ready,
+            );
+
+          if (room && canStart) {
+            const startedMessage = serializeMessage({ type: "game-started" });
+            for (const roomMember of room.members.values()) {
+              if (roomMember.socket?.readyState === 1) roomMember.socket.send(startedMessage);
+            }
+          }
           return;
         }
 

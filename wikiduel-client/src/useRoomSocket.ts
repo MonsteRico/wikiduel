@@ -14,6 +14,7 @@ export function useRoomSocket(initialRoomCode: string | null) {
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [room, setRoom] = useState<Room | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const send = useCallback((message: object) => {
     const socket = socketRef.current
@@ -25,11 +26,13 @@ export function useRoomSocket(initialRoomCode: string | null) {
 
   const createRoom = useCallback(() => {
     setError(null)
+    setNotice(null)
     send({ type: 'create-room', clientId })
   }, [send])
 
   const joinRoom = useCallback((roomCode: string) => {
     setError(null)
+    setNotice(null)
     send({ type: 'join-room', clientId, roomCode })
   }, [send])
 
@@ -38,6 +41,16 @@ export function useRoomSocket(initialRoomCode: string | null) {
     setRoom(null)
     setError(null)
   }, [send])
+
+  const setReady = useCallback((ready: boolean) => {
+    send({ type: 'set-ready', ready })
+  }, [send])
+
+  const startGame = useCallback(() => {
+    send({ type: 'start-game' })
+  }, [send])
+
+  const clearNotice = useCallback(() => setNotice(null), [])
 
   useEffect(() => {
     const socket = new WebSocket(websocketUrl)
@@ -68,6 +81,10 @@ export function useRoomSocket(initialRoomCode: string | null) {
           setError(null)
         } else if (message.type === 'room-error') {
           setError(message.message)
+        } else if (message.type === 'room-closed') {
+          setRoom(null)
+          setError(null)
+          setNotice(message.message)
         }
       } catch {
         setError('The server sent an unreadable message')
@@ -89,5 +106,17 @@ export function useRoomSocket(initialRoomCode: string | null) {
     }
   }, [])
 
-  return { status, room, error, createRoom, joinRoom, leaveRoom }
+  return {
+    status,
+    room,
+    error,
+    notice,
+    clientId,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    setReady,
+    startGame,
+    clearNotice,
+  }
 }
