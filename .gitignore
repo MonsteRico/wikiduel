@@ -1,10 +1,13 @@
+# Dependencies and generated builds (at any depth)
 node_modules/
 dist/
 coverage/
 playwright-report/
 test-results/
+
+# Local environment and secret files
 .env
-.env.local
+.env.*
+
 .npm-cache/
 *.tsbuildinfo
-
