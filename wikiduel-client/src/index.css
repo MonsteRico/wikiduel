@@ -1,39 +1,29 @@
-:root {
-  --canvas: #eeeae0;
-  --paper: #f9f7f0;
-  --ink: #151515;
-  --ink-soft: #666158;
-  --line: #c9c4b8;
-  --signal: #a7ff4a;
-  --signal-dark: #398200;
-  --warning: #e1a72d;
-  --danger: #bd3434;
-  --display: Rockwell, 'Courier New', serif;
-  --serif: Georgia, 'Times New Roman', serif;
-  --sans: 'Avenir Next', Avenir, 'Trebuchet MS', sans-serif;
-  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+@import "tailwindcss";
 
-  color: var(--ink-soft);
-  background-color: var(--canvas);
-  background-image:
-    linear-gradient(rgb(21 21 21 / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(21 21 21 / 3%) 1px, transparent 1px);
-  background-size: 24px 24px;
-  font-family: var(--sans);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+@theme {
+  --color-canvas: #eeeae0;
+  --color-paper: #f9f7f0;
+  --color-ink: #151515;
+  --color-ink-soft: #666158;
+  --color-line: #c9c4b8;
+  --color-signal: #a7ff4a;
+  --color-signal-dark: #398200;
+  --color-warning: #e1a72d;
+  --color-danger: #bd3434;
+  --font-display: Rockwell, "Courier New", serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-sans: "Avenir Next", Avenir, "Trebuchet MS", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --animate-arrive: arrive 420ms ease-out both;
+
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
-
-* { box-sizing: border-box; }
-
-body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
-}
-
-button,
-input { font: inherit; }
-
-#root { min-height: 100vh; }

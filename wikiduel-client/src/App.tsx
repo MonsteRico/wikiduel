@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router'
 
-import './App.css'
 import { RoomProvider } from './features/rooms/RoomProvider'
 import { HomePage } from './pages/HomePage'
 import { RoomPage } from './pages/RoomPage'
