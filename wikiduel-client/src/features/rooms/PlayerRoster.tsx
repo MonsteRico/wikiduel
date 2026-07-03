@@ -1,3 +1,7 @@
+import { Button } from '../../components/ui/Button'
+import { ArrowRightIcon } from '../../components/ui/Icons'
+import { PlayerAvatar } from '../../components/ui/PlayerAvatar'
+import { StatusIndicator } from '../../components/ui/StatusIndicator'
 import type { Room, RoomMember } from './types'
 
 type PlayerRosterProps = {
@@ -8,86 +12,56 @@ type PlayerRosterProps = {
   onStartGame: () => void
 }
 
-export function PlayerRoster({
-  room,
-  currentMember,
-  error,
-  onSetReady,
-  onStartGame,
-}: PlayerRosterProps) {
+export function PlayerRoster({ room, currentMember, error, onSetReady, onStartGame }: PlayerRosterProps) {
   const bothPlayersReady = room?.members.length === 2
     && room.members.every((member) => member.connected && member.ready)
   const isHost = currentMember?.role === 'host'
 
   return (
-    <section
-      className="border border-ink bg-paper motion-safe:animate-arrive motion-safe:[animation-delay:80ms]"
-      aria-labelledby="roster-heading"
-    >
-      <div className="flex items-end justify-between border-b border-ink px-8 py-7 max-[760px]:px-[18px]">
-        <div>
-          <p className="mb-3 text-xs font-black tracking-[0.16em] text-ink-soft uppercase">Match lobby</p>
-          <h2 className="mb-0 font-display text-[clamp(30px,4vw,46px)] tracking-[-0.05em] text-ink" id="roster-heading">Players</h2>
-        </div>
-        <span className="font-mono text-xs uppercase">{room?.members.length ?? 0} joined</span>
+    <section aria-labelledby="roster-heading">
+      <div className="flex items-center justify-between gap-5 border-b border-line-soft px-6 py-4 max-[560px]:px-5">
+        <h2 className="ds-label m-0 text-ink" id="roster-heading">Players</h2>
+        <span className="font-mono text-[11px] text-ink-soft">{room?.members.length ?? 0} / 2 joined</span>
       </div>
 
-      {error ? <p className="m-0 px-8 py-6 text-danger" role="alert">{error}</p> : null}
-      {!room && !error ? <p className="m-0 px-8 py-6 text-ink-soft">Joining room...</p> : null}
+      {error ? <p className="m-0 border-b border-line-soft bg-danger/10 px-6 py-4 text-sm text-danger" role="alert">{error}</p> : null}
+      {!room && !error ? <p className="m-0 border-b border-line-soft px-6 py-5 text-sm text-ink-soft">Joining lobby…</p> : null}
 
       <ul className="m-0 list-none p-0">
-        {room?.members.map((member, index) => (
-          <li
-            className="grid min-h-[94px] grid-cols-[44px_56px_1fr_auto] items-center gap-[18px] border-b border-line px-8 py-[18px] last:border-b-0 max-[760px]:grid-cols-[42px_1fr_auto] max-[760px]:gap-3 max-[760px]:px-[18px]"
-            key={member.id}
-          >
-            <div className="font-mono text-xs text-ink-soft max-[760px]:hidden">{String(index + 1).padStart(2, '0')}</div>
-            <div className="grid size-[52px] place-items-center border border-ink bg-canvas font-display text-[22px] font-black text-ink" aria-hidden="true">{member.name.charAt(0)}</div>
-            <div>
-              <strong className="block text-[17px] text-ink">{member.name}</strong>
-              <span className="mt-1 block text-xs text-ink-soft max-[760px]:hidden">{member.role === 'host' ? 'Room host' : 'Challenger'}</span>
+        {room?.members.map((member) => (
+          <li className="grid min-h-[82px] grid-cols-[auto_1fr_auto] items-center gap-4 border-b border-line-soft px-6 py-4 max-[560px]:px-5" key={member.id}>
+            <PlayerAvatar role={member.role} />
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <strong className={`font-display text-sm font-extrabold tracking-[0.025em] uppercase ${member.role === 'host' ? 'text-host' : 'text-opponent'}`}>{member.name}</strong>
+                {member.id === currentMember?.id ? <span className="text-[10px] text-ink-faint">You</span> : null}
+              </div>
+              <span className="mt-1 block text-xs text-ink-soft">{member.role === 'host' ? 'Lobby host' : 'Opponent'}</span>
             </div>
-            <div className="grid justify-items-end gap-[9px]">
-              <div className="inline-flex items-center gap-2 text-xs font-extrabold tracking-[0.08em] text-ink-soft uppercase max-[760px]:text-[10px]">
-                <span
-                  className={`size-2 rounded-full ${member.connected ? 'bg-signal shadow-[0_0_0_4px_rgb(167_255_74/20%)]' : 'bg-warning'}`}
-                  aria-hidden="true"
-                />
-                {member.connected ? 'Connected' : 'Offline'}
-              </div>
-              <div className={`border px-2 py-1 font-mono text-[10px] font-extrabold tracking-[0.08em] uppercase ${member.ready ? 'border-ink bg-signal text-ink' : 'border-line text-ink-soft'}`}>
+            <div className="grid justify-items-end gap-2">
+              <StatusIndicator tone={member.connected ? 'success' : 'warning'}>{member.connected ? 'Connected' : 'Offline'}</StatusIndicator>
+              <span className={`rounded-[3px] border px-2 py-1 font-display text-[9px] font-bold tracking-[0.04em] uppercase ${member.ready ? 'border-success/40 bg-success/10 text-success' : 'border-line text-ink-faint'}`}>
                 {member.ready ? 'Ready' : 'Not ready'}
-              </div>
+              </span>
             </div>
           </li>
         ))}
       </ul>
 
       {currentMember ? (
-        <div className="flex items-center justify-between gap-7 border-t border-ink bg-canvas px-8 py-[26px] max-[760px]:flex-col max-[760px]:items-stretch max-[760px]:px-[18px] max-[760px]:py-[22px]">
+        <div className="flex items-center justify-between gap-6 bg-canvas-deep/18 px-6 py-5 max-[560px]:flex-col max-[560px]:items-stretch max-[560px]:px-5">
           <div>
-            <p className="mb-[5px] text-xs font-black tracking-[0.16em] text-ink-soft uppercase">Your status</p>
-            <strong className="text-ink">{bothPlayersReady ? 'Both players are ready.' : 'Ready when you are.'}</strong>
+            <p className="ds-label mb-1.5">Your status</p>
+            <strong className="text-sm font-semibold text-ink">{bothPlayersReady ? 'Both players are ready.' : currentMember.ready ? 'Waiting for your opponent.' : 'Ready when you are.'}</strong>
           </div>
-          <div className="flex items-center gap-3 max-[760px]:flex-col max-[760px]:items-stretch">
-            <button
-              className="min-h-[46px] cursor-pointer border border-ink bg-paper px-[18px] text-xs font-black tracking-[0.05em] text-ink uppercase hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_#a7ff4a] focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-signal-dark max-[760px]:w-full"
-              type="button"
-              onClick={() => onSetReady(!currentMember.ready)}
-            >
-              {currentMember.ready ? 'Cancel ready' : "I'm ready"}
-            </button>
+          <div className="flex shrink-0 items-center gap-2 max-[560px]:grid max-[560px]:grid-cols-1">
+            <Button variant="secondary" onClick={() => onSetReady(!currentMember.ready)}>
+              {currentMember.ready ? 'Cancel ready' : 'I’m ready'}
+            </Button>
             {isHost ? (
-              <button
-                className="inline-flex min-h-[46px] cursor-pointer items-center gap-7 border border-ink bg-ink px-[18px] text-xs font-black tracking-[0.05em] text-paper uppercase hover:not-disabled:-translate-x-0.5 hover:not-disabled:-translate-y-0.5 hover:not-disabled:shadow-[4px_4px_0_#a7ff4a] focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-signal-dark disabled:cursor-not-allowed disabled:opacity-45 max-[760px]:w-full max-[760px]:justify-center"
-                type="button"
-                onClick={onStartGame}
-                disabled={!bothPlayersReady}
-              >
-                Start game <span aria-hidden="true">→</span>
-              </button>
+              <Button icon={<ArrowRightIcon />} onClick={onStartGame} disabled={!bothPlayersReady}>Start duel</Button>
             ) : (
-              <p className="m-0 font-serif text-[13px] text-ink-soft italic">The host starts the game.</p>
+              <span className="px-2 text-xs text-ink-soft">The host starts the duel.</span>
             )}
           </div>
         </div>
