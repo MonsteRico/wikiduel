@@ -2,9 +2,10 @@
 
 # Align Room Vocabulary to Lobby
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 02:30 AM via [PR #1](https://github.com/MonsteRico/wikiduel/pull/1)
 
 ## What to build
 
@@ -12,11 +13,11 @@ Align the implemented product surface and planning corpus with the canonical dom
 
 ## Acceptance criteria
 
-- [ ] User-facing create, join, waiting, error, departure, and closure language uses `Lobby` or `Lobbies` rather than `Room` or `Rooms`.
-- [ ] Existing repository documentation and local `.scratch` planning content use canonical Lobby vocabulary except where historical text, external terminology, or source-code identifiers must be quoted explicitly.
-- [ ] Clickable references and issue meaning remain intact after documentation edits.
-- [ ] Current Lobby creation, joining, readiness, start, departure, and closure behavior remains unchanged.
-- [ ] Internal WebSocket extraction and broad code-symbol renaming are left to their corresponding issues unless a user-facing identifier requires adjustment.
+- [x] User-facing create, join, waiting, error, departure, and closure language uses `Lobby` or `Lobbies` rather than `Room` or `Rooms`.
+- [x] Existing repository documentation and local `.scratch` planning content use canonical Lobby vocabulary except where historical text, external terminology, or source-code identifiers must be quoted explicitly.
+- [x] Clickable references and issue meaning remain intact after documentation edits.
+- [x] Current Lobby creation, joining, readiness, start, departure, and closure behavior remains unchanged.
+- [x] Internal WebSocket extraction and broad code-symbol renaming are left to their corresponding issues unless a user-facing identifier requires adjustment.
 
 ## Blocked by
 

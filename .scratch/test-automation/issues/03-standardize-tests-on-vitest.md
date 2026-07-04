@@ -2,9 +2,10 @@
 
 # Standardize Client and Server Tests on Vitest
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 02:30 AM via [PR #2](https://github.com/MonsteRico/wikiduel/pull/2)
 
 ## What to build
 
@@ -12,11 +13,11 @@ Adopt Vitest as the standard test runner in both application packages. Preserve 
 
 ## Acceptance criteria
 
-- [ ] Both client and server run their automated suites through Vitest using package-level test commands.
-- [ ] Existing server health and Lobby WebSocket behaviors remain covered after migration from the Node test runner.
-- [ ] The client can render and interact with a representative React component in a DOM-based Vitest test.
-- [ ] Test configuration supports TypeScript, deterministic non-watch execution, and clear failure output in both packages.
-- [ ] Normal build, type-check, and lint behavior remains intact.
+- [x] Both client and server run their automated suites through Vitest using package-level test commands.
+- [x] Existing server health and Lobby WebSocket behaviors remain covered after migration from the Node test runner.
+- [x] The client can render and interact with a representative React component in a DOM-based Vitest test.
+- [x] Test configuration supports TypeScript, deterministic non-watch execution, and clear failure output in both packages.
+- [x] Normal build, type-check, and lint behavior remains intact.
 
 ## Blocked by
 

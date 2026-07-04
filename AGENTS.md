@@ -6,7 +6,7 @@ Issues and PRDs are tracked as local markdown under `.scratch/`. See `docs/agent
 
 ### Triage labels
 
-Triage states use the five default canonical role names. See `docs/agents/triage-labels.md`.
+Issue states use the six canonical role names. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
