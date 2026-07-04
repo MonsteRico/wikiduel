@@ -9,6 +9,8 @@ npm install
 npm run dev
 ```
 
+Run these commands from the repository root to install every workspace dependency and start both the client and server. To start only the server, run `npm run dev --workspace=wikiduel-server`.
+
 The server listens on `http://localhost:3000` by default. Set `PORT` or `HOST` to override the defaults.
 
 The WebSocket endpoint is available at `ws://localhost:3000/ws`.
