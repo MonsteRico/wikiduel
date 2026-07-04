@@ -44,7 +44,7 @@ type GatewayDependencies = Readonly<{
   request?: typeof fetch;
 }>;
 
-function defaultPackageClient(): WikipediaPackageClient {
+export function resolveWikipediaPackageClient(moduleValue: unknown): WikipediaPackageClient {
   // wikipedia's ESM export works at runtime but its package export map presents the
   // module namespace to NodeNext. Keep that mismatch contained inside the gateway.
   type RuntimeClient = {
@@ -56,8 +56,8 @@ function defaultPackageClient(): WikipediaPackageClient {
       html(options: { redirect: boolean }): Promise<string>;
     }>;
   };
-  const moduleValue = wikipedia as unknown as RuntimeClient & { default?: RuntimeClient };
-  const client = typeof moduleValue.page === "function" ? moduleValue : moduleValue.default;
+  const candidate = moduleValue as RuntimeClient & { default?: RuntimeClient };
+  const client = typeof candidate.page === "function" ? candidate : candidate.default;
   if (!client || typeof client.page !== "function" || typeof client.setUserAgent !== "function") {
     throw new WikipediaGatewayError("invalid-response");
   }
@@ -73,6 +73,10 @@ function defaultPackageClient(): WikipediaPackageClient {
       };
     },
   };
+}
+
+function defaultPackageClient(): WikipediaPackageClient {
+  return resolveWikipediaPackageClient(wikipedia);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
