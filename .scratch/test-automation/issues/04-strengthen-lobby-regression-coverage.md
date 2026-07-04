@@ -2,9 +2,10 @@
 
 # Strengthen Lobby Regression Coverage
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 02:52 PM
 
 ## What to build
 
@@ -12,11 +13,11 @@ Cement the implemented Lobby lifecycle with focused server and client regression
 
 ## Acceptance criteria
 
-- [ ] Server tests cover successful and rejected Lobby commands, both player roles, readiness, Host-only start, departure, disconnect, and paired-Lobby closure through real WebSocket message contracts.
-- [ ] Client tests cover connection presentation, create/join actions, roster/readiness projections, Host start controls, notices, and terminal Lobby closure using a controllable transport boundary.
-- [ ] Tests assert user-visible and protocol behavior rather than private component or collection structure.
-- [ ] Existing Lobby behavior remains unchanged.
-- [ ] Future Round, reconnect, and Duel behavior is not introduced by this issue.
+- [x] Server tests cover successful and rejected Lobby commands, both player roles, readiness, Host-only start, departure, disconnect, and paired-Lobby closure through real WebSocket message contracts.
+- [x] Client tests cover connection presentation, create/join actions, roster/readiness projections, Host start controls, notices, and terminal Lobby closure using a controllable transport boundary.
+- [x] Tests assert user-visible and protocol behavior rather than private component or collection structure.
+- [x] Existing Lobby behavior remains unchanged.
+- [x] Future Round, reconnect, and Duel behavior is not introduced by this issue.
 
 ## Blocked by
 
