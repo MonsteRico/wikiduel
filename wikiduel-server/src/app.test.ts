@@ -47,7 +47,7 @@ test("GET /health reports that the server is healthy", async () => {
   await app.close();
 });
 
-test("a two-player room supports readiness, starting, and closure", async () => {
+test("a two-player lobby supports readiness, starting, and closure", async () => {
   const app = await buildApp();
   await app.ready();
 
@@ -101,7 +101,7 @@ test("a two-player room supports readiness, starting, and closure", async () => 
   const roomClosedPromise = nextMessage<RoomClosedMessage>(hostSocket, "room-closed");
   opponentSocket.terminate();
   const roomClosed = await roomClosedPromise;
-  expect(roomClosed.message).toBe("The other player left. The room has been closed.");
+  expect(roomClosed.message).toBe("The other player left. The lobby has been closed.");
 
   hostSocket.terminate();
   await app.close();
@@ -129,7 +129,7 @@ test("the opponent is notified when the host leaves", async () => {
   const roomClosedPromise = nextMessage<RoomClosedMessage>(opponentSocket, "room-closed");
   hostSocket.terminate();
   const roomClosed = await roomClosedPromise;
-  expect(roomClosed.message).toBe("The other player left. The room has been closed.");
+  expect(roomClosed.message).toBe("The other player left. The lobby has been closed.");
 
   opponentSocket.terminate();
   await app.close();
