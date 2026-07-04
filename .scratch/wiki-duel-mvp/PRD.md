@@ -1,8 +1,8 @@
 # Wiki Duel MVP PRD
 
-Status: Implementation-ready
-Date: 2026-06-18
-Source design: [`MVP.md`](../../MVP.md)
+Status: Scope-refined
+Date: 2026-07-03
+Historical source design: [`MVP-old.md`](../../MVP-old.md)
 Visual direction: [`aiUIMockups.png`](../../aiUIMockups.png)
 
 ## Product Objective
@@ -13,24 +13,34 @@ Build the smallest credible private 1v1 Wikipedia racing game that can answer:
 
 The product is a desktop-only, English-Wikipedia MVP. It is a game prototype, not a general Wikipedia browser or a finished competitive platform.
 
+Scope is organized by test milestone. **MVP required** means necessary for the first small-group playtest; **MVP optional** means valuable before a larger-group test; **Future** means post-validation work toward a released product. The categorized issue index is [`BACKLOG.md`](./BACKLOG.md).
+
+## Current Implementation Baseline
+
+The repository already has separate Vite/React and Fastify/TypeScript packages connected by a native WebSocket protocol. It implements server health, connection status, five-character Lobby creation/join, two fixed seats, readiness, Host-controlled start, copy-code UI, explicit Lobby departure, and Lobby closure when a paired player disconnects. The server emits `game-started`, but no Round, Playable Article, Navigation, HP, comparison, post-Duel, or Rematch flow exists yet.
+
+New MVP work extends this baseline rather than restructuring it to match the original proposed stack.
+
 ## Success Signals
 
-These metrics inform investment decisions; they do not automatically decide them.
+The first small-group test is evaluated through direct observation, conversation, and manual notes. It should establish whether players can complete the flow, understand Navigation and damage, discuss route choices, and voluntarily request another Duel without handholding. No durable analytics implementation or numeric threshold blocks MVP completion.
 
-- **Primary:** at least 40% started rematch rate among first duels that end normally through HP loss. A rematch counts only when both players request it and the next duel starts.
-- **Secondary:** at least 20% of lobbies that complete a first normal duel complete three or more duels with the same pair.
-- Observe whether players discuss route choices, attribute losses to decisions, and play without handholding.
-- Track timeouts, forfeits, interruptions, completion, click counts, duration, prompt performance, and damage distribution without assigning additional MVP thresholds yet.
+For a later larger-group test, MVP-optional analytics may evaluate:
+
+- At least 40% started Rematch rate among first Duels that end normally through HP loss. A Rematch counts only when both players request it and the next Duel starts.
+- At least 20% of Lobbies that complete a first normal Duel complete three or more Duels with the same pair.
+- Timeouts, forfeits, interruptions, completion, click counts, duration, prompt performance, and damage distribution.
 
 ## Non-Goals
 
-- Accounts, display names, profiles, friends, chat, public matchmaking, ranking, progression, cosmetics, monetization, spectators, replays, or shareable results
+- Accounts, profiles, friends, chat, public matchmaking, ranking, progression, cosmetics, monetization, spectators, replays, or shareable results
 - Mobile layouts or support below 1024px
 - Strong anti-cheat or prevention of external search/AI use
 - Multiple Wikipedia languages
 - Automatic prompt generation, a complete Wikipedia graph, shortest-path scoring, or a verified par
-- Redis, multiple backend instances, active-duel recovery after server restart, or an admin UI
-- Infoboxes, data tables, galleries, audio, video, list articles, date articles, or year articles
+- Postgres as a first-test dependency, Redis, multiple backend instances, active-duel recovery after server restart, or an admin UI
+- Cross-device recovery and long-lived Lobbies
+- Infoboxes, data tables, galleries, maps, audio, video, list articles, date articles, or year articles
 - Fixed round counts, category/difficulty lobby filters, custom timer durations, or selectable Damage Rules
 
 ## Domain Rules
@@ -44,7 +54,7 @@ Canonical terms live in [`CONTEXT.md`](../../CONTEXT.md).
 - Both players begin every Duel at 100 HP.
 - A Duel has no fixed round count. It normally ends when damage reduces a player to 0 HP.
 - HP is clamped at zero. A rematch resets both players to 100 HP.
-- A Duel may instead end by Forfeit; forfeits preserve current HP and are reported separately from normal victories.
+- A Duel may instead terminate by Forfeit. Required-MVP Forfeits disband the Lobby and do not enter the normal post-Duel result flow.
 - Host is always blue and guest is always red on both clients. Text and icons also identify `You` and `Opponent`.
 
 ### Round
@@ -60,22 +70,25 @@ damage = 25 + 3 * (loser_clicks - winner_clicks)
 damage = clamp(damage, 15, 60)
 ```
 
-- The Damage Rule is global code, not a lobby or per-Duel setting. Store a rule/build version in analytics so results from releases remain interpretable.
+- This formula is locked for the first small-group MVP test. Evidence-led tuning is MVP optional afterward.
+
+- The Damage Rule is global code, not a Lobby or per-Duel setting. If durable analytics are added, store a rule/build version so results from releases remain interpretable.
 - The server calculates damage and returns a labeled breakdown for display; the client never duplicates the formula.
 - After a non-final Round, each player must select `Ready for Next Round`. Once both are ready, the server starts a shared three-second countdown.
 - The final Round still shows normal path comparison. Each player may then continue independently to the post-Duel summary.
 
-### Optional Time Limit
+### Time Limit
 
-- The Lobby exposes one host-controlled toggle: a five-minute Round limit, enabled by default.
-- The protocol models this as `roundTimeLimitSeconds: number | null` to permit future durations without a contract change.
-- When the enabled limit expires before a Target Arrival, the Round is a draw, deals no damage, and freezes both paths.
-- The official timer excludes countdowns and disconnect pauses.
+- Every required-MVP Round has one fixed five-minute Time Limit. It is not a Lobby setting.
+- When the Time Limit expires before a Target Arrival, the Round is a draw, deals no damage, and freezes both paths.
+- The official timer excludes pre-Round countdowns. The MVP-optional reconnect feature owns any later pause behavior.
+- Configurable durations and disabling the limit are Future work.
 
 ### Navigation
 
 - A Navigation is one server-validated move through an allowed link on the player's authoritative current article.
 - Browser history and the displayed path are never Navigation controls.
+- Browser Back during an active Duel is a leave attempt, not a return to an earlier article. Confirm the departure when the client can intercept it; closing, reloading, or losing connection causes the required terminal Forfeit/disband behavior.
 - Revisiting an article is allowed only when the current article contains a valid link to it.
 - Redirects resolve within the same Navigation. Record and display only the canonical destination; a redirect costs one click.
 - Failed fetches, invalid links, stale requests, and duplicate requests do not consume a click or change the path.
@@ -88,26 +101,23 @@ damage = clamp(damage, 15, 60)
 - Disambiguation pages are never playable.
 - Exclude list articles, calendar-year articles, and calendar-date articles for the MVP.
 - Exclude external, edit, help, file, category, talk, special, search, red, citation, and in-page footnote links.
-- Render the simplified full main body, preserving headings, paragraphs, ordinary lists, valid links, and ordinary content images with captions.
+- Render the simplified full main body, preserving headings, paragraphs, ordinary lists, valid links, and ordinary content images with captions. These are all required MVP content.
 - Exclude references, navboxes, edit controls, infoboxes, data tables, galleries, icons, maps, audio, and video.
-- Images are ambient, visually subordinate, and non-navigational.
-- Infoboxes and tables are high-potential post-MVP content experiments.
+- Images are ambient, visually subordinate, and non-navigational. Their presence is required to break up long article text.
+- Infoboxes, data tables, galleries, maps, audio, and video are Future article-content features.
 
 ## Lobby Lifecycle
 
 ### Home and Join
 
-- Home offers `Create Lobby`, `Join Lobby`, and `How to Play`.
-- Lobby codes contain six unambiguous uppercase letters/digits, are case-insensitive on entry, and are unique among active lobbies.
-- An invite URL prefills the code and shows a simple join confirmation before claiming the guest seat.
-- There is no display-name setup. UI labels are `You` and `Opponent`, with a `Host` badge where needed.
-- On join, the server issues an opaque, unguessable Player Session token. Store a per-Lobby token map in local storage and authenticate sockets with the relevant token.
-- A Player Session has one active socket. A newer authenticated tab replaces the older tab; the older tab becomes read-only and explains that the session moved.
+- Home offers `Create Lobby` and `Join Lobby`. An in-app `How to Play` guide is MVP optional.
+- Lobby codes contain five unambiguous uppercase letters/digits, are case-insensitive on entry, and are unique among active Lobbies.
+- The required MVP shares the code directly. Shareable invite URLs are MVP optional.
+- Required-MVP UI labels are `You` and `Opponent`, with a `Host` badge where needed. Anonymous display names are MVP optional; accounts and persistent profiles are Future.
+- The required MVP binds each Player Session to its active connection. Reclaiming a seat after connection loss belongs to the separately tracked short reconnect feature.
 
 ### Waiting Lobby
 
-- Only the Host changes settings. Settings are editable only while no Duel is active.
-- Any settings change clears both ready states.
 - Both players must be ready, then the Host selects `Start Duel`.
 - Round preparation begins; after both clients acknowledge rendering, the shared three-second countdown begins.
 - The start article remains covered before and during preparation. Reveal start/target titles at countdown start and enable article content/Navigation at zero.
@@ -116,39 +126,37 @@ damage = clamp(damage, 15, 60)
 ### Leaving and Expiry
 
 - Host sees `End Lobby`; guest sees `Leave Lobby`. Either explicit action immediately disbands the Lobby.
-- Closing, refreshing, or losing connection while no Duel is active retains both seats for five minutes. If either player remains disconnected at expiry, disband the Lobby. Never admit a replacement.
-- During a Duel, `Leave Duel` requires confirmation, records a Forfeit, disbands the Lobby, returns the departing player home, and shows the opponent a final forfeit summary.
+- In the required MVP, closing, refreshing, or losing connection disbands a waiting Lobby. The optional short reconnect feature may retain both seats briefly; never admit a replacement.
+- During a Duel, `Leave Duel` requires confirmation, causes a Forfeit, disbands the Lobby, and returns the departing player home. The remaining player sees `Opponent left`; a richer Forfeit summary is MVP optional.
 - Server restart aborts active Lobbies/Duels and shows a clear interruption result when possible. Recovery is out of scope.
 
 ### Post-Duel
 
-- Both `Rematch` requests automatically create another Duel with the same locked settings and a three-second start sequence.
-- Either player selecting `Back to Lobby` returns both players, clears rematch intent, unlocks settings, and restores the initial ready/Host-start flow.
+- Both `Rematch` requests automatically create another Duel with a three-second start sequence.
+- Either player selecting `Back to Lobby` returns both players, clears rematch intent, and restores the initial ready/Host-start flow.
 - Prompt history belongs to the Lobby. Do not repeat an enabled prompt across rematches until all enabled prompts have been used, then reshuffle.
 - A new Lobby starts with the full enabled prompt pool, regardless of either browser's prior play.
 
 ## Connection and Fairness Rules
 
 - Active Duel state is authoritative in one backend process.
-- A disconnect pauses the Duel for both players, covers article content, disables Navigation, and freezes official elapsed time.
-- Each player receives a cumulative 30-second interruption budget per Duel; reconnecting does not reset it.
-- On reconnect, send a complete player-specific snapshot and resume after a shared three-second countdown.
-- The snapshot and live projections must omit the opponent's current article and path during an active Round.
-- If the budget expires, the disconnected player forfeits. Preserve both HP values.
-- A connected client that cannot acknowledge prepared article rendering within the interruption budget also forfeits after a retry opportunity.
+- The required MVP ends an active Duel immediately by Forfeit and disbands the Lobby when a player disconnects. The remaining player sees `Opponent left` rather than a post-Duel result.
+- One short, fixed same-browser reconnect window is an MVP-optional resilience feature tracked separately. It is not part of MVP completion.
+- Live projections must omit the opponent's current article, path, and estimated distance during an active Round.
+- If the optional reconnect window is implemented, expiry causes the same terminal Forfeit behavior.
 - Both clients must acknowledge that the start article rendered before a Round countdown begins.
 - The connected player cannot read under preparation or disconnect overlays.
 
 ## Prompt Curation
 
-- Store prompts in a version-controlled seed file and upsert them into Postgres during deployment. No admin UI.
+- Store prompts in a version-controlled seed file and load them into memory at startup. Durable prompt storage is not required for the first small-group test.
 - An ordered pair is one prompt. Never auto-generate the reverse direction; it requires separate curation.
 - Required fields: stable ID, start title, target title, `easy | medium | hard` curator label, enabled flag, and optional notes.
 - Difficulty is metadata only during the MVP and does not affect selection.
 - Do not include `expected_min_clicks` or `par` in the MVP. Future par may use a graph or observed performance.
 - Automated seed validation rejects duplicate ordered pairs, identical/collapsed endpoints, invalid difficulty, unresolved endpoints, and endpoints that are not Playable Articles.
 - Human curation owns route quality, reachability, hub avoidance, and fun.
-- Require at least 20 enabled prompts for closed friend testing and 50 before sharing a public link.
+- Require ten enabled prompts for the first small-group test. Expanding to 25–50 prompts is MVP optional before a larger-group test.
 - If prompt preflight cannot resolve its start or target, skip it for the current server process, record an operational error, and choose another unused prompt. Do not mutate the seed record automatically.
 
 ## Screens and Interaction
@@ -160,84 +168,85 @@ Use the mockup's general composition and visual language, corrected for this PRD
 - Dark competitive shell around a light editorial article surface
 - Stable blue/red player accents, bold HP/status hierarchy, restrained motion
 - Wikipedia familiarity through typography, prose, headings, links, captions, and quiet images
-- shadcn/ui supplies selected accessible behavior, not the product aesthetic; override default component styling
+- The existing custom Tailwind component system supplies the product aesthetic and reusable controls.
 - Desktop layouts at 1024px and wider; smaller widths show an unsupported-device message
 
 ### Home/Lobby
 
-- Create/join actions, invite/code controls, two player slots, readiness, Host badge, timer toggle, and explicit leave/end action
+- Create/join and copy-code controls, two player slots, readiness, Host badge, and explicit leave/end action. Invite-link controls are MVP optional.
 - No round-count or difficulty control
-- `How to Play` modal accessible from home and Lobby
+- An MVP-optional `How to Play` guide may be accessible from home and Lobby.
 
 ### Duel
 
-- Current Round number, target, both HP values, your click count/path, opponent click count/connection status, and optional timer
-- Do not show opponent current article, live path, estimated distance, or a path-view action
-- A subtle nonessential pulse may indicate that the opponent navigated
+- Current Round number, target, both HP values, your display-only click count/path, opponent click count/connection status, and Time Limit countdown
+- Never show the opponent's current article, live path, estimated distance, or a path-view action during a Round. These are intentionally hidden, not planned Future features.
+- A subtle opponent-Navigation pulse is MVP optional.
 - One-line rules reminder below the HUD
 
 ### Post-Round
 
-- Winner/draw, damage and server-provided breakdown, start/target, both frozen paths, clicks, active elapsed times, and HP
+- Winner/draw, damage and server-provided breakdown, start/target, both frozen paths through each player's final article, clicks, active elapsed times, and HP
 - Non-final action is `Ready for Next Round`; the only exit is confirmed `Leave Duel`
 - The route comparison is a primary product moment, not a generic stats table
 
 ### Post-Duel
 
-- Winner/outcome reason, final HP, rounds won, damage by Round, each player's best completed path, and fastest Target Arrival
-- Best path means fewest Navigations among that player's completed targets, with elapsed time as tie-breaker; omit it if they never arrived
-- Actions: `Rematch`, `Back to Lobby`, and explicit end/leave. No Share Match MVP action.
-- Optional, collapsible feedback must not block Rematch: fun 1-5, damage fairness 1-5, and optional frustration/confusion text
+- Required: winner/outcome reason, final HP, damage by Round, `Rematch`, `Back to Lobby`, and explicit end/leave.
+- MVP optional: rounds won, each player's best completed path, fastest Target Arrival, and collapsible feedback that never blocks Rematch.
+- If implemented, best path means fewest Navigations among that player's completed targets, with elapsed time as tie-breaker; omit it if they never arrived.
+- Match history, route replay, shareable results, and profile statistics are Future.
 
 ## Architecture
 
 ### Repository and Runtime
 
 ```text
-apps/web          Vite + React + TypeScript
-apps/server       Node.js + TypeScript + Fastify + Socket.IO
-packages/contracts  Zod transport schemas and shared identifiers only
+wikiduel-client   Vite + React + TypeScript + React Router + Tailwind CSS
+wikiduel-server   Node.js + TypeScript + Fastify + @fastify/websocket
 ```
 
-- npm workspaces, Node 24 LTS, strict TypeScript
-- Tailwind CSS plus selectively restyled shadcn/ui primitives
-- Zustand for client UI/projection state; no TanStack Query initially
-- Postgres with Drizzle; migrations are committed and run before Fastify starts in the single-instance container
-- ESLint flat config, Prettier, Vitest, and Playwright
-- `@t3-oss/env-core` with Zod-backed validation and explicit Vite public-variable exposure
+- Keep the existing two-package repository layout; npm workspaces are not required.
+- Keep the existing semantic Tailwind tokens and custom reusable UI primitives documented in the client design system.
+- Keep React context and local state until demonstrated complexity justifies another client-state library.
+- Use the existing native WebSocket protocol; Socket.IO is not an MVP migration target.
+- Keep the current package-level TypeScript, lint, build, and server test tooling.
+- No database is required for the first small-group test. Postgres with Drizzle is the preferred MVP-optional persistence path when durable completed-Duel records are needed.
+- New libraries or repository restructuring must solve an observed requirement rather than align the implementation with the earlier proposed stack.
 
 ### Authority and Modules
 
 - Keep lobby and Duel transitions in a transport-independent server core.
-- Fastify/Socket.IO adapters authenticate commands, obtain external article data, invoke the core, persist results, and project player-specific updates.
-- `packages/contracts` contains schemas and IDs, never Damage Rules or authoritative transitions.
-- HTTP creates/joins Lobbies and returns bootstrap state/token. Authenticated Socket.IO owns settings, readiness, start, Navigation, round readiness, rematch, and all live updates.
-- Do not create duplicate HTTP mutation paths for realtime commands.
-- Reconnect sends a full player-specific snapshot, then incremental events.
+- Fastify WebSocket handlers receive commands, obtain external article data, invoke authoritative transitions, and project player-specific updates.
+- WebSocket messages have explicit TypeScript contracts on both sides. A shared contracts package is not required for MVP.
+- Realtime commands own Lobby creation/join, readiness, start, Navigation, round readiness, rematch, and live updates; do not add duplicate HTTP mutation paths without a concrete need.
+- A full reconnect snapshot belongs to the separately tracked MVP-optional reconnect feature.
 
 ### Persistence
 
-- Keep active Lobby/Duel state in server memory on one instance (ADR-0001).
-- Apply Navigation in memory and respond without waiting on Postgres.
-- Persist path entries asynchronously; persist the authoritative Round summary and path transactionally at Round end.
-- Persist prompts, completed results, navigation analytics, feedback, and a seven-day article cache.
-- Cache canonical title, sanitized content, playable links, source revision, and fetch time.
-- Exact-revision pinning within a Round is a future fairness improvement, not an MVP requirement.
-- Store player tokens only in a non-reversible form server-side once Player Sessions are implemented.
+- Keep active Lobby/Duel state in server memory on one instance.
+- Keep prompt selection and article caching in memory for the required MVP. Cache canonical title, sanitized content, playable links, source revision, and fetch time for the life of the process.
+- Emit structured operational logs sufficient to diagnose first-test failures and inspect basic Duel outcomes.
+- Persisted completed-Duel records, paths, feedback, rematch analytics, and a restart-surviving article cache are MVP optional for a larger-group test.
+- Active-Duel recovery, retention automation, dashboards, and admin tools are Future.
+- Exact-revision pinning within a Round is a Future fairness improvement.
+- If recoverable Player Session credentials are introduced later, store them only in a non-reversible form server-side.
 
 ### Deployment
 
-- One multi-stage application image builds the Vite app and runs Fastify, which serves the SPA, HTTP, and Socket.IO from one origin.
-- Postgres is the only separate service. Supply Docker Compose suitable for local infrastructure and Dokploy deployment.
-- Local development may use separate explicit commands for Postgres and workspace dev servers; document them clearly.
-- Application startup runs migrations before serving traffic and fails if migration or validated environment setup fails.
-- Provide liveness and database-backed readiness endpoints.
+- One multi-stage application image builds the Vite app and runs Fastify, which serves the SPA, HTTP, and realtime connection from one origin.
+- The required MVP deploys without a separate database service. Supply a container setup suitable for Dokploy deployment.
+- Dokploy deployment is required for the first small-group test because it is how testers will access the game.
+- Local development commands must be documented clearly.
+- Provide liveness and application readiness endpoints. Database readiness becomes relevant only when optional persistence is added.
 
 ### Wikipedia Boundary
 
 - Put Wikipedia access behind an adapter so fixtures and live content are interchangeable.
-- Production uses English Wikipedia, canonical redirects, server-side sanitization, and the seven-day Postgres cache.
-- Automated tests use hand-authored offline fixtures initially. A future tool may generate and commit a fixed fixture graph from real revisions.
+- Use the TypeScript `wikipedia` package as the initial API client behind that adapter. Confirm its required behavior during implementation and use direct official Wikimedia REST calls inside the adapter where the wrapper is insufficient.
+- Production uses English Wikipedia, canonical redirects, server-side sanitization, and an in-memory article cache. A restart-surviving cache is MVP optional.
+- Send a meaningful identifying User-Agent on Wikimedia requests.
+- A hand-authored deterministic fixture graph is MVP optional. Required tests may use smaller test doubles without delivering a reusable fixture-backed gameplay mode.
 - Before implementing the live adapter, verify current Wikimedia API identification, request policy, CC BY-SA text attribution, and per-image license/attribution requirements from official sources. Attribution compliance is mandatory even though its exact UI remains a live-adapter design task.
 
 ## Security and Privacy
@@ -245,19 +254,19 @@ packages/contracts  Zod transport schemas and shared identifiers only
 - Treat article HTML as untrusted; sanitize server-side with a strict allowlist and avoid arbitrary client HTML execution.
 - Use same-origin sockets, security headers, request-size limits, join/create rate limits, opaque high-entropy tokens, and redacted structured logs.
 - CSP initially permits self only; explicitly add only the Wikimedia media hosts needed by the live adapter.
-- Analytics retain random Player Session IDs and gameplay/feedback events, not display names, IP addresses, invite tokens, or raw article HTML.
-- Use no third-party analytics SDK.
-- Retain raw gameplay events and free-text feedback for 90 days, then delete them; aggregate prompt/funnel metrics may remain.
+- Required structured logs must not retain display names, IP addresses, credentials, or raw article HTML.
+- Optional durable analytics use random Player Session IDs and no third-party analytics SDK.
+- Automated retention policy enforcement is Future work required before treating the prototype as a released product.
 
 ## Accessibility and Browser Support
 
-- Support latest stable Chrome, Edge, Firefox, and Safari on desktop.
-- Keyboard-operable flows, visible focus, semantic article structure, labeled status/control updates, reduced motion, and non-color-only status cues are required.
-- Target WCAG 2.2 AA fundamentals without claiming formal certification.
+- The required first-test MVP targets current desktop Firefox and Chromium at 1024px and wider. Firefox is the primary development and playtest browser.
+- Before a larger-group test, MVP-optional work verifies Safari and adds keyboard-operable flows, visible focus, semantic article structure, labeled status/control updates, reduced-motion support, and non-color-only status cues.
+- Mobile layouts and formal accessibility conformance work are Future.
 
-## Analytics Events
+## MVP-Optional Analytics Events
 
-At minimum capture:
+For a larger-group test, capture at minimum:
 
 ```text
 lobby_created, lobby_joined, lobby_disbanded
@@ -272,24 +281,31 @@ Round records include prompt, winner/draw, paths, clicks, active duration, pause
 
 ## Test Strategy
 
-- Unit-test core transitions, Damage Rule boundaries, timeout draws, serialized Navigation, readiness, pause budgets, forfeits, and prompt selection.
-- Integration-test Fastify/Socket.IO adapters, authentication, player-specific projections, persistence, migrations, cache behavior, and sanitization.
-- Playwright-test two browser contexts for create/join, shared countdown, one fixture-backed Round, reconnect snapshot, route comparison, and rematch as those capabilities land.
+- Add focused tests for risky authoritative rules: core transitions, Damage Rule boundaries, timeout draws, serialized Navigation, readiness, forfeits, and prompt selection.
+- Integration-test Fastify WebSocket behavior, player-specific projections, in-memory cache behavior, and sanitization using the existing server test tooling. Persistence and migration tests land with optional durable storage.
+- Broader two-browser end-to-end and automated accessibility coverage is MVP optional before a larger-group test. Required slices may still add narrow regression tests for risky authoritative rules.
 - Live Wikipedia smoke tests are separate, minimal, and never required for deterministic CI.
 
-## Goal Roadmap
+## Required MVP Implementation Sequence
 
-1. **Project foundation:** scaffold the workspace, quality/tooling, web shell, server health/socket handshake, Postgres/Drizzle infrastructure, Docker, and CI. See [`issues/01-project-foundation.md`](./issues/01-project-foundation.md).
-2. **Private Lobby pairing:** HTTP create/join, codes/invites, Player Session tokens, two-seat lifecycle, settings/readiness, player-specific socket snapshots, waiting disconnect expiry, and Lobby UI.
-3. **Fixture-backed playable Round:** transport-independent Duel core, fixture article adapter, Playable Article renderer, authoritative Navigation, countdown/render acknowledgement, Target Arrival, hidden opponent projection, and route comparison.
-4. **Live Wikipedia content:** official-policy verification, fetch/canonicalization, sanitization, page classification, images/attribution, seven-day Postgres cache, prompt seed/validation/preflight, and adapter smoke tests.
-5. **Full HP Duel:** global Damage Rule and breakdown, variable Rounds, HP elimination, timer draw, next-Round readiness, final comparison, post-Duel summary, Lobby prompt history, rematch, and return-to-Lobby.
-6. **Resilience and exits:** active pause overlays, cumulative interruption budget, reconnect snapshots/countdowns, duplicate-tab replacement, retry/forfeit flows, deliberate exit, and server-interruption UX.
-7. **Playtest instrumentation:** durable event/summary writes, optional feedback, retention cleanup, prompt metrics, closed-test prompt pool, accessibility/browser pass, and Playwright critical flows.
-8. **Public-test deployment:** 50-prompt gate, production Compose/Dokploy verification, CSP/rate limits/log redaction, operational runbook, and public-link smoke test.
+The current private Lobby is the implemented baseline. Remaining work is split into narrow issues that can be grilled and assigned independently:
 
-Each goal should leave a runnable, tested increment. Goal 3 intentionally proves the core two-player experience with fixtures before live Wikipedia complexity enters the system.
+1. [`playable-articles/01`](../playable-articles/issues/01-fetch-and-sanitize-playable-articles.md) — establish the live-content boundary.
+2. [`prompt-pool/01`](../prompt-pool/issues/01-curate-first-ten-prompts.md) — provide first-test content.
+3. [`round-start/01`](../round-start/issues/01-enter-the-first-round.md) — cross the existing `game-started` seam into gameplay.
+4. [`round-start/02`](../round-start/issues/02-synchronize-round-preparation.md) — give both players a fair shared start.
+5. [`navigation/01`](../navigation/issues/01-navigate-and-track-the-player-path.md) — complete the authoritative racing interaction.
+6. [`opponent-status/01`](../opponent-status/issues/01-show-live-opponent-status.md) — add only the permitted live tension signals.
+7. [`round-time-limit/01`](../round-time-limit/issues/01-enforce-the-round-time-limit.md) — guarantee a Round terminal condition.
+8. [`damage/01`](../damage/issues/01-apply-hp-and-damage.md) — connect Round performance to the Duel.
+9. [`round-results/01`](../round-results/issues/01-compare-paths-after-each-round.md) — deliver the core route reveal.
+10. [`duel-rematch/01`](../duel-rematch/issues/01-complete-and-rematch-a-duel.md) — complete the hypothesis-testing loop.
+11. [`forfeit-flow/01`](../forfeit-flow/issues/01-leave-and-forfeit-a-duel.md) — make all required exits terminal and clear.
+12. [`browser-support/01`](../browser-support/issues/01-verify-firefox.md) — verify the primary test browser.
+13. [`deployment/01`](../deployment/issues/01-deploy-the-first-test-build.md) — make the build available to testers.
+
+Some issues can overlap after their blockers land; dependency fields in the issue files are authoritative. MVP-optional and Future work are indexed separately in [`BACKLOG.md`](./BACKLOG.md).
 
 ## MVP Completion Criteria
 
-The MVP is ready for closed testing when two desktop browsers can create/join a private Lobby, complete and rematch a full HP Duel over at least 20 curated live English-Wikipedia prompts, recover from brief disconnects, compare paths, submit optional feedback, and produce trustworthy first-party analytics. Public-link testing additionally requires 50 enabled prompts, the browser/accessibility/security pass, verified Wikimedia compliance, and a successful Dokploy smoke test.
+The MVP is ready for its first small-group test when two remote desktop Firefox/Chromium browsers can access the Dokploy deployment, create/join a private Lobby, complete and rematch a full HP Duel over ten curated live English-Wikipedia prompts, compare paths, and produce useful structured diagnostic logs. Durable analytics, feedback collection, a short reconnect window, and a larger prompt pool improve a later larger-group test but do not block this milestone.

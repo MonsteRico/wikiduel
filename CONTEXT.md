@@ -9,23 +9,23 @@ A complete contest between two players, composed of rounds and normally ending w
 _Avoid_: Game, session
 
 **Player Session**:
-An anonymous player's server-issued identity within a lobby, reclaimable from the same browser using an unguessable token. A socket connection is temporary transport state and does not identify the player.
+An anonymous player's identity occupying one seat in a Lobby. It is distinct from the temporary connection carrying that player's commands.
 _Avoid_: User, account, socket
 
 **Lobby**:
-A private pairing of exactly two Player Sessions once joined, holding shared settings, successive rematch duels, and its own used-prompt history. It never admits a replacement player and disbands when either player explicitly leaves or exhausts a reconnect window; a new lobby starts with every enabled prompt available again.
+A private pairing of exactly two Player Sessions once joined, holding successive rematch Duels and its own used-prompt history. It never admits a replacement player; a new Lobby starts with every enabled prompt available again.
 _Avoid_: Room, party
 
 **Host**:
-The Player Session that created the lobby and may change its settings while no duel is active. Host ownership never transfers.
+The Player Session that created the Lobby and starts a Duel after both players are ready. Host ownership never transfers.
 _Avoid_: Owner, admin
 
 **Forfeit**:
-A duel outcome caused by explicit departure or an exhausted reconnect window rather than HP loss. Current HP is preserved and the remaining player is the winner.
-_Avoid_: Abandonment, technical loss
+Termination of a Duel caused by explicit departure, connection loss, or an exhausted optional reconnect window rather than HP loss. It disbands the Lobby without entering the normal post-Duel result flow.
+_Avoid_: Abandonment, technical loss, victory
 
 **Round**:
-One race in a duel where both players navigate from the same start article toward the same target article. A target arrival ends it immediately; an enabled time limit can instead end it as a no-damage draw.
+One race in a Duel where both players navigate from the same start article toward the same target article. A Target Arrival ends it immediately; the Time Limit can instead end it as a no-damage draw.
 _Avoid_: Race, level
 
 **Target Arrival**:
@@ -41,8 +41,8 @@ An existing canonical Wikipedia article in the main namespace that may appear in
 _Avoid_: Wiki page, destination page
 
 **Time Limit**:
-An optional lobby rule that caps round duration. Reaching it produces a draw with no damage rather than selecting a winner by partial progress.
-_Avoid_: Soft cap, round timer
+The fixed five-minute cap on every MVP Round. Reaching it produces a draw with no damage rather than selecting a winner by partial progress.
+_Avoid_: Soft cap, Lobby timer, configurable timer
 
 **Damage Rule**:
 A globally deployed policy that converts round results and relevant round context into HP loss for the losing player. All duels use the rule shipped in the running code until a future release replaces it.

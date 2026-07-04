@@ -1,5 +1,7 @@
 # Wiki Duel MVP Guide
 
+> **Historical concept guide:** this file preserves the original broad product direction. The scope-refined implementation contract is [`.scratch/wiki-duel-mvp/PRD.md`](./.scratch/wiki-duel-mvp/PRD.md), and categorized work lives in [`.scratch/wiki-duel-mvp/BACKLOG.md`](./.scratch/wiki-duel-mvp/BACKLOG.md). Where they differ, the scope-refined PRD wins.
+
 ## Working Title
 
 **Wiki Duel**
@@ -11,6 +13,8 @@ A competitive 1v1 Wikipedia racing game where two players start on the same arti
 The MVP exists to answer one core question:
 
 > Can a Wikipedia racing duel format create enough tension, fairness, and replayability that players voluntarily want another match?
+
+The complete multi-round duel loop is the minimum valid test of that question. An MVP release must support successive rounds, HP damage, a match conclusion, and a low-friction rematch. A single standalone race is not a smaller Wiki Duel MVP; it tests a different product.
 
 The MVP is not trying to prove ranked matchmaking, cosmetics, monetization, mobile support, massive scale, or long-term retention. Those only matter if the basic duel loop is fun.
 
@@ -272,7 +276,7 @@ Use a simple damage formula first.
 Prototype formula:
 
 ```text
-damage = 25 + (3 × loser_clicks) - (2 × winner_clicks)
+damage = 25 + 3 × (loser_clicks - winner_clicks)
 ```
 
 Then clamp it:
@@ -287,7 +291,7 @@ Example:
 ```text
 Winner clicks: 6
 Loser clicks: 9
-Damage = 25 + 27 - 12 = 40
+Damage = 25 + 3 × (9 - 6) = 34
 ```
 
 This is not theoretically perfect, but it is good enough to test whether the damage-based duel loop is fun.
