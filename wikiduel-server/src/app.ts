@@ -109,7 +109,7 @@ export async function buildApp(): Promise<FastifyInstance> {
             ) {
               remainingMember.socket.send(serializeMessage({
                 type: "room-closed",
-                message: "The other player left. The room has been closed.",
+                message: "The other player left. The lobby has been closed.",
               }));
             }
           }
@@ -166,12 +166,12 @@ export async function buildApp(): Promise<FastifyInstance> {
           const room = rooms.get(code);
 
           if (!room) {
-            socket.send(serializeMessage({ type: "room-error", message: "Room not found" }));
+            socket.send(serializeMessage({ type: "room-error", message: "Lobby not found" }));
             return;
           }
 
           if (!room.members.has(message.clientId) && room.members.size >= 2) {
-            socket.send(serializeMessage({ type: "room-error", message: "Room is full" }));
+            socket.send(serializeMessage({ type: "room-error", message: "Lobby is full" }));
             return;
           }
 
