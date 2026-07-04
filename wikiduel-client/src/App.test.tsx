@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
-import type { Room, ServerMessage } from './features/rooms/types'
+import type { Room as Lobby, ServerMessage } from './features/rooms/types'
 
 type WithoutTimestamp<Message> = Message extends unknown ? Omit<Message, 'sentAt'> : never
 
@@ -46,7 +46,7 @@ class ControllableWebSocket extends EventTarget {
 }
 
 const sockets: ControllableWebSocket[] = []
-function hostLobby(clientId: string): Room {
+function hostLobby(clientId: string): Lobby {
   return {
     code: '7G8KZ',
     members: [{ id: clientId, name: 'host', role: 'host', connected: true, ready: false }],
@@ -206,6 +206,19 @@ describe('Lobby client', () => {
         'Lobby closed. The other player left. The lobby has been closed.',
       )
     })
+    expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeInTheDocument()
+  })
+
+  it('leaves a Lobby explicitly and returns home', async () => {
+    const user = userEvent.setup()
+    const socket = renderApp('/room/7G8KZ')
+    act(() => socket.open())
+    const clientId = sentClientId(socket)
+    act(() => socket.receive({ type: 'room-state', room: hostLobby(clientId) }))
+
+    await user.click(screen.getByRole('button', { name: 'Leave lobby' }))
+
+    expect(sentMessages(socket)).toContainEqual({ type: 'leave-room' })
     expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeInTheDocument()
   })
 
