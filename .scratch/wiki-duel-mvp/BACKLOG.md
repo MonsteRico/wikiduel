@@ -12,7 +12,16 @@ Planning stubs begin at `needs-triage`. Before assigning one to an implementatio
 
 ## MVP required
 
-- [`playable-articles/01`](../playable-articles/issues/01-fetch-and-sanitize-playable-articles.md) — turn live Wikipedia pages into safe Playable Articles
+- [`lobby/01`](../lobby/issues/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language
+- [`test-automation/03`](../test-automation/issues/03-standardize-tests-on-vitest.md) — establish Vitest across client and server
+- [`test-automation/04`](../test-automation/issues/04-strengthen-lobby-regression-coverage.md) — protect the implemented Lobby before transport refactoring
+- [`realtime-transport/01`](../realtime-transport/issues/01-extract-shared-websocket-transport.md) — provide one tested application-level realtime connection
+- [`playable-articles/06`](../playable-articles/issues/06-build-live-playable-article-foundation.md) — establish canonical safe text Article Documents and the live server boundary
+- [`playable-articles/07`](../playable-articles/issues/07-resolve-canonical-navigation-nodes.md) — classify internal links into canonical Navigation Nodes
+- [`playable-articles/08`](../playable-articles/issues/08-preserve-safe-attributed-figures.md) — preserve ordinary figures, captions, and image attribution
+- [`playable-articles/09`](../playable-articles/issues/09-add-repository-caching-and-resilience.md) — bound, coalesce, and cache complete article retrieval
+- [`playable-articles/10`](../playable-articles/issues/10-render-typed-article-documents.md) — render the production Article Document contract
+- [`playable-articles/11`](../playable-articles/issues/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end article acceptance surface
 - [`prompt-pool/01`](../prompt-pool/issues/01-curate-first-ten-prompts.md) — supply the first-test prompt pool
 - [`round-start/01`](../round-start/issues/01-enter-the-first-round.md) — extend the implemented Lobby into a live Duel
 - [`round-start/02`](../round-start/issues/02-synchronize-round-preparation.md) — prepare both clients and begin with a shared countdown
@@ -46,12 +55,13 @@ Additional required implementation issues can be added within the relevant featu
 - [`test-automation/02`](../test-automation/issues/02-expand-automated-test-coverage.md) — add broader end-to-end and accessibility checks
 - [`damage/02`](../damage/issues/02-evaluate-and-tune-damage.md) — revisit balance after first-test evidence
 
+- [`playable-articles/02`](../playable-articles/issues/02-render-infoboxes.md): preserve useful infobox media, facts, and Navigation Nodes
+
 ## Future
 
 - [`connection-resilience/02`](../connection-resilience/issues/02-cross-device-session-recovery.md)
 - [`connection-resilience/03`](../connection-resilience/issues/03-long-lived-lobbies.md)
 - [`connection-resilience/04`](../connection-resilience/issues/04-active-duel-recovery-after-restart.md)
-- [`playable-articles/02`](../playable-articles/issues/02-render-infoboxes.md)
 - [`playable-articles/03`](../playable-articles/issues/03-render-data-tables.md)
 - [`playable-articles/04`](../playable-articles/issues/04-render-galleries-and-maps.md)
 - [`playable-articles/05`](../playable-articles/issues/05-render-audio-and-video.md)

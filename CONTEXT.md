@@ -40,6 +40,18 @@ _Avoid_: Page load, backtracking
 An existing canonical Wikipedia article in the main namespace that may appear in a player's route. Disambiguation pages are never playable; list, calendar-year, and calendar-date articles are excluded from the MVP playable graph.
 _Avoid_: Wiki page, destination page
 
+**Article Document**:
+The typed, allowlisted content tree of a Playable Article that may cross from the server to a client. It contains only the structural, inline, Navigation, and media elements Wiki Duel explicitly supports.
+_Avoid_: Sanitized HTML, article HTML, document AST
+
+**Navigation Node**:
+An interactive Article Document element whose destination has been resolved and accepted as a canonical Playable Article. Activating it requests a Navigation to that destination.
+_Avoid_: True link, playable anchor, clickable link
+
+**Playable Article Lab**:
+A development-only surface for requesting, rendering, navigating, and manually inspecting live Playable Articles through the same server boundary intended for Duels. It is the end-to-end acceptance surface for the playable-article pipeline and is unavailable in production.
+_Avoid_: Test page, article browser, debug page
+
 **Time Limit**:
 The fixed five-minute cap on every MVP Round. Reaching it produces a draw with no damage rather than selecting a winner by partial progress.
 _Avoid_: Soft cap, Lobby timer, configurable timer

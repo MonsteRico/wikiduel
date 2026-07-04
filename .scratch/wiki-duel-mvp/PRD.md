@@ -40,7 +40,7 @@ For a later larger-group test, MVP-optional analytics may evaluate:
 - Automatic prompt generation, a complete Wikipedia graph, shortest-path scoring, or a verified par
 - Postgres as a first-test dependency, Redis, multiple backend instances, active-duel recovery after server restart, or an admin UI
 - Cross-device recovery and long-lived Lobbies
-- Infoboxes, data tables, galleries, maps, audio, video, list articles, date articles, or year articles
+- Data tables, galleries, maps, audio, video, list articles, date articles, or year articles
 - Fixed round counts, category/difficulty lobby filters, custom timer durations, or selectable Damage Rules
 
 ## Domain Rules
@@ -104,7 +104,7 @@ damage = clamp(damage, 15, 60)
 - Render the simplified full main body, preserving headings, paragraphs, ordinary lists, valid links, and ordinary content images with captions. These are all required MVP content.
 - Exclude references, navboxes, edit controls, infoboxes, data tables, galleries, icons, maps, audio, and video.
 - Images are ambient, visually subordinate, and non-navigational. Their presence is required to break up long article text.
-- Infoboxes, data tables, galleries, maps, audio, and video are Future article-content features.
+- Infoboxes are an MVP-optional article-content feature; data tables, galleries, maps, audio, and video are Future features.
 
 ## Lobby Lifecycle
 
@@ -290,19 +290,28 @@ Round records include prompt, winner/draw, paths, clicks, active duration, pause
 
 The current private Lobby is the implemented baseline. Remaining work is split into narrow issues that can be grilled and assigned independently:
 
-1. [`playable-articles/01`](../playable-articles/issues/01-fetch-and-sanitize-playable-articles.md) — establish the live-content boundary.
-2. [`prompt-pool/01`](../prompt-pool/issues/01-curate-first-ten-prompts.md) — provide first-test content.
-3. [`round-start/01`](../round-start/issues/01-enter-the-first-round.md) — cross the existing `game-started` seam into gameplay.
-4. [`round-start/02`](../round-start/issues/02-synchronize-round-preparation.md) — give both players a fair shared start.
-5. [`navigation/01`](../navigation/issues/01-navigate-and-track-the-player-path.md) — complete the authoritative racing interaction.
-6. [`opponent-status/01`](../opponent-status/issues/01-show-live-opponent-status.md) — add only the permitted live tension signals.
-7. [`round-time-limit/01`](../round-time-limit/issues/01-enforce-the-round-time-limit.md) — guarantee a Round terminal condition.
-8. [`damage/01`](../damage/issues/01-apply-hp-and-damage.md) — connect Round performance to the Duel.
-9. [`round-results/01`](../round-results/issues/01-compare-paths-after-each-round.md) — deliver the core route reveal.
-10. [`duel-rematch/01`](../duel-rematch/issues/01-complete-and-rematch-a-duel.md) — complete the hypothesis-testing loop.
-11. [`forfeit-flow/01`](../forfeit-flow/issues/01-leave-and-forfeit-a-duel.md) — make all required exits terminal and clear.
-12. [`browser-support/01`](../browser-support/issues/01-verify-firefox.md) — verify the primary test browser.
-13. [`deployment/01`](../deployment/issues/01-deploy-the-first-test-build.md) — make the build available to testers.
+1. [`lobby/01`](../lobby/issues/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language.
+2. [`test-automation/03`](../test-automation/issues/03-standardize-tests-on-vitest.md) — establish Vitest across client and server.
+3. [`test-automation/04`](../test-automation/issues/04-strengthen-lobby-regression-coverage.md) — protect implemented Lobby behavior before transport refactoring.
+4. [`realtime-transport/01`](../realtime-transport/issues/01-extract-shared-websocket-transport.md) — provide one tested application-level realtime connection.
+5. [`playable-articles/06`](../playable-articles/issues/06-build-live-playable-article-foundation.md) — establish the live-content boundary and safe text Article Documents.
+6. [`playable-articles/07`](../playable-articles/issues/07-resolve-canonical-navigation-nodes.md) — classify internal links into canonical Navigation Nodes.
+7. [`playable-articles/08`](../playable-articles/issues/08-preserve-safe-attributed-figures.md) — preserve safe ordinary figures, captions, and image attribution.
+8. [`playable-articles/09`](../playable-articles/issues/09-add-repository-caching-and-resilience.md) — make article retrieval bounded, coalesced, and process-cached.
+9. [`playable-articles/10`](../playable-articles/issues/10-render-typed-article-documents.md) — render typed Article Documents through production React components.
+10. [`playable-articles/11`](../playable-articles/issues/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end acceptance surface.
+11. [`prompt-pool/01`](../prompt-pool/issues/01-curate-first-ten-prompts.md) — provide first-test content.
+12. [`round-start/01`](../round-start/issues/01-enter-the-first-round.md) — cross the existing `game-started` seam into gameplay.
+13. [`round-start/02`](../round-start/issues/02-synchronize-round-preparation.md) — give both players a fair shared start.
+14. [`navigation/01`](../navigation/issues/01-navigate-and-track-the-player-path.md) — complete the authoritative racing interaction.
+15. [`opponent-status/01`](../opponent-status/issues/01-show-live-opponent-status.md) — add only the permitted live tension signals.
+16. [`round-time-limit/01`](../round-time-limit/issues/01-enforce-the-round-time-limit.md) — guarantee a Round terminal condition.
+17. [`damage/01`](../damage/issues/01-apply-hp-and-damage.md) — connect Round performance to the Duel.
+18. [`round-results/01`](../round-results/issues/01-compare-paths-after-each-round.md) — deliver the core route reveal.
+19. [`duel-rematch/01`](../duel-rematch/issues/01-complete-and-rematch-a-duel.md) — complete the hypothesis-testing loop.
+20. [`forfeit-flow/01`](../forfeit-flow/issues/01-leave-and-forfeit-a-duel.md) — make all required exits terminal and clear.
+21. [`browser-support/01`](../browser-support/issues/01-verify-firefox.md) — verify the primary test browser.
+22. [`deployment/01`](../deployment/issues/01-deploy-the-first-test-build.md) — make the build available to testers.
 
 Some issues can overlap after their blockers land; dependency fields in the issue files are authoritative. MVP-optional and Future work are indexed separately in [`BACKLOG.md`](./BACKLOG.md).
 
