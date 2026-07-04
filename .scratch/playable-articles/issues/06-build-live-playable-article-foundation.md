@@ -2,9 +2,10 @@
 
 # Build the Live Playable Article Foundation
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 02:56 PM via [PR #4](https://github.com/MonsteRico/wikiduel/pull/4)
 
 ## Parent
 
@@ -19,14 +20,14 @@ Validate the live gateway's identifying environment configuration before the ser
 
 ## Acceptance criteria
 
-- [ ] A requested existing English namespace-zero title resolves to canonical page ID/title, revision ID/timestamp, required text attribution, and a typed Article Document.
-- [ ] Redirected requests return the canonical identity without creating a separate article step.
-- [ ] Supported headings, paragraphs, nested ordinary lists, text, emphasis, and strong emphasis are represented without arbitrary HTML.
-- [ ] Scripts, executable attributes, unsupported structures, unsafe markup, and raw Wikimedia HTML cannot enter the Playable Article contract.
-- [ ] Missing, invalid, non-main-namespace, disambiguation, list, calendar-year, calendar-date, normalization, and article-attribution failures map to stable public failure codes.
-- [ ] The Wikipedia Gateway verifies the package capabilities it uses and keeps package-specific response and error types private.
-- [ ] A valid, non-generic `WIKIMEDIA_USER_AGENT` is required before a live server can be constructed, is applied to package and direct calls, and has a documented environment example.
-- [ ] Normalizer, gateway contract, repository, configuration, and minimal opt-in live smoke tests cover the introduced behavior through Vitest.
+- [x] A requested existing English namespace-zero title resolves to canonical page ID/title, revision ID/timestamp, required text attribution, and a typed Article Document.
+- [x] Redirected requests return the canonical identity without creating a separate article step.
+- [x] Supported headings, paragraphs, nested ordinary lists, text, emphasis, and strong emphasis are represented without arbitrary HTML.
+- [x] Scripts, executable attributes, unsupported structures, unsafe markup, and raw Wikimedia HTML cannot enter the Playable Article contract.
+- [x] Missing, invalid, non-main-namespace, disambiguation, list, calendar-year, calendar-date, normalization, and article-attribution failures map to stable public failure codes.
+- [x] The Wikipedia Gateway verifies the package capabilities it uses and keeps package-specific response and error types private.
+- [x] A valid, non-generic `WIKIMEDIA_USER_AGENT` is required before a live server can be constructed, is applied to package and direct calls, and has a documented environment example.
+- [x] Normalizer, gateway contract, repository, configuration, and minimal opt-in live smoke tests cover the introduced behavior through Vitest.
 
 ## Blocked by
 
