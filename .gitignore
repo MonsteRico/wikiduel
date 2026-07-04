@@ -13,4 +13,4 @@ test-results/
 *.tsbuildinfo
 
 # Worktrees
-.worktrees
+.worktrees/
