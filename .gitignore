@@ -11,3 +11,6 @@ test-results/
 
 .npm-cache/
 *.tsbuildinfo
+
+# Worktrees
+.worktrees/
