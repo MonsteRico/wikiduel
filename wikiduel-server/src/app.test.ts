@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { RawData, WebSocket } from "ws";
+import { expect, test } from "vitest";
 
 import { buildApp } from "./app.js";
 
@@ -42,8 +41,8 @@ test("GET /health reports that the server is healthy", async () => {
   const app = await buildApp();
   const response = await app.inject({ method: "GET", url: "/health" });
 
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.json(), { status: "ok" });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual({ status: "ok" });
 
   await app.close();
 });
@@ -57,8 +56,8 @@ test("a two-player room supports readiness, starting, and closure", async () => 
   hostSocket.send(JSON.stringify({ type: "create-room", clientId: "host-id" }));
   const createdRoom = await createdRoomPromise;
 
-  assert.match(createdRoom.room.code, /^[A-Z2-9]{5}$/);
-  assert.deepEqual(createdRoom.room.members, [{
+  expect(createdRoom.room.code).toMatch(/^[A-Z2-9]{5}$/);
+  expect(createdRoom.room.members).toEqual([{
     id: "host-id",
     name: "host",
     role: "host",
@@ -76,13 +75,12 @@ test("a two-player room supports readiness, starting, and closure", async () => 
   }));
 
   const [, opponentRoom] = await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
-  assert.deepEqual(
+  expect(
     opponentRoom.room.members.map(({ name, role }) => ({ name, role })),
-    [
+  ).toEqual([
       { name: "host", role: "host" },
       { name: "Opponent", role: "opponent" },
-    ],
-  );
+    ]);
 
   const hostReadyUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
   const opponentSeesHostReady = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
@@ -93,7 +91,7 @@ test("a two-player room supports readiness, starting, and closure", async () => 
   const opponentReadyUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
   opponentSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
   const [readyRoom] = await Promise.all([hostSeesBothReady, opponentReadyUpdate]);
-  assert.equal(readyRoom.room.members.every((member) => member.ready), true);
+  expect(readyRoom.room.members.every((member) => member.ready)).toBe(true);
 
   const hostGameStarted = nextMessage(hostSocket, "game-started");
   const opponentGameStarted = nextMessage(opponentSocket, "game-started");
@@ -103,7 +101,7 @@ test("a two-player room supports readiness, starting, and closure", async () => 
   const roomClosedPromise = nextMessage<RoomClosedMessage>(hostSocket, "room-closed");
   opponentSocket.terminate();
   const roomClosed = await roomClosedPromise;
-  assert.equal(roomClosed.message, "The other player left. The room has been closed.");
+  expect(roomClosed.message).toBe("The other player left. The room has been closed.");
 
   hostSocket.terminate();
   await app.close();
@@ -131,7 +129,7 @@ test("the opponent is notified when the host leaves", async () => {
   const roomClosedPromise = nextMessage<RoomClosedMessage>(opponentSocket, "room-closed");
   hostSocket.terminate();
   const roomClosed = await roomClosedPromise;
-  assert.equal(roomClosed.message, "The other player left. The room has been closed.");
+  expect(roomClosed.message).toBe("The other player left. The room has been closed.");
 
   opponentSocket.terminate();
   await app.close();
