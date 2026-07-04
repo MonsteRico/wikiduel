@@ -1,4 +1,4 @@
-import wikipedia from "wikipedia";
+import wikiModule from "wikipedia";
 
 export type WikipediaPageSnapshot = Readonly<{
   pageId: number;
@@ -26,16 +26,6 @@ export class WikipediaGatewayError extends Error {
   }
 }
 
-type WikipediaPackage = Readonly<{
-  setUserAgent(userAgent: string): void;
-  page(title: string, options: Readonly<{ redirect: true }>): Promise<Readonly<{
-    pageid: number;
-    ns: number;
-    title: string;
-    html(options: Readonly<{ redirect: true }>): Promise<string>;
-  }>>;
-}>;
-
 type GatewayDependencies = Readonly<{
   userAgent: string;
   request?: typeof fetch;
@@ -44,7 +34,7 @@ type GatewayDependencies = Readonly<{
 // wikipedia 2.5.0 publishes its callable client under the default property of
 // the value Node exposes for its CommonJS/ESM bridge. Keep this one package quirk
 // here; the rest of Wiki Duel only sees the WikipediaGateway contract.
-const wikipediaPackage = (wikipedia as unknown as { default: WikipediaPackage }).default;
+const wiki = wikiModule.default;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
@@ -74,16 +64,16 @@ function packageError(error: unknown): WikipediaGatewayError {
 
 export function createWikipediaGateway(dependencies: GatewayDependencies): WikipediaGateway {
   const request = dependencies.request ?? fetch;
-  wikipediaPackage.setUserAgent(dependencies.userAgent);
+  wiki.setUserAgent(dependencies.userAgent);
 
   return {
     async fetchPage(title) {
-      let packagePage: Awaited<ReturnType<WikipediaPackage["page"]>>;
+      let packagePage: Awaited<ReturnType<typeof wiki.page>>;
       let html: string;
       try {
         // The package follows redirects before returning this page. Its identity
         // is therefore canonical even when title was an alias.
-        packagePage = await wikipediaPackage.page(title, { redirect: true });
+        packagePage = await wiki.page(title, { redirect: true });
         html = await packagePage.html({ redirect: true });
       } catch (error) {
         throw packageError(error);
