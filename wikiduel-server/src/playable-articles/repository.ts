@@ -27,6 +27,10 @@ function validRequestedTitle(title: string): boolean {
 }
 
 function classification(snapshot: WikipediaPageSnapshot): ArticleNotPlayableReason | undefined {
+  // This is the single policy seam for removing unsuitable pages from Wiki Duel's
+  // playable graph. Add a deterministic check here when playtesting identifies a
+  // new class of article to exclude, and add the corresponding reason to
+  // ArticleNotPlayableReason so callers receive a stable, explainable outcome.
   if (snapshot.namespace !== 0) return "non-main-namespace";
   if (snapshot.disambiguation) return "disambiguation";
   if (/^Lists? of /i.test(snapshot.title)) return "list";

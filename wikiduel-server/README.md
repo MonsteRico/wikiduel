@@ -33,3 +33,10 @@ by both the `wikipedia` package and direct Wikimedia requests.
 
 Set `WIKIMEDIA_LIVE_SMOKE=1` to include the minimal live Wikimedia smoke tests.
 They are opt-in and intentionally excluded from deterministic CI runs.
+
+## TypeScript imports
+
+Local TypeScript imports intentionally use `.js` suffixes, for example
+`./gateway.js`. The server uses Node's ESM-compatible `NodeNext` mode: TypeScript
+resolves that specifier to `gateway.ts` while developing, then preserves it so
+Node can load the emitted `gateway.js` at runtime.

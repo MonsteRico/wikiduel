@@ -26,58 +26,25 @@ export class WikipediaGatewayError extends Error {
   }
 }
 
-type PackagePage = Readonly<{
-  pageId: number;
-  namespace: number;
-  title: string;
-  html(): Promise<string>;
-}>;
-
-type WikipediaPackageClient = Readonly<{
+type WikipediaPackage = Readonly<{
   setUserAgent(userAgent: string): void;
-  page(title: string, options: Readonly<{ redirect: true }>): Promise<PackagePage>;
+  page(title: string, options: Readonly<{ redirect: true }>): Promise<Readonly<{
+    pageid: number;
+    ns: number;
+    title: string;
+    html(options: Readonly<{ redirect: true }>): Promise<string>;
+  }>>;
 }>;
 
 type GatewayDependencies = Readonly<{
   userAgent: string;
-  packageClient?: WikipediaPackageClient;
   request?: typeof fetch;
 }>;
 
-export function resolveWikipediaPackageClient(moduleValue: unknown): WikipediaPackageClient {
-  // wikipedia's ESM export works at runtime but its package export map presents the
-  // module namespace to NodeNext. Keep that mismatch contained inside the gateway.
-  type RuntimeClient = {
-    setUserAgent(userAgent: string): void;
-    page(title: string, options: { redirect: boolean }): Promise<{
-      pageid: number;
-      ns: number;
-      title: string;
-      html(options: { redirect: boolean }): Promise<string>;
-    }>;
-  };
-  const candidate = moduleValue as RuntimeClient & { default?: RuntimeClient };
-  const client = typeof candidate.page === "function" ? candidate : candidate.default;
-  if (!client || typeof client.page !== "function" || typeof client.setUserAgent !== "function") {
-    throw new WikipediaGatewayError("invalid-response");
-  }
-  return {
-    setUserAgent: (userAgent) => client.setUserAgent(userAgent),
-    page: async (title, options) => {
-      const page = await client.page(title, options);
-      return {
-        pageId: page.pageid,
-        namespace: page.ns,
-        title: page.title,
-        html: () => page.html({ redirect: true }),
-      };
-    },
-  };
-}
-
-function defaultPackageClient(): WikipediaPackageClient {
-  return resolveWikipediaPackageClient(wikipedia);
-}
+// wikipedia 2.5.0 publishes its callable client under the default property of
+// the value Node exposes for its CommonJS/ESM bridge. Keep this one package quirk
+// here; the rest of Wiki Duel only sees the WikipediaGateway contract.
+const wikipediaPackage = (wikipedia as unknown as { default: WikipediaPackage }).default;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
@@ -106,36 +73,40 @@ function packageError(error: unknown): WikipediaGatewayError {
 }
 
 export function createWikipediaGateway(dependencies: GatewayDependencies): WikipediaGateway {
-  const packageClient = dependencies.packageClient ?? defaultPackageClient();
   const request = dependencies.request ?? fetch;
-  packageClient.setUserAgent(dependencies.userAgent);
+  wikipediaPackage.setUserAgent(dependencies.userAgent);
 
   return {
     async fetchPage(title) {
-      let packagePage: PackagePage;
+      let packagePage: Awaited<ReturnType<WikipediaPackage["page"]>>;
       let html: string;
       try {
-        packagePage = await packageClient.page(title, { redirect: true });
-        html = await packagePage.html();
+        // The package follows redirects before returning this page. Its identity
+        // is therefore canonical even when title was an alias.
+        packagePage = await wikipediaPackage.page(title, { redirect: true });
+        html = await packagePage.html({ redirect: true });
       } catch (error) {
         throw packageError(error);
       }
 
       if (
-        !positiveInteger(packagePage.pageId)
-        || !Number.isInteger(packagePage.namespace)
+        !positiveInteger(packagePage.pageid)
+        || !Number.isInteger(packagePage.ns)
         || !packagePage.title.trim()
         || typeof html !== "string"
       ) {
         throw new WikipediaGatewayError("invalid-response");
       }
 
+      // The package gives us canonical identity and HTML, but not the exact
+      // revision timestamp and disambiguation marker required by our contract.
+      // Enrich that same canonical page ID with one narrow official API call.
       const url = new URL("https://en.wikipedia.org/w/api.php");
       url.search = new URLSearchParams({
         action: "query",
         format: "json",
         origin: "*",
-        pageids: String(packagePage.pageId),
+        pageids: String(packagePage.pageid),
         prop: "revisions|pageprops",
         rvprop: "ids|timestamp",
       }).toString();
@@ -164,9 +135,9 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       const revisionId = positiveInteger(revision?.revid);
       const revisionTimestamp = revision?.timestamp;
       if (
-        positiveInteger(page?.pageid) !== packagePage.pageId
+        positiveInteger(page?.pageid) !== packagePage.pageid
         || page?.title !== packagePage.title
-        || page?.ns !== packagePage.namespace
+        || page?.ns !== packagePage.ns
         || !revisionId
         || typeof revisionTimestamp !== "string"
         || !Number.isFinite(Date.parse(revisionTimestamp))
@@ -175,8 +146,8 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       }
 
       return {
-        pageId: packagePage.pageId,
-        namespace: packagePage.namespace,
+        pageId: packagePage.pageid,
+        namespace: packagePage.ns,
         title: packagePage.title,
         revisionId,
         revisionTimestamp,
