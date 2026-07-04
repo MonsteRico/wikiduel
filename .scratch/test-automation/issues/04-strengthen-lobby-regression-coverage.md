@@ -20,4 +20,4 @@ Cement the implemented Lobby lifecycle with focused server and client regression
 
 ## Blocked by
 
-- [`test-automation/03`](./03-standardize-tests-on-vitest.md)
+None. The prerequisite [`test-automation/03`](./03-standardize-tests-on-vitest.md) is completed.
