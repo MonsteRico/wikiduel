@@ -20,10 +20,19 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+const FORBIDDEN_TITLE_CHARACTERS = new Set("#<>[]|{}");
+
 function validRequestedTitle(title: string): boolean {
-  return title.length > 0
-    && title.length <= 255
-    && !/[\u0000-\u001f\u007f#<>\[\]|{}]/.test(title);
+  if (title.length === 0 || title.length > 255) return false;
+
+  for (const character of title) {
+    const codePoint = character.codePointAt(0)!;
+    if (codePoint <= 0x1f || codePoint === 0x7f || FORBIDDEN_TITLE_CHARACTERS.has(character)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function classification(snapshot: WikipediaPageSnapshot): ArticleNotPlayableReason | undefined {

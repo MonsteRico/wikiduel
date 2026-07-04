@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "concurrently -n client,server -c cyan,magenta \"npm run dev --workspace=wikiduel-client\" \"npm run dev --workspace=wikiduel-server\"",
     "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces --if-present",
+    "check": "npm run typecheck && npm run lint",
+    "lint": "npm run lint --workspaces",
     "test": "vitest run --reporter=verbose",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",

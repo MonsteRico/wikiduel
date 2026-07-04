@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "npm run typecheck && npm run lint",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run --reporter=verbose",
