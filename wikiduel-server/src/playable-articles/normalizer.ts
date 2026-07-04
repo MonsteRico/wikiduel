@@ -109,9 +109,24 @@ function blocksFrom(nodes: readonly Node[]): ArticleBlock[] {
   return blocks;
 }
 
+function normalizeHeadingHierarchy(blocks: readonly ArticleBlock[]): ArticleBlock[] {
+  const firstHeading = blocks.find((block) => block.type === "heading");
+  if (!firstHeading || firstHeading.type !== "heading") return [...blocks];
+  const offset = firstHeading.level - 2;
+  let previousLevel = 1;
+
+  return blocks.map((block) => {
+    if (block.type !== "heading") return block;
+    const relativeLevel = Math.max(2, block.level - offset) as 2 | 3 | 4 | 5 | 6;
+    const level = Math.min(relativeLevel, previousLevel + 1, 6) as 2 | 3 | 4 | 5 | 6;
+    previousLevel = level;
+    return { ...block, level };
+  });
+}
+
 export function normalizeArticleDocument(title: string, untrustedHtml: string): ArticleDocument | null {
   const fragment = parseFragment(untrustedHtml);
-  const blocks = blocksFrom(fragment.childNodes);
+  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes));
   const hasMeaningfulText = JSON.stringify(blocks).replace(/[\s\W]/g, "").length > 0;
   return hasMeaningfulText ? { title, blocks } : null;
 }

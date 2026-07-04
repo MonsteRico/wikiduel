@@ -69,4 +69,17 @@ describe("normalizeArticleDocument", () => {
     expect(normalizeArticleDocument("Empty", "<script>alert(1)</script><table><tr><td>x</td></tr></table>"))
       .toBeNull();
   });
+
+  test("repairs source heading jumps beneath the document title", () => {
+    const result = normalizeArticleDocument(
+      "Hierarchy",
+      "<h4>First</h4><h6>Child</h6><h3>Sibling</h3>",
+    );
+
+    expect(result?.blocks).toEqual([
+      { type: "heading", level: 2, children: [{ type: "text", value: "First" }] },
+      { type: "heading", level: 3, children: [{ type: "text", value: "Child" }] },
+      { type: "heading", level: 2, children: [{ type: "text", value: "Sibling" }] },
+    ]);
+  });
 });
