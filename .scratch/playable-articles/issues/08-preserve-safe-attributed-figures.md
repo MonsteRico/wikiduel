@@ -2,9 +2,10 @@
 
 # Preserve Safe Attributed Figures
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-05 06:22 PM
 
 ## Parent
 
@@ -17,15 +18,19 @@ Extend Playable Articles with ordinary article-body figures discovered at their 
 
 ## Acceptance criteria
 
-- [ ] Supported article-body figures retain safe thumbnail URL, dimensions, meaningful alternative text or caption, and complete image attribution.
-- [ ] Caption inline content supports valid Navigation Nodes through the same classifier as prose links.
-- [ ] Images from infoboxes, tables, galleries, navboxes, notices, references, maps, and other excluded subtrees do not become figures.
-- [ ] Decorative/interface images, icons, badges, tracking images, math renderings, unsupported MIME types, and figures rejected by attribution policy are omitted without empty placeholders.
-- [ ] Image sources require HTTPS on `upload.wikimedia.org`; unsafe schemes, protocol-relative values, credentials, redirects to unapproved origins, and other origins are rejected.
-- [ ] Description, source, history, and license links obey their approved HTTPS origin policies, and creator-supplied markup becomes safe plain text.
-- [ ] Missing or unacceptable image attribution removes that image without rejecting an otherwise valid article; missing article attribution still rejects the article.
-- [ ] Production Content Security Policy permits the approved Wikimedia image origin and rejects unapproved media origins.
-- [ ] Normalizer, attribution, URL-policy, gateway, and renderer-contract fixtures cover representative and hostile media cases.
+- [x] Supported article-body figures retain safe thumbnail URL, dimensions, meaningful alternative text or caption, and complete image attribution.
+- [x] Caption inline content supports valid Navigation Nodes through the same classifier as prose links.
+- [x] Images from infoboxes, tables, galleries, navboxes, notices, references, maps, and other excluded subtrees do not become figures.
+- [x] Decorative/interface images, icons, badges, tracking images, math renderings, unsupported MIME types, and figures rejected by attribution policy are omitted without empty placeholders.
+- [x] Image sources require HTTPS on `upload.wikimedia.org`; unsafe schemes, protocol-relative values, credentials, redirects to unapproved origins, and other origins are rejected.
+- [x] Description, source, history, and license links obey their approved HTTPS origin policies, and creator-supplied markup becomes safe plain text.
+- [x] Missing or unacceptable image attribution removes that image without rejecting an otherwise valid article; missing article attribution still rejects the article.
+- [x] Production Content Security Policy permits the approved Wikimedia image origin and rejects unapproved media origins.
+- [x] Normalizer, attribution, URL-policy, gateway, and renderer-contract fixtures cover representative and hostile media cases.
+
+## Implementation note
+
+Figures are discovered only from supported article-body structure, then enriched through a batched official image-info request because the `wikipedia` package does not expose complete machine-readable licensing metadata. The repository emits a figure only after thumbnail, URL, MIME, dimensions, and attribution policy all succeed; rejected media degrades without rejecting the surrounding Playable Article. The same approved image origin is enforced in both the browser document policy and Fastify responses.
 
 ## Blocked by
 
