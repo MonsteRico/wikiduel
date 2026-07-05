@@ -8,8 +8,8 @@ const wikipediaPackage = vi.hoisted(() => ({
   page: vi.fn(),
 }));
 
-// The nested default matches the package's CommonJS/ESM export shape under Node.
-vi.mock("wikipedia", () => ({ default: { default: wikipediaPackage } }));
+// Vite unwraps the package's CommonJS/ESM bridge to this direct client shape.
+vi.mock("wikipedia", () => ({ default: wikipediaPackage }));
 
 import { createWikipediaGateway } from "./gateway.js";
 

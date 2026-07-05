@@ -44,10 +44,14 @@ type GatewayDependencies = Readonly<{
   request?: typeof fetch;
 }>;
 
-// wikipedia 2.5.0 publishes its callable client under the default property of
-// the value Node exposes for its CommonJS/ESM bridge. Keep this one package quirk
-// here; the rest of Wiki Duel only sees the WikipediaGateway contract.
-const wiki = wikiModule.default;
+// wikipedia 2.5.0 is CommonJS despite publishing an ESM import target. Node
+// exposes its callable client under a nested default, while Vite unwraps that
+// bridge. Keep this one package quirk here; the rest of Wiki Duel only sees the
+// WikipediaGateway contract.
+type WikipediaClient = typeof wikiModule.default;
+const wiki = (typeof (wikiModule as { setUserAgent?: unknown }).setUserAgent === "function"
+  ? wikiModule
+  : wikiModule.default) as WikipediaClient;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
