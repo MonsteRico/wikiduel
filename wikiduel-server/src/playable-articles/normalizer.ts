@@ -1,11 +1,15 @@
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 
-import type { ArticleBlock, ArticleDocument, ArticleInline } from "./model.js";
+import type {
+  ArticleBlock,
+  ArticleDocument,
+  ArticleInline,
+  NavigationDestination,
+} from "./model.js";
+import { isValidWikipediaTitle } from "./title.js";
 
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
-type NavigationDestination = Readonly<{ pageId: number; title: string }>;
-
 const EXCLUDED_TAGS = new Set([
   "script", "style", "template", "noscript", "iframe", "object", "embed",
   "table", "figure", "audio", "video", "svg", "math", "form", "input", "button",
@@ -62,7 +66,7 @@ function linkTitle(element: Element): string | undefined {
   if (!encodedTitle) return undefined;
   try {
     const title = decodeURIComponent(encodedTitle).replace(/_/g, " ");
-    if (title.length > 255 || /[\u0000-\u001f\u007f#<>\[\]|{}]/.test(title)) return undefined;
+    if (!isValidWikipediaTitle(title)) return undefined;
     const colon = title.indexOf(":");
     const namespace = colon < 0 ? "" : title.slice(0, colon).toLocaleLowerCase("en-US");
     return NON_ARTICLE_NAMESPACES.has(namespace) ? undefined : title;

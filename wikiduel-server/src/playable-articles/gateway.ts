@@ -158,6 +158,9 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
       };
     },
+    // wikipedia@2.5.0 exposes links as source-page title strings only. It does
+    // not bulk-resolve redirects, existence, namespaces, or page properties,
+    // so this missing contract uses the official query API in 50-title batches.
     async resolveLinks(titles): Promise<readonly WikipediaResolvedLink[]> {
       if (titles.length === 0) return [];
       if (titles.length > 50) {

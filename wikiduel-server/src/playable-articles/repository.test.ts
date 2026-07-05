@@ -69,7 +69,13 @@ describe("PlayableArticleRepository", () => {
       },
     });
     if (result.ok) {
-      expect(result.article.document.blocks[0]).not.toHaveProperty("url");
+      const paragraph = result.article.document.blocks[0];
+      expect(paragraph).toMatchObject({ type: "paragraph" });
+      if (paragraph?.type === "paragraph") {
+        expect(paragraph.children[1]).toMatchObject({ type: "navigation" });
+        expect(paragraph.children[1]).not.toHaveProperty("url");
+        expect(paragraph.children[1]).not.toHaveProperty("href");
+      }
       expect(JSON.stringify(result.article.document)).not.toContain("/wiki/Analytical_engine");
     }
   });
