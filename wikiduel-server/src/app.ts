@@ -6,13 +6,13 @@ import type { WebSocket } from "ws";
 
 type ClientMessage =
   | { type: "ping" }
-  | { type: "create-room"; clientId: string }
-  | { type: "join-room"; clientId: string; roomCode: string }
+  | { type: "create-lobby"; clientId: string }
+  | { type: "join-lobby"; clientId: string; lobbyCode: string }
   | { type: "set-ready"; ready: boolean }
   | { type: "start-game" }
-  | { type: "leave-room" };
+  | { type: "leave-lobby" };
 
-type RoomMember = {
+type LobbyMember = {
   id: string;
   name: string;
   role: "host" | "opponent";
@@ -20,11 +20,11 @@ type RoomMember = {
   ready: boolean;
 };
 
-type MemberRecord = RoomMember & {
+type MemberRecord = LobbyMember & {
   socket?: WebSocket;
 };
 
-type RoomRecord = {
+type LobbyRecord = {
   code: string;
   matched: boolean;
   members: Map<string, MemberRecord>;
@@ -32,10 +32,10 @@ type RoomRecord = {
 
 type SocketSession = {
   memberId?: string;
-  roomCode?: string;
+  lobbyCode?: string;
 };
 
-const ROOM_CODE_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const LOBBY_CODE_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function serializeMessage(message: object): string {
   return JSON.stringify({
@@ -44,33 +44,33 @@ function serializeMessage(message: object): string {
   });
 }
 
-function generateRoomCode(rooms: Map<string, RoomRecord>): string {
+function generateLobbyCode(lobbies: Map<string, LobbyRecord>): string {
   let code = "";
 
   do {
     code = Array.from(
       { length: 5 },
-      () => ROOM_CODE_CHARACTERS[randomInt(ROOM_CODE_CHARACTERS.length)],
+      () => LOBBY_CODE_CHARACTERS[randomInt(LOBBY_CODE_CHARACTERS.length)],
     ).join("");
-  } while (rooms.has(code));
+  } while (lobbies.has(code));
 
   return code;
 }
 
-function roomState(room: RoomRecord): string {
+function lobbyState(lobby: LobbyRecord): string {
   return serializeMessage({
-    type: "room-state",
-    room: {
-      code: room.code,
-      members: Array.from(room.members.values(), ({ socket: _socket, ...member }) => member),
+    type: "lobby-state",
+    lobby: {
+      code: lobby.code,
+      members: Array.from(lobby.members.values(), ({ socket: _socket, ...member }) => member),
     },
   });
 }
 
-function broadcastRoom(room: RoomRecord): void {
-  const message = roomState(room);
+function broadcastLobby(lobby: LobbyRecord): void {
+  const message = lobbyState(lobby);
 
-  for (const member of room.members.values()) {
+  for (const member of lobby.members.values()) {
     if (member.connected && member.socket?.readyState === 1) {
       member.socket.send(message);
     }
@@ -79,7 +79,7 @@ function broadcastRoom(room: RoomRecord): void {
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
-  const rooms = new Map<string, RoomRecord>();
+  const lobbies = new Map<string, LobbyRecord>();
 
   await app.register(websocket);
 
@@ -91,42 +91,42 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     socket.send(serializeMessage({ type: "welcome", message: "Connected to WikiDuel server" }));
 
-    const leaveCurrentRoom = () => {
-      if (!session.roomCode || !session.memberId) return;
+    const leaveCurrentLobby = () => {
+      if (!session.lobbyCode || !session.memberId) return;
 
-      const room = rooms.get(session.roomCode);
-      const member = room?.members.get(session.memberId);
+      const lobby = lobbies.get(session.lobbyCode);
+      const member = lobby?.members.get(session.memberId);
 
-      if (room && member?.socket === socket) {
-        if (room.matched) {
-          rooms.delete(room.code);
+      if (lobby && member?.socket === socket) {
+        if (lobby.matched) {
+          lobbies.delete(lobby.code);
 
-          for (const remainingMember of room.members.values()) {
+          for (const remainingMember of lobby.members.values()) {
             if (
               remainingMember.id !== member.id
               && remainingMember.connected
               && remainingMember.socket?.readyState === 1
             ) {
               remainingMember.socket.send(serializeMessage({
-                type: "room-closed",
+                type: "lobby-closed",
                 message: "The other player left. The lobby has been closed.",
               }));
             }
           }
         } else {
-          room.members.delete(member.id);
-          if (room.members.size === 0) rooms.delete(room.code);
+          lobby.members.delete(member.id);
+          if (lobby.members.size === 0) lobbies.delete(lobby.code);
         }
       }
 
-      session.roomCode = undefined;
+      session.lobbyCode = undefined;
       session.memberId = undefined;
     };
 
-    const joinRoom = (room: RoomRecord, clientId: string, role: "host" | "opponent") => {
-      leaveCurrentRoom();
+    const joinLobby = (lobby: LobbyRecord, clientId: string, role: "host" | "opponent") => {
+      leaveCurrentLobby();
 
-      const existingMember = room.members.get(clientId);
+      const existingMember = lobby.members.get(clientId);
       const member: MemberRecord = existingMember ?? {
         id: clientId,
         name: role === "host" ? "host" : "Opponent",
@@ -137,11 +137,11 @@ export async function buildApp(): Promise<FastifyInstance> {
 
       member.connected = true;
       member.socket = socket;
-      room.members.set(member.id, member);
-      session.roomCode = room.code;
+      lobby.members.set(member.id, member);
+      session.lobbyCode = lobby.code;
       session.memberId = member.id;
-      if (room.members.size === 2) room.matched = true;
-      broadcastRoom(room);
+      if (lobby.members.size === 2) lobby.matched = true;
+      broadcastLobby(lobby);
     };
 
     socket.on("message", (data) => {
@@ -153,74 +153,74 @@ export async function buildApp(): Promise<FastifyInstance> {
           return;
         }
 
-        if (message.type === "create-room") {
-          const code = generateRoomCode(rooms);
-          const room: RoomRecord = { code, matched: false, members: new Map() };
-          rooms.set(code, room);
-          joinRoom(room, message.clientId, "host");
+        if (message.type === "create-lobby") {
+          const code = generateLobbyCode(lobbies);
+          const lobby: LobbyRecord = { code, matched: false, members: new Map() };
+          lobbies.set(code, lobby);
+          joinLobby(lobby, message.clientId, "host");
           return;
         }
 
-        if (message.type === "join-room") {
-          const code = message.roomCode.trim().toUpperCase();
-          const room = rooms.get(code);
+        if (message.type === "join-lobby") {
+          const code = message.lobbyCode.trim().toUpperCase();
+          const lobby = lobbies.get(code);
 
-          if (!room) {
-            socket.send(serializeMessage({ type: "room-error", message: "Lobby not found" }));
+          if (!lobby) {
+            socket.send(serializeMessage({ type: "lobby-error", message: "Lobby not found" }));
             return;
           }
 
-          if (!room.members.has(message.clientId) && room.members.size >= 2) {
-            socket.send(serializeMessage({ type: "room-error", message: "Lobby is full" }));
+          if (!lobby.members.has(message.clientId) && lobby.members.size >= 2) {
+            socket.send(serializeMessage({ type: "lobby-error", message: "Lobby is full" }));
             return;
           }
 
-          joinRoom(room, message.clientId, "opponent");
+          joinLobby(lobby, message.clientId, "opponent");
           return;
         }
 
         if (message.type === "set-ready") {
-          if (!session.roomCode || !session.memberId) return;
+          if (!session.lobbyCode || !session.memberId) return;
 
-          const room = rooms.get(session.roomCode);
-          const member = room?.members.get(session.memberId);
-          if (!room || !member) return;
+          const lobby = lobbies.get(session.lobbyCode);
+          const member = lobby?.members.get(session.memberId);
+          if (!lobby || !member) return;
 
           member.ready = message.ready;
-          broadcastRoom(room);
+          broadcastLobby(lobby);
           return;
         }
 
         if (message.type === "start-game") {
-          if (!session.roomCode || !session.memberId) return;
+          if (!session.lobbyCode || !session.memberId) return;
 
-          const room = rooms.get(session.roomCode);
-          const member = room?.members.get(session.memberId);
-          const canStart = room
+          const lobby = lobbies.get(session.lobbyCode);
+          const member = lobby?.members.get(session.memberId);
+          const canStart = lobby
             && member?.role === "host"
-            && room.members.size === 2
-            && Array.from(room.members.values()).every(
-              (roomMember) => roomMember.connected && roomMember.ready,
+            && lobby.members.size === 2
+            && Array.from(lobby.members.values()).every(
+              (lobbyMember) => lobbyMember.connected && lobbyMember.ready,
             );
 
-          if (room && canStart) {
+          if (lobby && canStart) {
             const startedMessage = serializeMessage({ type: "game-started" });
-            for (const roomMember of room.members.values()) {
-              if (roomMember.socket?.readyState === 1) roomMember.socket.send(startedMessage);
+            for (const lobbyMember of lobby.members.values()) {
+              if (lobbyMember.socket?.readyState === 1) lobbyMember.socket.send(startedMessage);
             }
           }
           return;
         }
 
-        if (message.type === "leave-room") {
-          leaveCurrentRoom();
+        if (message.type === "leave-lobby") {
+          leaveCurrentLobby();
         }
       } catch {
-        socket.send(serializeMessage({ type: "room-error", message: "Invalid message" }));
+        socket.send(serializeMessage({ type: "lobby-error", message: "Invalid message" }));
       }
     });
 
-    socket.on("close", leaveCurrentRoom);
+    socket.on("close", leaveCurrentLobby);
   });
 
   return app;

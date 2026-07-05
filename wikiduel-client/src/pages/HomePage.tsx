@@ -5,34 +5,34 @@ import { ConnectionBadge } from '../components/ConnectionBadge'
 import { AppShell } from '../components/ui/AppShell'
 import { ArrowRightIcon, PlayersIcon } from '../components/ui/Icons'
 import { Panel } from '../components/ui/Panel'
-import { useRoom } from '../features/rooms/roomContext'
+import { useLobby } from '../features/lobby/lobbyContext'
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { status, room, error, notice, createRoom, joinRoom, clearNotice } = useRoom()
-  const [roomCode, setRoomCode] = useState('')
-  const [awaitingRoom, setAwaitingRoom] = useState(false)
-  const canSubmit = status === 'connected' && !awaitingRoom
+  const { status, lobby, error, notice, createLobby, joinLobby, clearNotice } = useLobby()
+  const [lobbyCode, setLobbyCode] = useState('')
+  const [awaitingLobby, setAwaitingLobby] = useState(false)
+  const canSubmit = status === 'connected' && !awaitingLobby
 
   useEffect(() => {
-    if (awaitingRoom && room) navigate(`/room/${room.code}`)
-  }, [awaitingRoom, navigate, room])
+    if (awaitingLobby && lobby) navigate(`/lobby/${lobby.code}`)
+  }, [awaitingLobby, lobby, navigate])
 
   useEffect(() => {
-    if (error) setAwaitingRoom(false)
+    if (error) setAwaitingLobby(false)
   }, [error])
 
   const handleCreate = () => {
-    setAwaitingRoom(true)
-    createRoom()
+    setAwaitingLobby(true)
+    createLobby()
   }
 
   const submitJoin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (roomCode.length !== 5) return
+    if (lobbyCode.length !== 5) return
 
-    setAwaitingRoom(true)
-    joinRoom(roomCode)
+    setAwaitingLobby(true)
+    joinLobby(lobbyCode)
   }
 
   return (
@@ -75,28 +75,28 @@ export function HomePage() {
                   onClick={handleCreate}
                   disabled={!canSubmit}
                 >
-                  {awaitingRoom ? 'Creating lobby…' : 'Create lobby'} <ArrowRightIcon />
+                  {awaitingLobby ? 'Creating lobby…' : 'Create lobby'} <ArrowRightIcon />
                 </button>
               </article>
 
               <form className="flex min-h-[210px] flex-col p-5 max-[640px]:min-h-0" onSubmit={submitJoin}>
-                <label className="ds-label" htmlFor="room-code">Lobby code</label>
+                <label className="ds-label" htmlFor="lobby-code">Lobby code</label>
                 <input
                   className="ds-focus mt-3 h-12 w-full rounded-control border border-line bg-canvas-deep/35 px-4 font-mono text-xl font-bold tracking-[0.22em] text-host uppercase placeholder:text-ink-faint/60"
-                  id="room-code"
-                  value={roomCode}
-                  onChange={(event) => setRoomCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 5))}
+                  id="lobby-code"
+                  value={lobbyCode}
+                  onChange={(event) => setLobbyCode(event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 5))}
                   placeholder="7G8KZ"
                   autoComplete="off"
                   spellCheck="false"
-                  aria-describedby={error ? 'room-code-error' : undefined}
+                  aria-describedby={error ? 'lobby-code-error' : undefined}
                 />
                 <p className="mt-3 mb-0 text-sm leading-[1.55] text-ink-soft">Enter the code exactly as it appears in the host’s lobby.</p>
-                {error ? <p className="mt-2 mb-0 text-xs font-semibold text-danger" id="room-code-error" role="alert">{error}</p> : null}
+                {error ? <p className="mt-2 mb-0 text-xs font-semibold text-danger" id="lobby-code-error" role="alert">{error}</p> : null}
                 <button
                   className="ds-focus mt-auto flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-line bg-surface-raised px-4 font-display text-xs font-extrabold tracking-[0.04em] text-ink uppercase transition-[border-color,background-color,transform] hover:not-disabled:-translate-y-px hover:not-disabled:border-host hover:not-disabled:bg-surface disabled:cursor-not-allowed disabled:opacity-40 max-[640px]:mt-6"
                   type="submit"
-                  disabled={!canSubmit || roomCode.length !== 5}
+                  disabled={!canSubmit || lobbyCode.length !== 5}
                 >
                   Join lobby <ArrowRightIcon />
                 </button>
