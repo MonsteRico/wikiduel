@@ -138,6 +138,20 @@ describe('WebSocketTransport', () => {
     expect(statuses.at(-1)).toBe('disconnected')
   })
 
+  it('reports the same stable outcome when opening the connection fails', () => {
+    const transport = new WebSocketTransport('not-a-websocket-url', () => {
+      throw new Error('Invalid WebSocket URL')
+    })
+    const failures: string[] = []
+    const statuses: string[] = []
+    transport.subscribeFailure((failure) => failures.push(failure))
+    transport.subscribeStatus((status) => statuses.push(status))
+
+    expect(() => transport.connect()).not.toThrow()
+    expect(failures).toEqual(['connection-error'])
+    expect(statuses.at(-1)).toBe('disconnected')
+  })
+
   it('stops delivery after a subscriber cleans up', () => {
     type ServerMessage = { type: 'pong'; message: string }
     const socket = new ControllableWebSocket()
@@ -154,5 +168,26 @@ describe('WebSocketTransport', () => {
     socket.receive({ type: 'pong', message: 'After cleanup' })
 
     expect(received).toEqual(['Before cleanup'])
+  })
+
+  it('does not dispatch events from a closed connection after reconnecting', () => {
+    type ServerMessage = { type: 'pong'; message: string }
+    const closedSocket = new ControllableWebSocket()
+    const activeSocket = new ControllableWebSocket()
+    let connectionCount = 0
+    const transport = new WebSocketTransport<object, ServerMessage>(
+      'ws://example.test/ws',
+      () => connectionCount++ === 0 ? closedSocket : activeSocket,
+    )
+    const received: string[] = []
+    transport.subscribe('pong', (message) => received.push(message.message))
+    transport.connect()
+    transport.close()
+    transport.connect()
+
+    closedSocket.receive({ type: 'pong', message: 'Stale delivery' })
+    activeSocket.receive({ type: 'pong', message: 'Current delivery' })
+
+    expect(received).toEqual(['Current delivery'])
   })
 })

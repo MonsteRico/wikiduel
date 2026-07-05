@@ -36,7 +36,14 @@ export class WebSocketTransport<
     if (this.socket) return
 
     this.setStatus('connecting')
-    const socket = this.createWebSocket(this.url)
+    let socket: WebSocketConnection
+    try {
+      socket = this.createWebSocket(this.url)
+    } catch {
+      this.setStatus('disconnected')
+      this.reportFailure('connection-error')
+      return
+    }
     this.socket = socket
     socket.addEventListener('open', this.handleOpen)
     socket.addEventListener('close', this.handleClose)
@@ -45,7 +52,13 @@ export class WebSocketTransport<
   }
 
   close() {
-    this.socket?.close()
+    const socket = this.socket
+    if (!socket) return
+
+    this.detachSocket(socket)
+    this.socket = null
+    socket.close()
+    this.setStatus('disconnected')
   }
 
   send(message: OutboundMessage) {
@@ -91,26 +104,42 @@ export class WebSocketTransport<
   }
 
   private readonly handleClose = () => {
+    if (this.socket) this.detachSocket(this.socket)
     this.socket = null
     this.setStatus('disconnected')
   }
 
   private readonly handleError = () => {
-    this.setStatus('disconnected')
     this.reportFailure('connection-error')
+    this.close()
   }
 
   private readonly handleMessage = (event: MessageEvent) => {
-    try {
-      const message = JSON.parse(String(event.data)) as unknown
-      if (!this.isMessageEnvelope(message)) throw new Error('Unreadable message')
-      const listeners = this.messageListeners.get(message.type)
-      if (!listeners) return
+    let message: unknown
 
-      for (const listener of listeners) listener(message as InboundMessage)
+    try {
+      message = JSON.parse(String(event.data)) as unknown
     } catch {
       this.reportFailure('unreadable-message')
+      return
     }
+
+    if (!this.isMessageEnvelope(message)) {
+      this.reportFailure('unreadable-message')
+      return
+    }
+
+    const listeners = this.messageListeners.get(message.type)
+    if (!listeners) return
+
+    for (const listener of listeners) listener(message as InboundMessage)
+  }
+
+  private detachSocket(socket: WebSocketConnection) {
+    socket.removeEventListener('open', this.handleOpen)
+    socket.removeEventListener('close', this.handleClose)
+    socket.removeEventListener('error', this.handleError)
+    socket.removeEventListener('message', this.handleMessage)
   }
 
   private isMessageEnvelope(message: unknown): message is MessageEnvelope {
