@@ -124,6 +124,40 @@ describe("WikipediaGateway", () => {
     });
   });
 
+  test("batches image attribution requests within the scaled-image limit", async () => {
+    const titles = Array.from({ length: 51 }, (_, index) => `File:Image ${index + 1}.jpg`);
+    const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      const batchTitles = url.searchParams.get("titles")?.split("|") ?? [];
+      return new Response(JSON.stringify({
+        query: { pages: batchTitles.map((title) => ({
+          title,
+          imageinfo: [{
+            thumburl: `https://upload.wikimedia.org/wikipedia/commons/${encodeURIComponent(title)}.jpg`,
+            thumbwidth: 800,
+            thumbheight: 600,
+            descriptionurl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(title)}`,
+            mime: "image/jpeg",
+            extmetadata: {},
+          }],
+        })) },
+      }), { status: 200 });
+    });
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    const result = await gateway.fetchImageMetadata(titles);
+
+    expect(result).toHaveLength(51);
+    expect(request).toHaveBeenCalledTimes(2);
+    const firstUrl = request.mock.calls[0]?.[0] as URL;
+    const secondUrl = request.mock.calls[1]?.[0] as URL;
+    expect(firstUrl.searchParams.get("titles")?.split("|")).toHaveLength(50);
+    expect(secondUrl.searchParams.get("titles")).toBe("File:Image 51.jpg");
+  });
+
   test("bulk-resolves redirect aliases to canonical link metadata without fetching bodies", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       batchcomplete: true,

@@ -92,6 +92,30 @@ function metadataBoolean(metadata: Record<string, unknown> | undefined, key: str
   return value !== undefined && !["", "0", "false", "no"].includes(value);
 }
 
+function aliasesFrom(query: Record<string, unknown>): ReadonlyMap<string, string> {
+  const aliases = new Map<string, string>();
+  for (const entry of [
+    ...(Array.isArray(query.normalized) ? query.normalized : []),
+    ...(Array.isArray(query.redirects) ? query.redirects : []),
+  ]) {
+    const alias = asRecord(entry);
+    if (typeof alias?.from === "string" && typeof alias.to === "string") {
+      aliases.set(alias.from, alias.to);
+    }
+  }
+  return aliases;
+}
+
+function canonicalTitle(requestedTitle: string, aliases: ReadonlyMap<string, string>): string {
+  let title = requestedTitle;
+  const visited = new Set<string>();
+  while (aliases.has(title) && !visited.has(title)) {
+    visited.add(title);
+    title = aliases.get(title)!;
+  }
+  return title;
+}
+
 function packageError(error: unknown): WikipediaGatewayError {
   const record = asRecord(error);
   const message = error instanceof Error ? error.message : String(error);
@@ -234,26 +258,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       const body = asRecord(await response.json());
       const query = asRecord(body?.query);
       if (!query || !Array.isArray(query.pages)) throw new WikipediaGatewayError("invalid-response");
-      const aliases = new Map<string, string>();
-      for (const entry of [
-        ...(Array.isArray(query.normalized) ? query.normalized : []),
-        ...(Array.isArray(query.redirects) ? query.redirects : []),
-      ]) {
-        const alias = asRecord(entry);
-        if (typeof alias?.from === "string" && typeof alias.to === "string") {
-          aliases.set(alias.from, alias.to);
-        }
-      }
+      const aliases = aliasesFrom(query);
       const pages = query.pages.map(asRecord);
       const images: WikipediaImageMetadata[] = [];
       for (const requestedTitle of titles) {
-        let canonicalTitle = requestedTitle;
-        const visited = new Set<string>();
-        while (aliases.has(canonicalTitle) && !visited.has(canonicalTitle)) {
-          visited.add(canonicalTitle);
-          canonicalTitle = aliases.get(canonicalTitle)!;
-        }
-        const page = pages.find((candidate) => candidate?.title === canonicalTitle);
+        const title = canonicalTitle(requestedTitle, aliases);
+        const page = pages.find((candidate) => candidate?.title === title);
         const info = asRecord(Array.isArray(page?.imageinfo) ? page.imageinfo[0] : undefined);
         const metadata = asRecord(info?.extmetadata);
         const width = positiveInteger(info?.thumbwidth);
@@ -332,26 +342,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       if (!query || !Array.isArray(query.pages)) {
         throw new WikipediaGatewayError("invalid-response");
       }
-      const aliases = new Map<string, string>();
-      for (const entry of [
-        ...(Array.isArray(query.normalized) ? query.normalized : []),
-        ...(Array.isArray(query.redirects) ? query.redirects : []),
-      ]) {
-        const alias = asRecord(entry);
-        if (typeof alias?.from === "string" && typeof alias.to === "string") {
-          aliases.set(alias.from, alias.to);
-        }
-      }
+      const aliases = aliasesFrom(query);
       const pages = query.pages.map(asRecord);
 
       return titles.map((requestedTitle): WikipediaResolvedLink => {
-        let canonicalTitle = requestedTitle;
-        const visited = new Set<string>();
-        while (aliases.has(canonicalTitle) && !visited.has(canonicalTitle)) {
-          visited.add(canonicalTitle);
-          canonicalTitle = aliases.get(canonicalTitle)!;
-        }
-        const page = pages.find((candidate) => candidate?.title === canonicalTitle);
+        const title = canonicalTitle(requestedTitle, aliases);
+        const page = pages.find((candidate) => candidate?.title === title);
         if (!page || Object.hasOwn(page, "missing")) {
           return { requestedTitle, exists: false };
         }
