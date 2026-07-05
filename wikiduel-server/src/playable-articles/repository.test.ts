@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   WikipediaGatewayError,
+  type WikipediaImageMetadata,
   type WikipediaPageSnapshot,
   type WikipediaResolvedLink,
 } from "./gateway.js";
@@ -17,6 +18,21 @@ const baseSnapshot: WikipediaPageSnapshot = {
   disambiguation: false,
 };
 
+const safeImageMetadata: WikipediaImageMetadata = {
+  requestedTitle: "File:Ada portrait.jpg",
+  sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/320px-Ada.jpg",
+  width: 320,
+  height: 400,
+  mimeType: "image/jpeg",
+  descriptionUrl: "https://commons.wikimedia.org/wiki/File:Ada_portrait.jpg",
+  creatorHtml: "<b>Margaret Sarah Carpenter &#x26; studio</b><script>ignored()</script>",
+  creditHtml: "National Portrait Gallery",
+  licenseName: "Public domain",
+  licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+  nonFree: false,
+  restrictions: [],
+};
+
 function repositoryFor(
   value: WikipediaPageSnapshot | Error,
   resolvedLinks: readonly WikipediaResolvedLink[] = [],
@@ -27,10 +43,165 @@ function repositoryFor(
       return value;
     },
     resolveLinks: async () => resolvedLinks,
+    fetchImageMetadata: async () => [],
   });
 }
 
 describe("PlayableArticleRepository", () => {
+  test("preserves a safe attributed article-body figure at its source position", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `
+          <p>Before the portrait.</p>
+          <figure typeof="mw:File/Thumb">
+            <a href="/wiki/File:Ada_portrait.jpg" class="mw-file-description">
+              <img alt="Portrait of Ada Lovelace" width="320" height="400"
+                src="//upload.wikimedia.org/untrusted-source.jpg">
+            </a>
+            <figcaption>Ada Lovelace in 1840</figcaption>
+          </figure>
+          <p>After the portrait.</p>
+        `,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [safeImageMetadata],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: {
+        document: {
+          blocks: [
+            { type: "paragraph", children: [{ type: "text", value: "Before the portrait." }] },
+            {
+              type: "figure",
+              sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/320px-Ada.jpg",
+              width: 320,
+              height: 400,
+              alt: "Portrait of Ada Lovelace",
+              caption: [{ type: "text", value: "Ada Lovelace in 1840" }],
+              attribution: {
+                descriptionUrl: "https://commons.wikimedia.org/wiki/File:Ada_portrait.jpg",
+                historyUrl: "https://commons.wikimedia.org/w/index.php?title=File%3AAda_portrait.jpg&action=history",
+                creator: "Margaret Sarah Carpenter & studio",
+                credit: "National Portrait Gallery",
+                licenseName: "Public domain",
+                licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+              },
+            },
+            { type: "paragraph", children: [{ type: "text", value: "After the portrait." }] },
+          ],
+        },
+      },
+    });
+  });
+
+  test("uses the prose classifier for Navigation Nodes inside figure captions", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<p>Article text.</p><figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+          <figcaption>Portrait of <a href="/wiki/Ada_Lovelace"><em>Ada</em></a></figcaption>
+        </figure>`,
+      }),
+      resolveLinks: async () => [{
+        requestedTitle: "Ada Lovelace",
+        exists: true,
+        pageId: 974,
+        namespace: 0,
+        title: "Ada Lovelace",
+        disambiguation: false,
+      }],
+      fetchImageMetadata: async () => [safeImageMetadata],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [
+        { type: "paragraph" },
+        { type: "figure", caption: [
+          { type: "text", value: "Portrait of " },
+          {
+            type: "navigation",
+            destination: { pageId: 974, title: "Ada Lovelace" },
+            children: [{ type: "emphasis", children: [{ type: "text", value: "Ada" }] }],
+          },
+        ] },
+      ] } },
+    });
+  });
+
+  test.each([
+    ["HTTP source", { sourceUrl: "http://upload.wikimedia.org/image.jpg" }],
+    ["protocol-relative source", { sourceUrl: "//upload.wikimedia.org/image.jpg" }],
+    ["credentialed source", { sourceUrl: "https://name:secret@upload.wikimedia.org/image.jpg" }],
+    ["unapproved source origin", { sourceUrl: "https://images.example/image.jpg" }],
+    ["redirect-shaped source path", {
+      sourceUrl: "https://upload.wikimedia.org/redirect?to=https://images.example/image.jpg",
+    }],
+    ["unapproved description origin", { descriptionUrl: "https://example.com/wiki/File:Ada_portrait.jpg" }],
+    ["HTTP license", { licenseUrl: "http://creativecommons.org/licenses/by/4.0/" }],
+    ["unsupported SVG MIME type", { mimeType: "image/svg+xml" }],
+    ["non-free status", { nonFree: true }],
+    ["fair-use restriction", { restrictions: ["fair-use"] }],
+    ["one-pixel tracking dimensions", { width: 1, height: 1 }],
+    ["missing license URL", { licenseUrl: undefined }],
+  ] as const)("omits media with %s without rejecting the article", async (_case, changes) => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<p>Article remains readable.</p><figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{ ...safeImageMetadata, ...changes }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.article.document.blocks).toHaveLength(1);
+  });
+
+  test("omits a figure whose description URL is not an approved file page", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<p>Article remains readable.</p><figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Forged.jpg"><img alt="Forged image"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        requestedTitle: "File:Forged.jpg",
+        sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/f/forged.jpg",
+        width: 100,
+        height: 100,
+        mimeType: "image/jpeg",
+        descriptionUrl: "https://commons.wikimedia.org/w/index.php?title=File:Forged.jpg&redirect=https://evil.example",
+        licenseName: "CC BY 4.0",
+        licenseUrl: "https://creativecommons.org/licenses/by/4.0/",
+        nonFree: false,
+        restrictions: [],
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{ type: "paragraph" }] } },
+    });
+    if (result.ok) expect(result.article.document.blocks).toHaveLength(1);
+  });
+
   test("emits a canonical Navigation Node for an eligible internal link", async () => {
     const repository = repositoryFor(
       {
@@ -156,6 +327,7 @@ describe("PlayableArticleRepository", () => {
         </p>`,
       }),
       resolveLinks,
+      fetchImageMetadata: async () => [],
     });
 
     const result = await repository.getByTitle("Ada Lovelace");

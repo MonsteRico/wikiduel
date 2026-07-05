@@ -34,6 +34,96 @@ describe("WikipediaGateway", () => {
     vi.clearAllMocks();
   });
 
+  test("fetches complete image attribution for structural figure candidates", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      batchcomplete: true,
+      query: {
+        pages: [{
+          ns: 6,
+          title: "File:Ada portrait.jpg",
+          imagerepository: "shared",
+          imageinfo: [{
+            thumburl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/800px-Ada.jpg",
+            thumbwidth: 800,
+            thumbheight: 1000,
+            descriptionurl: "https://commons.wikimedia.org/wiki/File:Ada_portrait.jpg",
+            mime: "image/jpeg",
+            mediatype: "BITMAP",
+            extmetadata: {
+              Artist: { value: "<b>Margaret Sarah Carpenter</b>" },
+              Credit: { value: "National Portrait Gallery" },
+              LicenseShortName: { value: "Public domain" },
+              LicenseUrl: { value: "https://creativecommons.org/publicdomain/mark/1.0/" },
+              NonFree: { value: "False" },
+              Restrictions: { value: "" },
+            },
+          }],
+        }],
+      },
+    }), { status: 200 }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    await expect(gateway.fetchImageMetadata?.(["File:Ada portrait.jpg"])).resolves.toEqual([{
+      requestedTitle: "File:Ada portrait.jpg",
+      sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/800px-Ada.jpg",
+      width: 800,
+      height: 1000,
+      mimeType: "image/jpeg",
+      descriptionUrl: "https://commons.wikimedia.org/wiki/File:Ada_portrait.jpg",
+      creatorHtml: "<b>Margaret Sarah Carpenter</b>",
+      creditHtml: "National Portrait Gallery",
+      licenseName: "Public domain",
+      licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+      nonFree: false,
+      restrictions: [],
+    }]);
+
+    const [url, options] = request.mock.calls[0] as [URL, RequestInit];
+    expect(url.searchParams.get("titles")).toBe("File:Ada portrait.jpg");
+    expect(url.searchParams.get("prop")).toBe("imageinfo");
+    expect(url.searchParams.get("iiprop")).toContain("extmetadata");
+    expect(url.searchParams.get("iiurlwidth")).toBe("800");
+    expect(options.headers).toEqual({
+      "Api-User-Agent": "WikiDuel/0.1 (contact@example.com)",
+      "User-Agent": "WikiDuel/0.1 (contact@example.com)",
+    });
+  });
+
+  test("translates booleanish non-free metadata conservatively", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      query: { pages: [{
+        title: "File:Non-free.jpg",
+        imageinfo: [{
+          thumburl: "https://upload.wikimedia.org/non-free.jpg",
+          thumbwidth: 200,
+          thumbheight: 100,
+          descriptionurl: "https://en.wikipedia.org/wiki/File:Non-free.jpg",
+          mime: "image/jpeg",
+          extmetadata: {
+            LicenseShortName: { value: "Fair use" },
+            LicenseUrl: { value: "https://en.wikipedia.org/wiki/Wikipedia:Non-free_content" },
+            NonFree: { value: "1" },
+            Restrictions: { value: "fair-use|trademarked" },
+          },
+        }],
+      }] },
+    }), { status: 200 }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    const [image] = await gateway.fetchImageMetadata(["File:Non-free.jpg"]);
+
+    expect(image).toMatchObject({
+      nonFree: true,
+      restrictions: ["fair-use", "trademarked"],
+    });
+  });
+
   test("bulk-resolves redirect aliases to canonical link metadata without fetching bodies", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       batchcomplete: true,

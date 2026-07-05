@@ -22,9 +22,25 @@ export type WikipediaResolvedLink = Readonly<
     }
 >;
 
+export type WikipediaImageMetadata = Readonly<{
+  requestedTitle: string;
+  sourceUrl: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  descriptionUrl: string;
+  creatorHtml?: string;
+  creditHtml?: string;
+  licenseName?: string;
+  licenseUrl?: string;
+  nonFree: boolean;
+  restrictions: readonly string[];
+}>;
+
 export interface WikipediaGateway {
   fetchPage(title: string): Promise<WikipediaPageSnapshot>;
   resolveLinks(titles: readonly string[]): Promise<readonly WikipediaResolvedLink[]>;
+  fetchImageMetadata(titles: readonly string[]): Promise<readonly WikipediaImageMetadata[]>;
 }
 
 export type GatewayFailureKind = "not-found" | "rate-limited" | "unavailable" | "invalid-response";
@@ -64,6 +80,16 @@ function positiveInteger(value: unknown): number | undefined {
 function retryAfter(response: Response): number | undefined {
   const value = Number(response.headers.get("retry-after"));
   return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function metadataText(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+  const entry = asRecord(metadata?.[key]);
+  return typeof entry?.value === "string" && entry.value.trim() ? entry.value : undefined;
+}
+
+function metadataBoolean(metadata: Record<string, unknown> | undefined, key: string): boolean {
+  const value = metadataText(metadata, key)?.toLocaleLowerCase("en-US");
+  return value !== undefined && !["", "0", "false", "no"].includes(value);
 }
 
 function packageError(error: unknown): WikipediaGatewayError {
@@ -161,6 +187,106 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         html,
         disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
       };
+    },
+    async fetchImageMetadata(titles): Promise<readonly WikipediaImageMetadata[]> {
+      if (titles.length === 0) return [];
+      if (titles.length > 50) {
+        const images: WikipediaImageMetadata[] = [];
+        for (let start = 0; start < titles.length; start += 50) {
+          images.push(...await this.fetchImageMetadata(titles.slice(start, start + 50)));
+        }
+        return images;
+      }
+
+      const url = new URL("https://en.wikipedia.org/w/api.php");
+      url.search = new URLSearchParams({
+        action: "query",
+        format: "json",
+        formatversion: "2",
+        redirects: "1",
+        titles: titles.join("|"),
+        prop: "imageinfo",
+        iiprop: "url|size|mime|mediatype|extmetadata",
+        iiurlwidth: "800",
+        iiextmetadatalanguage: "en",
+        iiextmetadatafilter: [
+          "Artist", "Credit", "Attribution", "LicenseShortName", "LicenseUrl",
+          "UsageTerms", "NonFree", "Restrictions",
+        ].join("|"),
+      }).toString();
+
+      let response: Response;
+      try {
+        response = await request(url, {
+          headers: {
+            "Api-User-Agent": dependencies.userAgent,
+            "User-Agent": dependencies.userAgent,
+          },
+        });
+      } catch (error) {
+        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
+      }
+      if (response.status === 429) {
+        throw new WikipediaGatewayError("rate-limited", retryAfter(response));
+      }
+      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+
+      const body = asRecord(await response.json());
+      const query = asRecord(body?.query);
+      if (!query || !Array.isArray(query.pages)) throw new WikipediaGatewayError("invalid-response");
+      const aliases = new Map<string, string>();
+      for (const entry of [
+        ...(Array.isArray(query.normalized) ? query.normalized : []),
+        ...(Array.isArray(query.redirects) ? query.redirects : []),
+      ]) {
+        const alias = asRecord(entry);
+        if (typeof alias?.from === "string" && typeof alias.to === "string") {
+          aliases.set(alias.from, alias.to);
+        }
+      }
+      const pages = query.pages.map(asRecord);
+      const images: WikipediaImageMetadata[] = [];
+      for (const requestedTitle of titles) {
+        let canonicalTitle = requestedTitle;
+        const visited = new Set<string>();
+        while (aliases.has(canonicalTitle) && !visited.has(canonicalTitle)) {
+          visited.add(canonicalTitle);
+          canonicalTitle = aliases.get(canonicalTitle)!;
+        }
+        const page = pages.find((candidate) => candidate?.title === canonicalTitle);
+        const info = asRecord(Array.isArray(page?.imageinfo) ? page.imageinfo[0] : undefined);
+        const metadata = asRecord(info?.extmetadata);
+        const width = positiveInteger(info?.thumbwidth);
+        const height = positiveInteger(info?.thumbheight);
+        if (
+          !info || typeof info.thumburl !== "string" || !width
+          || !height || typeof info.mime !== "string"
+          || typeof info.descriptionurl !== "string"
+        ) continue;
+        const creator = metadataText(metadata, "Attribution") ?? metadataText(metadata, "Artist");
+        const credit = metadataText(metadata, "Credit");
+        const licenseName = metadataText(metadata, "LicenseShortName")
+          ?? metadataText(metadata, "UsageTerms");
+        const licenseUrl = metadataText(metadata, "LicenseUrl");
+        const restrictionValue = metadataText(metadata, "Restrictions");
+        images.push({
+          requestedTitle,
+          sourceUrl: info.thumburl,
+          width,
+          height,
+          mimeType: info.mime,
+          descriptionUrl: info.descriptionurl,
+          ...(creator ? { creatorHtml: creator } : {}),
+          ...(credit ? { creditHtml: credit } : {}),
+          ...(licenseName ? { licenseName } : {}),
+          ...(licenseUrl ? { licenseUrl } : {}),
+          nonFree: metadataBoolean(metadata, "NonFree"),
+          restrictions: restrictionValue
+            ? restrictionValue.split("|").map((value) => value.trim()).filter(Boolean)
+            : [],
+        });
+      }
+      return images;
     },
     // wikipedia@2.5.0 exposes links as source-page title strings only. It does
     // not bulk-resolve redirects, existence, namespaces, or page properties,

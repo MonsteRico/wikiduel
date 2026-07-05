@@ -3,6 +3,7 @@ import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 import type {
   ArticleBlock,
   ArticleDocument,
+  ArticleFigure,
   ArticleInline,
   NavigationDestination,
 } from "./model.js";
@@ -12,11 +13,12 @@ type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
 const EXCLUDED_TAGS = new Set([
   "script", "style", "template", "noscript", "iframe", "object", "embed",
-  "table", "figure", "audio", "video", "svg", "math", "form", "input", "button",
+  "table", "audio", "video", "svg", "math", "form", "input", "button",
 ]);
 const EXCLUDED_CLASSES = [
   "navbox", "infobox", "hatnote", "mw-editsection", "reference", "reflist", "gallery",
-  "metadata", "ambox", "vertical-navbox",
+  "metadata", "ambox", "mbox-small", "tmbox", "ombox", "fmbox", "cmbox", "imbox",
+  "vertical-navbox", "mw-kartographer", "mw-kartographer-map",
 ];
 const NON_ARTICLE_NAMESPACES = new Set(["category", "file", "help", "special", "talk"]);
 
@@ -30,6 +32,20 @@ function isText(node: Node): node is DefaultTreeAdapterMap["textNode"] {
 
 function childrenOf(node: Node): Node[] {
   return "childNodes" in node ? node.childNodes : [];
+}
+
+function attribute(element: Element, name: string): string | undefined {
+  return element.attrs.find((candidate) => candidate.name === name)?.value;
+}
+
+function descendant(element: Element, tagName: string): Element | undefined {
+  for (const child of childrenOf(element)) {
+    if (!isElement(child)) continue;
+    if (child.tagName === tagName) return child;
+    const nested = descendant(child, tagName);
+    if (nested) return nested;
+  }
+  return undefined;
 }
 
 function isExcluded(element: Element): boolean {
@@ -85,6 +101,55 @@ function linkTitle(element: Element): string | undefined {
   }
 }
 
+function hasMeaningfulInline(nodes: readonly ArticleInline[]): boolean {
+  return nodes.some((node) => node.type === "text"
+    ? Boolean(node.value.trim())
+    : hasMeaningfulInline(node.children));
+}
+
+function imageTitle(element: Element): string | undefined {
+  if (
+    element.tagName !== "figure"
+    || !/^mw:File\/(?:Thumb|Frame|Frameless)$/.test(attribute(element, "typeof") ?? "")
+  ) {
+    return undefined;
+  }
+  const hasInterfaceMarker = (candidate: Element): boolean => {
+    const classes = new Set((attribute(candidate, "class") ?? "").split(/\s+/));
+    return ["noviewer", "mw-ui-icon", "mw-indicator", "icon", "badge"]
+      .some((className) => classes.has(className))
+      || attribute(candidate, "role") === "presentation"
+      || attribute(candidate, "aria-hidden")?.toLocaleLowerCase("en-US") === "true";
+  };
+  const containsInterfaceMarker = (candidate: Element): boolean => hasInterfaceMarker(candidate)
+    || childrenOf(candidate).some((child) => isElement(child) && containsInterfaceMarker(child));
+  if (containsInterfaceMarker(element)) return undefined;
+
+  const visit = (nodes: readonly Node[]): string | undefined => {
+    for (const node of nodes) {
+      if (!isElement(node)) continue;
+      if (node.tagName === "a") {
+        const href = attribute(node, "href");
+        if (href?.startsWith("/wiki/File:") && !href.includes("?")) {
+          try {
+            const encodedTitle = href.slice("/wiki/".length).split(/[?#]/, 1)[0];
+            if (!encodedTitle) return undefined;
+            const title = decodeURIComponent(encodedTitle)
+              .replace(/_/g, " ");
+            if (isValidWikipediaTitle(title)) return title;
+          } catch {
+            return undefined;
+          }
+        }
+      }
+      const nested = visit(childrenOf(node));
+      if (nested) return nested;
+    }
+    return undefined;
+  };
+  return visit(childrenOf(element));
+}
+
 function inlineFrom(
   nodes: readonly Node[],
   skipLists = false,
@@ -136,11 +201,25 @@ function listFrom(
 function blocksFrom(
   nodes: readonly Node[],
   destinations: ReadonlyMap<string, NavigationDestination>,
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
 ): ArticleBlock[] {
   const blocks: ArticleBlock[] = [];
   for (const node of nodes) {
     if (!isElement(node) || isExcluded(node)) continue;
-    if (/^h[2-6]$/.test(node.tagName)) {
+    if (node.tagName === "figure") {
+      const title = imageTitle(node);
+      const figure = title ? figures.get(title) : undefined;
+      if (!figure) continue;
+      const image = descendant(node, "img");
+      const captionElement = childrenOf(node)
+        .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
+      const caption = captionElement
+        ? inlineFrom(childrenOf(captionElement), false, destinations)
+        : [];
+      const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
+      if (!alt && !hasMeaningfulInline(caption)) continue;
+      blocks.push({ type: "figure", ...figure, alt, caption });
+    } else if (/^h[2-6]$/.test(node.tagName)) {
       const level = Number(node.tagName[1]) as 2 | 3 | 4 | 5 | 6;
       const children = inlineFrom(childrenOf(node), false, destinations);
       if (children.some((child) => child.type !== "text" || child.value.trim())) {
@@ -155,7 +234,7 @@ function blocksFrom(
       const list = listFrom(node, destinations);
       if (list.type === "list" && list.items.length > 0) blocks.push(list);
     } else if (node.tagName !== "h1") {
-      blocks.push(...blocksFrom(childrenOf(node), destinations));
+      blocks.push(...blocksFrom(childrenOf(node), destinations, figures));
     }
   }
   return blocks;
@@ -182,9 +261,33 @@ export function extractCandidateLinkTitles(untrustedHtml: string): readonly stri
   const visit = (nodes: readonly Node[]) => {
     for (const node of nodes) {
       if (!isElement(node) || isExcluded(node)) continue;
+      if (node.tagName === "figure") {
+        for (const child of childrenOf(node)) {
+          if (isElement(child) && child.tagName === "figcaption") visit(childrenOf(child));
+        }
+        continue;
+      }
       if (node.tagName === "a") {
         const title = linkTitle(node);
         if (title) titles.add(title);
+      }
+      visit(childrenOf(node));
+    }
+  };
+  visit(fragment.childNodes);
+  return [...titles];
+}
+
+export function extractCandidateImageTitles(untrustedHtml: string): readonly string[] {
+  const fragment = parseFragment(untrustedHtml);
+  const titles = new Set<string>();
+  const visit = (nodes: readonly Node[]) => {
+    for (const node of nodes) {
+      if (!isElement(node) || isExcluded(node)) continue;
+      if (node.tagName === "figure") {
+        const title = imageTitle(node);
+        if (title) titles.add(title);
+        continue;
       }
       visit(childrenOf(node));
     }
@@ -197,9 +300,10 @@ export function normalizeArticleDocument(
   title: string,
   untrustedHtml: string,
   destinations: ReadonlyMap<string, NavigationDestination> = new Map(),
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">> = new Map(),
 ): ArticleDocument | null {
   const fragment = parseFragment(untrustedHtml);
-  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations));
+  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures));
   const hasMeaningfulText = JSON.stringify(blocks).replace(/[\s\W]/g, "").length > 0;
   return hasMeaningfulText ? { title, blocks } : null;
 }
