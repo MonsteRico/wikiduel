@@ -10,8 +10,21 @@ export type WikipediaPageSnapshot = Readonly<{
   disambiguation: boolean;
 }>;
 
+export type WikipediaResolvedLink = Readonly<
+  | { requestedTitle: string; exists: false }
+  | {
+      requestedTitle: string;
+      exists: true;
+      pageId: number;
+      namespace: number;
+      title: string;
+      disambiguation: boolean;
+    }
+>;
+
 export interface WikipediaGateway {
   fetchPage(title: string): Promise<WikipediaPageSnapshot>;
+  resolveLinks(titles: readonly string[]): Promise<readonly WikipediaResolvedLink[]>;
 }
 
 export type GatewayFailureKind = "not-found" | "rate-limited" | "unavailable" | "invalid-response";
@@ -144,6 +157,87 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         html,
         disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
       };
+    },
+    // wikipedia@2.5.0 exposes links as source-page title strings only. It does
+    // not bulk-resolve redirects, existence, namespaces, or page properties,
+    // so this missing contract uses the official query API in 50-title batches.
+    async resolveLinks(titles): Promise<readonly WikipediaResolvedLink[]> {
+      if (titles.length === 0) return [];
+      if (titles.length > 50) {
+        const resolved: WikipediaResolvedLink[] = [];
+        for (let start = 0; start < titles.length; start += 50) {
+          resolved.push(...await this.resolveLinks(titles.slice(start, start + 50)));
+        }
+        return resolved;
+      }
+
+      const url = new URL("https://en.wikipedia.org/w/api.php");
+      url.search = new URLSearchParams({
+        action: "query",
+        format: "json",
+        formatversion: "2",
+        redirects: "1",
+        titles: titles.join("|"),
+        prop: "pageprops",
+      }).toString();
+
+      let response: Response;
+      try {
+        response = await request(url, {
+          headers: {
+            "Api-User-Agent": dependencies.userAgent,
+            "User-Agent": dependencies.userAgent,
+          },
+        });
+      } catch (error) {
+        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
+      }
+      if (response.status === 429) {
+        throw new WikipediaGatewayError("rate-limited", retryAfter(response));
+      }
+      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+
+      const body = asRecord(await response.json());
+      const query = asRecord(body?.query);
+      if (!query || !Array.isArray(query.pages)) {
+        throw new WikipediaGatewayError("invalid-response");
+      }
+      const aliases = new Map<string, string>();
+      for (const entry of [
+        ...(Array.isArray(query.normalized) ? query.normalized : []),
+        ...(Array.isArray(query.redirects) ? query.redirects : []),
+      ]) {
+        const alias = asRecord(entry);
+        if (typeof alias?.from === "string" && typeof alias.to === "string") {
+          aliases.set(alias.from, alias.to);
+        }
+      }
+      const pages = query.pages.map(asRecord);
+
+      return titles.map((requestedTitle): WikipediaResolvedLink => {
+        let canonicalTitle = requestedTitle;
+        const visited = new Set<string>();
+        while (aliases.has(canonicalTitle) && !visited.has(canonicalTitle)) {
+          visited.add(canonicalTitle);
+          canonicalTitle = aliases.get(canonicalTitle)!;
+        }
+        const page = pages.find((candidate) => candidate?.title === canonicalTitle);
+        if (!page || Object.hasOwn(page, "missing")) {
+          return { requestedTitle, exists: false };
+        }
+        const pageId = positiveInteger(page.pageid);
+        if (!pageId || !Number.isInteger(page.ns) || typeof page.title !== "string") {
+          throw new WikipediaGatewayError("invalid-response");
+        }
+        return {
+          requestedTitle,
+          exists: true,
+          pageId,
+          namespace: page.ns as number,
+          title: page.title,
+          disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
+        };
+      });
     },
   };
 }

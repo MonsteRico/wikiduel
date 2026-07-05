@@ -1,7 +1,14 @@
+export type NavigationDestination = Readonly<{ pageId: number; title: string }>;
+
 export type ArticleInline =
   | Readonly<{ type: "text"; value: string }>
   | Readonly<{ type: "strong"; children: readonly ArticleInline[] }>
-  | Readonly<{ type: "emphasis"; children: readonly ArticleInline[] }>;
+  | Readonly<{ type: "emphasis"; children: readonly ArticleInline[] }>
+  | Readonly<{
+      type: "navigation";
+      destination: NavigationDestination;
+      children: readonly ArticleInline[];
+    }>;
 
 export type ArticleBlock =
   | Readonly<{ type: "heading"; level: 2 | 3 | 4 | 5 | 6; children: readonly ArticleInline[] }>

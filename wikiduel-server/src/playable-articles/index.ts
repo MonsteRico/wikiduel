@@ -7,6 +7,7 @@ export type {
   ArticleBlock,
   ArticleDocument,
   ArticleInline,
+  NavigationDestination,
   PlayableArticle,
   PlayableArticleFailure,
   PlayableArticleResult,

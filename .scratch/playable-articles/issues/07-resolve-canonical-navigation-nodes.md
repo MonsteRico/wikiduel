@@ -2,9 +2,10 @@
 
 # Resolve Canonical Navigation Nodes
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 10:53 PM via [PR #6](https://github.com/MonsteRico/wikiduel/pull/6)
 
 ## Parent
 
@@ -17,13 +18,17 @@ Extend Article Document normalization so eligible internal Wikipedia links becom
 
 ## Acceptance criteria
 
-- [ ] Every Navigation Node contains canonical destination page ID/title and typed inline label content, never an executable URL.
-- [ ] Candidate links are resolved and classified before rendering without recursively fetching destination article bodies.
-- [ ] Redirects resolve to their canonical destination within the same prospective Navigation.
-- [ ] One extensible classifier accepts valid namespace-zero articles and rejects missing, disambiguation, `List of`/`Lists of`, standalone calendar-year, and canonical month-day destinations.
-- [ ] External, edit, help, file, category, talk, special, search, red, citation, and in-page footnote links remain non-interactive text.
-- [ ] Link-resolution batching or continuation is delegated to the package where verified and implemented directly only for missing package capabilities.
-- [ ] Tests cover canonical resolution, each exclusion, redirect aliases, readable fallback text, malformed links, and large candidate sets.
+- [x] Every Navigation Node contains canonical destination page ID/title and typed inline label content, never an executable URL.
+- [x] Candidate links are resolved and classified before rendering without recursively fetching destination article bodies.
+- [x] Redirects resolve to their canonical destination within the same prospective Navigation.
+- [x] One extensible classifier accepts valid namespace-zero articles and rejects missing, disambiguation, `List of`/`Lists of`, standalone calendar-year, and canonical month-day destinations.
+- [x] External, edit, help, file, category, talk, special, search, red, citation, and in-page footnote links remain non-interactive text.
+- [x] Link-resolution batching or continuation is delegated to the package where verified and implemented directly only for missing package capabilities.
+- [x] Tests cover canonical resolution, each exclusion, redirect aliases, readable fallback text, malformed links, and large candidate sets.
+
+## Implementation note
+
+The `wikipedia` package exposes source link titles but not the bulk canonical identity and page-property metadata required for Navigation classification. The gateway therefore uses the official query API only for that missing contract, in 50-title batches, while destination article bodies remain lazy.
 
 ## Blocked by
 

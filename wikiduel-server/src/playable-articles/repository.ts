@@ -6,10 +6,12 @@ import {
 import type {
   ArticleAttribution,
   ArticleNotPlayableReason,
+  NavigationDestination,
   PlayableArticle,
   PlayableArticleResult,
 } from "./model.js";
-import { normalizeArticleDocument } from "./normalizer.js";
+import { extractCandidateLinkTitles, normalizeArticleDocument } from "./normalizer.js";
+import { isValidWikipediaTitle } from "./title.js";
 
 export interface PlayableArticleRepository {
   getByTitle(requestedTitle: string): Promise<PlayableArticleResult>;
@@ -20,22 +22,9 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const FORBIDDEN_TITLE_CHARACTERS = new Set("#<>[]|{}");
-
-function validRequestedTitle(title: string): boolean {
-  if (title.length === 0 || title.length > 255) return false;
-
-  for (const character of title) {
-    const codePoint = character.codePointAt(0)!;
-    if (codePoint <= 0x1f || codePoint === 0x7f || FORBIDDEN_TITLE_CHARACTERS.has(character)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function classification(snapshot: WikipediaPageSnapshot): ArticleNotPlayableReason | undefined {
+function classification(
+  snapshot: Pick<WikipediaPageSnapshot, "namespace" | "title" | "disambiguation">,
+): ArticleNotPlayableReason | undefined {
   // This is the single policy seam for removing unsuitable pages from Wiki Duel's
   // playable graph. Add a deterministic check here when playtesting identifies a
   // new class of article to exclude, and add the corresponding reason to
@@ -98,7 +87,7 @@ export function createPlayableArticleRepository(gateway: WikipediaGateway): Play
   return {
     async getByTitle(requestedTitle) {
       const title = requestedTitle.trim().replace(/_/g, " ");
-      if (!validRequestedTitle(title)) return { ok: false, failure: { code: "invalid-title" } };
+      if (!isValidWikipediaTitle(title)) return { ok: false, failure: { code: "invalid-title" } };
 
       let snapshot: WikipediaPageSnapshot;
       try {
@@ -113,7 +102,20 @@ export function createPlayableArticleRepository(gateway: WikipediaGateway): Play
       const attribution = attributionFor(snapshot);
       if (!attribution) return { ok: false, failure: { code: "article-attribution-incomplete" } };
 
-      const document = normalizeArticleDocument(snapshot.title, snapshot.html);
+      const candidates = extractCandidateLinkTitles(snapshot.html);
+      let resolvedLinks;
+      try {
+        resolvedLinks = await gateway.resolveLinks(candidates);
+      } catch (error) {
+        return gatewayFailure(error);
+      }
+      const destinations = new Map<string, NavigationDestination>();
+      for (const link of resolvedLinks) {
+        if (link.exists && classification(link) === undefined) {
+          destinations.set(link.requestedTitle, { pageId: link.pageId, title: link.title });
+        }
+      }
+      const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations);
       if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
 
       const article: PlayableArticle = {
