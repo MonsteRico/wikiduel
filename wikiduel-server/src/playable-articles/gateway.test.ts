@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // Vitest hoists this fake before gateway.ts imports the wikipedia package. These
 // are the two package methods the gateway actually uses; no second client
@@ -30,6 +30,77 @@ function metadataResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe("WikipediaGateway", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("bulk-resolves redirect aliases to canonical link metadata without fetching bodies", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      batchcomplete: true,
+      query: {
+        redirects: [{ from: "Analytical engine", to: "Analytical Engine" }],
+        pages: [{
+          pageid: 1361267,
+          ns: 0,
+          title: "Analytical Engine",
+          pageprops: {},
+        }],
+      },
+    }), { status: 200 }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    await expect(gateway.resolveLinks(["Analytical engine"])).resolves.toEqual([{
+      requestedTitle: "Analytical engine",
+      exists: true,
+      pageId: 1361267,
+      namespace: 0,
+      title: "Analytical Engine",
+      disambiguation: false,
+    }]);
+
+    const [url] = request.mock.calls[0] as [URL];
+    expect(url.searchParams.get("titles")).toBe("Analytical engine");
+    expect(url.searchParams.get("redirects")).toBe("1");
+    expect(url.searchParams.get("prop")).toBe("pageprops");
+    expect(url.searchParams.has("rvprop")).toBe(false);
+    expect(wikipediaPackage.page).not.toHaveBeenCalled();
+  });
+
+  test("batches large candidate sets within the official query title limit", async () => {
+    const titles = Array.from({ length: 51 }, (_, index) => `Article ${index + 1}`);
+    const request = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      const batchTitles = url.searchParams.get("titles")?.split("|") ?? [];
+      return new Response(JSON.stringify({
+        batchcomplete: true,
+        query: {
+          pages: batchTitles.map((title, index) => ({
+            pageid: Number(title.slice("Article ".length)) + index + 100,
+            ns: 0,
+            title,
+            pageprops: {},
+          })),
+        },
+      }), { status: 200 });
+    });
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    const result = await gateway.resolveLinks(titles);
+
+    expect(result).toHaveLength(51);
+    expect(request).toHaveBeenCalledTimes(2);
+    const firstUrl = request.mock.calls[0]?.[0] as URL;
+    const secondUrl = request.mock.calls[1]?.[0] as URL;
+    expect(firstUrl.searchParams.get("titles")?.split("|")).toHaveLength(50);
+    expect(secondUrl.searchParams.get("titles")).toBe("Article 51");
+  });
+
   test("uses the canonical page returned by the package for a redirected request", async () => {
     const html = vi.fn().mockResolvedValue("<p>Ada wrote about the Analytical Engine.</p>");
 
