@@ -58,17 +58,27 @@ function compactInline(nodes: readonly ArticleInline[]): ArticleInline[] {
 }
 
 function linkTitle(element: Element): string | undefined {
+  // Reduce an untrusted anchor to the Wikipedia title that may be sent to the
+  // gateway for resolution. Returning undefined keeps the anchor's label as
+  // readable plain text instead of turning it into a Navigation Node.
   const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
+  // MediaWiki marks links to pages that do not exist with the `new` class.
   if (className.split(/\s+/).includes("new")) return undefined;
   const href = element.attrs.find((attribute) => attribute.name === "href")?.value;
+  // Only ordinary article paths are candidates. Query strings identify edit,
+  // search, red-link, and other controls rather than canonical destinations.
   if (!href?.startsWith("/wiki/") || href.includes("?")) return undefined;
   const encodedTitle = href.slice("/wiki/".length).split(/[?#]/, 1)[0];
   if (!encodedTitle) return undefined;
   try {
+    // Convert URL spelling into the title spelling expected by MediaWiki while
+    // rejecting malformed escapes and characters forbidden in page titles.
     const title = decodeURIComponent(encodedTitle).replace(/_/g, " ");
     if (!isValidWikipediaTitle(title)) return undefined;
     const colon = title.indexOf(":");
     const namespace = colon < 0 ? "" : title.slice(0, colon).toLocaleLowerCase("en-US");
+    // Known non-article namespaces can be discarded without an upstream call;
+    // the resolved-metadata classifier remains authoritative for all others.
     return NON_ARTICLE_NAMESPACES.has(namespace) ? undefined : title;
   } catch {
     return undefined;
