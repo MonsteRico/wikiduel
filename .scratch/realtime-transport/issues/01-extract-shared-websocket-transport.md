@@ -20,7 +20,7 @@ Extract the browser's physical WebSocket connection from Lobby-specific state in
 - [x] Transport tests cover opening, closing, sending, decoding, dispatch, multiple subscribers, cleanup, and failure behavior.
 - [x] The strengthened Lobby regression suite continues to pass without changing existing Lobby behavior.
 
-Implementation note: Added an application-level typed WebSocket transport and provider, migrated Lobby to subscriptions on that shared transport, and covered lifecycle, dispatch, cleanup, and stable failure outcomes through the transport boundary.
+Implementation note: Added an application-level typed WebSocket client and provider, migrated Lobby to subscriptions on that shared WebSocket, and aligned client/server code and message contracts with canonical Lobby terminology.
 
 ## Blocked by
 

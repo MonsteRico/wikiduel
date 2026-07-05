@@ -1,4 +1,4 @@
-export type RoomMember = {
+export type LobbyMember = {
   id: string
   name: string
   role: 'host' | 'opponent'
@@ -6,7 +6,7 @@ export type RoomMember = {
   ready: boolean
 }
 
-export type Room = {
+export type Lobby = {
   code: string
-  members: RoomMember[]
+  members: LobbyMember[]
 }

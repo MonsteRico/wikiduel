@@ -2,33 +2,33 @@ import { Button } from '../../components/ui/Button'
 import { ArrowRightIcon } from '../../components/ui/Icons'
 import { PlayerAvatar } from '../../components/ui/PlayerAvatar'
 import { StatusIndicator } from '../../components/ui/StatusIndicator'
-import type { Room, RoomMember } from './types'
+import type { Lobby, LobbyMember } from './types'
 
 type PlayerRosterProps = {
-  room: Room | null
-  currentMember: RoomMember | undefined
+  lobby: Lobby | null
+  currentMember: LobbyMember | undefined
   error: string | null
   onSetReady: (ready: boolean) => void
   onStartGame: () => void
 }
 
-export function PlayerRoster({ room, currentMember, error, onSetReady, onStartGame }: PlayerRosterProps) {
-  const bothPlayersReady = room?.members.length === 2
-    && room.members.every((member) => member.connected && member.ready)
+export function PlayerRoster({ lobby, currentMember, error, onSetReady, onStartGame }: PlayerRosterProps) {
+  const bothPlayersReady = lobby?.members.length === 2
+    && lobby.members.every((member) => member.connected && member.ready)
   const isHost = currentMember?.role === 'host'
 
   return (
     <section aria-labelledby="roster-heading">
       <div className="flex items-center justify-between gap-5 border-b border-line-soft px-6 py-4 max-[560px]:px-5">
         <h2 className="ds-label m-0 text-ink" id="roster-heading">Players</h2>
-        <span className="font-mono text-[11px] text-ink-soft">{room?.members.length ?? 0} / 2 joined</span>
+        <span className="font-mono text-[11px] text-ink-soft">{lobby?.members.length ?? 0} / 2 joined</span>
       </div>
 
       {error ? <p className="m-0 border-b border-line-soft bg-danger/10 px-6 py-4 text-sm text-danger" role="alert">{error}</p> : null}
-      {!room && !error ? <p className="m-0 border-b border-line-soft px-6 py-5 text-sm text-ink-soft">Joining lobby…</p> : null}
+      {!lobby && !error ? <p className="m-0 border-b border-line-soft px-6 py-5 text-sm text-ink-soft">Joining lobby…</p> : null}
 
       <ul className="m-0 list-none p-0">
-        {room?.members.map((member) => (
+        {lobby?.members.map((member) => (
           <li className="grid min-h-[82px] grid-cols-[auto_1fr_auto] items-center gap-4 border-b border-line-soft px-6 py-4 max-[560px]:px-5" key={member.id}>
             <PlayerAvatar role={member.role} />
             <div className="min-w-0">

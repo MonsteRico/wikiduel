@@ -3,9 +3,9 @@ import { expect, test } from "vitest";
 
 import { buildApp } from "./app.js";
 
-type RoomStateMessage = {
-  type: "room-state";
-  room: {
+type LobbyStateMessage = {
+  type: "lobby-state";
+  lobby: {
     code: string;
     members: Array<{
       id: string;
@@ -17,13 +17,13 @@ type RoomStateMessage = {
   };
 };
 
-type RoomClosedMessage = {
-  type: "room-closed";
+type LobbyClosedMessage = {
+  type: "lobby-closed";
   message: string;
 };
 
-type RoomErrorMessage = {
-  type: "room-error";
+type LobbyErrorMessage = {
+  type: "lobby-error";
   message: string;
 };
 
@@ -65,43 +65,43 @@ function rejectMessageUntil<T>(socket: WebSocket, type: string, boundary: Promis
   });
 }
 
-async function createLobby(socket: WebSocket, clientId = "host-id"): Promise<RoomStateMessage> {
-  const roomStatePromise = nextMessage<RoomStateMessage>(socket, "room-state");
-  socket.send(JSON.stringify({ type: "create-room", clientId }));
-  return roomStatePromise;
+async function createLobby(socket: WebSocket, clientId = "host-id"): Promise<LobbyStateMessage> {
+  const lobbyStatePromise = nextMessage<LobbyStateMessage>(socket, "lobby-state");
+  socket.send(JSON.stringify({ type: "create-lobby", clientId }));
+  return lobbyStatePromise;
 }
 
 async function joinLobby(
   hostSocket: WebSocket,
   opponentSocket: WebSocket,
-  roomCode: string,
+  lobbyCode: string,
   clientId = "opponent-id",
-): Promise<RoomStateMessage> {
-  const hostUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  const opponentUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
-  opponentSocket.send(JSON.stringify({ type: "join-room", clientId, roomCode }));
-  const [, opponentRoom] = await Promise.all([hostUpdate, opponentUpdate]);
-  return opponentRoom;
+): Promise<LobbyStateMessage> {
+  const hostUpdate = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  const opponentUpdate = nextMessage<LobbyStateMessage>(opponentSocket, "lobby-state");
+  opponentSocket.send(JSON.stringify({ type: "join-lobby", clientId, lobbyCode }));
+  const [, opponentLobby] = await Promise.all([hostUpdate, opponentUpdate]);
+  return opponentLobby;
 }
 
 async function setReady(
   socket: WebSocket,
   observerSocket: WebSocket,
   ready: boolean,
-): Promise<RoomStateMessage> {
-  const roomUpdate = nextRoomUpdate(socket, observerSocket);
+): Promise<LobbyStateMessage> {
+  const lobbyUpdate = nextLobbyUpdate(socket, observerSocket);
   socket.send(JSON.stringify({ type: "set-ready", ready }));
-  return roomUpdate;
+  return lobbyUpdate;
 }
 
-async function nextRoomUpdate(
+async function nextLobbyUpdate(
   socket: WebSocket,
   observerSocket: WebSocket,
-): Promise<RoomStateMessage> {
-  const senderUpdate = nextMessage<RoomStateMessage>(socket, "room-state");
-  const observerUpdate = nextMessage<RoomStateMessage>(observerSocket, "room-state");
-  const [room] = await Promise.all([senderUpdate, observerUpdate]);
-  return room;
+): Promise<LobbyStateMessage> {
+  const senderUpdate = nextMessage<LobbyStateMessage>(socket, "lobby-state");
+  const observerUpdate = nextMessage<LobbyStateMessage>(observerSocket, "lobby-state");
+  const [lobby] = await Promise.all([senderUpdate, observerUpdate]);
+  return lobby;
 }
 
 test("GET /health reports that the server is healthy", async () => {
@@ -119,12 +119,12 @@ test("a two-player lobby supports readiness, starting, and closure", async () =>
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");
-  const createdRoomPromise = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  hostSocket.send(JSON.stringify({ type: "create-room", clientId: "host-id" }));
-  const createdRoom = await createdRoomPromise;
+  const createdLobbyPromise = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  hostSocket.send(JSON.stringify({ type: "create-lobby", clientId: "host-id" }));
+  const createdLobby = await createdLobbyPromise;
 
-  expect(createdRoom.room.code).toMatch(/^[A-Z2-9]{5}$/);
-  expect(createdRoom.room.members).toEqual([{
+  expect(createdLobby.lobby.code).toMatch(/^[A-Z2-9]{5}$/);
+  expect(createdLobby.lobby.members).toEqual([{
     id: "host-id",
     name: "host",
     role: "host",
@@ -133,42 +133,42 @@ test("a two-player lobby supports readiness, starting, and closure", async () =>
   }]);
 
   const opponentSocket = await app.injectWS("/ws");
-  const hostJoinedUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  const opponentJoinedUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  const hostJoinedUpdate = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  const opponentJoinedUpdate = nextMessage<LobbyStateMessage>(opponentSocket, "lobby-state");
   opponentSocket.send(JSON.stringify({
-    type: "join-room",
+    type: "join-lobby",
     clientId: "opponent-id",
-    roomCode: createdRoom.room.code,
+    lobbyCode: createdLobby.lobby.code,
   }));
 
-  const [, opponentRoom] = await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
+  const [, opponentLobby] = await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
   expect(
-    opponentRoom.room.members.map(({ name, role }) => ({ name, role })),
+    opponentLobby.lobby.members.map(({ name, role }) => ({ name, role })),
   ).toEqual([
       { name: "host", role: "host" },
       { name: "Opponent", role: "opponent" },
     ]);
 
-  const hostReadyUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  const opponentSeesHostReady = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  const hostReadyUpdate = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  const opponentSeesHostReady = nextMessage<LobbyStateMessage>(opponentSocket, "lobby-state");
   hostSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
   await Promise.all([hostReadyUpdate, opponentSeesHostReady]);
 
-  const hostSeesBothReady = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  const opponentReadyUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  const hostSeesBothReady = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  const opponentReadyUpdate = nextMessage<LobbyStateMessage>(opponentSocket, "lobby-state");
   opponentSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
-  const [readyRoom] = await Promise.all([hostSeesBothReady, opponentReadyUpdate]);
-  expect(readyRoom.room.members.every((member) => member.ready)).toBe(true);
+  const [readyLobby] = await Promise.all([hostSeesBothReady, opponentReadyUpdate]);
+  expect(readyLobby.lobby.members.every((member) => member.ready)).toBe(true);
 
   const hostGameStarted = nextMessage(hostSocket, "game-started");
   const opponentGameStarted = nextMessage(opponentSocket, "game-started");
   hostSocket.send(JSON.stringify({ type: "start-game" }));
   await Promise.all([hostGameStarted, opponentGameStarted]);
 
-  const roomClosedPromise = nextMessage<RoomClosedMessage>(hostSocket, "room-closed");
+  const lobbyClosedPromise = nextMessage<LobbyClosedMessage>(hostSocket, "lobby-closed");
   opponentSocket.terminate();
-  const roomClosed = await roomClosedPromise;
-  expect(roomClosed.message).toBe("The other player left. The lobby has been closed.");
+  const lobbyClosed = await lobbyClosedPromise;
+  expect(lobbyClosed.message).toBe("The other player left. The lobby has been closed.");
 
   hostSocket.terminate();
   await app.close();
@@ -179,24 +179,24 @@ test("the opponent is notified when the host leaves", async () => {
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");
-  const createdRoomPromise = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  hostSocket.send(JSON.stringify({ type: "create-room", clientId: "departing-host" }));
-  const createdRoom = await createdRoomPromise;
+  const createdLobbyPromise = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  hostSocket.send(JSON.stringify({ type: "create-lobby", clientId: "departing-host" }));
+  const createdLobby = await createdLobbyPromise;
 
   const opponentSocket = await app.injectWS("/ws");
-  const hostJoinedUpdate = nextMessage<RoomStateMessage>(hostSocket, "room-state");
-  const opponentJoinedUpdate = nextMessage<RoomStateMessage>(opponentSocket, "room-state");
+  const hostJoinedUpdate = nextMessage<LobbyStateMessage>(hostSocket, "lobby-state");
+  const opponentJoinedUpdate = nextMessage<LobbyStateMessage>(opponentSocket, "lobby-state");
   opponentSocket.send(JSON.stringify({
-    type: "join-room",
+    type: "join-lobby",
     clientId: "remaining-opponent",
-    roomCode: createdRoom.room.code,
+    lobbyCode: createdLobby.lobby.code,
   }));
   await Promise.all([hostJoinedUpdate, opponentJoinedUpdate]);
 
-  const roomClosedPromise = nextMessage<RoomClosedMessage>(opponentSocket, "room-closed");
+  const lobbyClosedPromise = nextMessage<LobbyClosedMessage>(opponentSocket, "lobby-closed");
   hostSocket.terminate();
-  const roomClosed = await roomClosedPromise;
-  expect(roomClosed.message).toBe("The other player left. The lobby has been closed.");
+  const lobbyClosed = await lobbyClosedPromise;
+  expect(lobbyClosed.message).toBe("The other player left. The lobby has been closed.");
 
   opponentSocket.terminate();
   await app.close();
@@ -207,29 +207,29 @@ test("Lobby commands reject malformed messages, missing Lobbies, and additional 
   await app.ready();
 
   const unpairedSocket = await app.injectWS("/ws");
-  const malformedErrorPromise = nextMessage<RoomErrorMessage>(unpairedSocket, "room-error");
+  const malformedErrorPromise = nextMessage<LobbyErrorMessage>(unpairedSocket, "lobby-error");
   unpairedSocket.send("not-json");
   await expect(malformedErrorPromise).resolves.toMatchObject({ message: "Invalid message" });
 
-  const missingLobbyErrorPromise = nextMessage<RoomErrorMessage>(unpairedSocket, "room-error");
+  const missingLobbyErrorPromise = nextMessage<LobbyErrorMessage>(unpairedSocket, "lobby-error");
   unpairedSocket.send(JSON.stringify({
-    type: "join-room",
+    type: "join-lobby",
     clientId: "unpaired-id",
-    roomCode: " abcde ",
+    lobbyCode: " abcde ",
   }));
   await expect(missingLobbyErrorPromise).resolves.toMatchObject({ message: "Lobby not found" });
 
   const hostSocket = await app.injectWS("/ws");
   const createdLobby = await createLobby(hostSocket);
   const opponentSocket = await app.injectWS("/ws");
-  await joinLobby(hostSocket, opponentSocket, createdLobby.room.code);
+  await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
   const additionalSocket = await app.injectWS("/ws");
-  const fullLobbyErrorPromise = nextMessage<RoomErrorMessage>(additionalSocket, "room-error");
+  const fullLobbyErrorPromise = nextMessage<LobbyErrorMessage>(additionalSocket, "lobby-error");
   additionalSocket.send(JSON.stringify({
-    type: "join-room",
+    type: "join-lobby",
     clientId: "additional-id",
-    roomCode: createdLobby.room.code,
+    lobbyCode: createdLobby.lobby.code,
   }));
   await expect(fullLobbyErrorPromise).resolves.toMatchObject({ message: "Lobby is full" });
 
@@ -247,20 +247,20 @@ test("only a Host can start after both Player Sessions are ready", async () => {
   const hostSocket = await app.injectWS("/ws");
   const createdLobby = await createLobby(hostSocket);
   const opponentSocket = await app.injectWS("/ws");
-  await joinLobby(hostSocket, opponentSocket, createdLobby.room.code);
+  await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
-  const hostReadyStatePromise = nextRoomUpdate(hostSocket, opponentSocket);
+  const hostReadyStatePromise = nextLobbyUpdate(hostSocket, opponentSocket);
   hostSocket.send(JSON.stringify({ type: "start-game" }));
   hostSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
   const hostReadyState = await Promise.all([
     rejectMessageUntil(hostSocket, "game-started", hostReadyStatePromise),
     rejectMessageUntil(opponentSocket, "game-started", hostReadyStatePromise),
   ]).then(([state]) => state);
-  expect(hostReadyState.room.members.find(({ role }) => role === "host")?.ready).toBe(true);
+  expect(hostReadyState.lobby.members.find(({ role }) => role === "host")?.ready).toBe(true);
   const bothReadyState = await setReady(opponentSocket, hostSocket, true);
-  expect(bothReadyState.room.members.find(({ role }) => role === "opponent")?.ready).toBe(true);
+  expect(bothReadyState.lobby.members.find(({ role }) => role === "opponent")?.ready).toBe(true);
 
-  const opponentNotReadyStatePromise = nextRoomUpdate(opponentSocket, hostSocket);
+  const opponentNotReadyStatePromise = nextLobbyUpdate(opponentSocket, hostSocket);
   opponentSocket.send(JSON.stringify({ type: "start-game" }));
   opponentSocket.send(JSON.stringify({ type: "set-ready", ready: false }));
   await Promise.all([
@@ -286,14 +286,14 @@ test("either Player Session can change readiness", async () => {
   const hostSocket = await app.injectWS("/ws");
   const createdLobby = await createLobby(hostSocket);
   const opponentSocket = await app.injectWS("/ws");
-  await joinLobby(hostSocket, opponentSocket, createdLobby.room.code);
+  await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
   await setReady(hostSocket, opponentSocket, true);
   await setReady(opponentSocket, hostSocket, true);
   const hostNotReadyState = await setReady(hostSocket, opponentSocket, false);
-  expect(hostNotReadyState.room.members.find(({ role }) => role === "host")?.ready).toBe(false);
+  expect(hostNotReadyState.lobby.members.find(({ role }) => role === "host")?.ready).toBe(false);
   const opponentNotReadyState = await setReady(opponentSocket, hostSocket, false);
-  expect(opponentNotReadyState.room.members.find(({ role }) => role === "opponent")?.ready).toBe(false);
+  expect(opponentNotReadyState.lobby.members.find(({ role }) => role === "opponent")?.ready).toBe(false);
 
   opponentSocket.terminate();
   hostSocket.terminate();
@@ -307,20 +307,20 @@ test("explicit departure closes a paired Lobby and prevents replacement players"
   const hostSocket = await app.injectWS("/ws");
   const createdLobby = await createLobby(hostSocket);
   const opponentSocket = await app.injectWS("/ws");
-  await joinLobby(hostSocket, opponentSocket, createdLobby.room.code);
+  await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
-  const roomClosedPromise = nextMessage<RoomClosedMessage>(opponentSocket, "room-closed");
-  hostSocket.send(JSON.stringify({ type: "leave-room" }));
-  await expect(roomClosedPromise).resolves.toMatchObject({
+  const lobbyClosedPromise = nextMessage<LobbyClosedMessage>(opponentSocket, "lobby-closed");
+  hostSocket.send(JSON.stringify({ type: "leave-lobby" }));
+  await expect(lobbyClosedPromise).resolves.toMatchObject({
     message: "The other player left. The lobby has been closed.",
   });
 
   const replacementSocket = await app.injectWS("/ws");
-  const closedLobbyErrorPromise = nextMessage<RoomErrorMessage>(replacementSocket, "room-error");
+  const closedLobbyErrorPromise = nextMessage<LobbyErrorMessage>(replacementSocket, "lobby-error");
   replacementSocket.send(JSON.stringify({
-    type: "join-room",
+    type: "join-lobby",
     clientId: "replacement-id",
-    roomCode: createdLobby.room.code,
+    lobbyCode: createdLobby.lobby.code,
   }));
   await expect(closedLobbyErrorPromise).resolves.toMatchObject({ message: "Lobby not found" });
 
@@ -337,11 +337,11 @@ test("the Host is notified when the Opponent explicitly departs", async () => {
   const hostSocket = await app.injectWS("/ws");
   const createdLobby = await createLobby(hostSocket);
   const opponentSocket = await app.injectWS("/ws");
-  await joinLobby(hostSocket, opponentSocket, createdLobby.room.code);
+  await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
-  const roomClosedPromise = nextMessage<RoomClosedMessage>(hostSocket, "room-closed");
-  opponentSocket.send(JSON.stringify({ type: "leave-room" }));
-  await expect(roomClosedPromise).resolves.toMatchObject({
+  const lobbyClosedPromise = nextMessage<LobbyClosedMessage>(hostSocket, "lobby-closed");
+  opponentSocket.send(JSON.stringify({ type: "leave-lobby" }));
+  await expect(lobbyClosedPromise).resolves.toMatchObject({
     message: "The other player left. The lobby has been closed.",
   });
 

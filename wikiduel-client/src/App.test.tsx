@@ -4,8 +4,8 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
-import type { Room as Lobby } from './features/rooms/types'
-import type { ServerMessage } from './realtime/messages'
+import type { Lobby } from './features/lobby/types'
+import type { ServerMessage } from './websocket/messages'
 
 type WithoutTimestamp<Message> = Message extends unknown ? Omit<Message, 'sentAt'> : never
 
@@ -62,7 +62,7 @@ function renderApp(initialPath = '/') {
   )
 
   const socket = sockets.at(-1)
-  if (!socket) throw new Error('Expected the Room provider to open a WebSocket')
+  if (!socket) throw new Error('Expected the WebSocket provider to open a connection')
   return socket
 }
 
@@ -88,7 +88,7 @@ afterEach(() => {
 })
 
 describe('Lobby client', () => {
-  it('presents connection state and creates a Lobby through the transport', async () => {
+  it('presents connection state and creates a Lobby through the WebSocket', async () => {
     const user = userEvent.setup()
     const socket = renderApp()
     const createButton = screen.getByRole('button', { name: /create lobby/i })
@@ -101,9 +101,9 @@ describe('Lobby client', () => {
 
     await user.click(createButton)
     const clientId = sentClientId(socket)
-    expect(sentMessages(socket)).toContainEqual({ type: 'create-room', clientId })
+    expect(sentMessages(socket)).toContainEqual({ type: 'create-lobby', clientId })
 
-    act(() => socket.receive({ type: 'room-state', room: hostLobby(clientId) }))
+    act(() => socket.receive({ type: 'lobby-state', lobby: hostLobby(clientId) }))
     expect(await screen.findByRole('heading', { name: 'Waiting for the duel' })).toBeInTheDocument()
     expect(screen.getByText('1 / 2 joined')).toBeInTheDocument()
     expect(screen.getByText('You')).toBeInTheDocument()
@@ -119,30 +119,30 @@ describe('Lobby client', () => {
     await user.click(screen.getByRole('button', { name: /join lobby/i }))
     const clientId = sentClientId(socket)
     expect(sentMessages(socket)).toContainEqual({
-      type: 'join-room',
+      type: 'join-lobby',
       clientId,
-      roomCode: '7G8KZ',
+      lobbyCode: '7G8KZ',
     })
 
-    act(() => socket.receive({ type: 'room-error', message: 'Lobby not found' }))
+    act(() => socket.receive({ type: 'lobby-error', message: 'Lobby not found' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Lobby not found')
     expect(screen.getByRole('button', { name: /join lobby/i })).toBeEnabled()
   })
 
   it('projects readiness and exposes start control only to a ready Host', async () => {
     const user = userEvent.setup()
-    const socket = renderApp('/room/7G8KZ')
+    const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const clientId = sentClientId(socket)
     expect(sentMessages(socket)).toContainEqual({
-      type: 'join-room',
+      type: 'join-lobby',
       clientId,
-      roomCode: '7G8KZ',
+      lobbyCode: '7G8KZ',
     })
 
     act(() => socket.receive({
-      type: 'room-state',
-      room: {
+      type: 'lobby-state',
+      lobby: {
         ...hostLobby(clientId),
         members: [
           hostLobby(clientId).members[0],
@@ -157,8 +157,8 @@ describe('Lobby client', () => {
     expect(sentMessages(socket)).toContainEqual({ type: 'set-ready', ready: true })
 
     act(() => socket.receive({
-      type: 'room-state',
-      room: {
+      type: 'lobby-state',
+      lobby: {
         ...hostLobby(clientId),
         members: [
           { ...hostLobby(clientId).members[0], ready: true },
@@ -174,12 +174,12 @@ describe('Lobby client', () => {
   })
 
   it('shows opponent projections without Host controls', () => {
-    const socket = renderApp('/room/7G8KZ')
+    const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const clientId = sentClientId(socket)
     act(() => socket.receive({
-      type: 'room-state',
-      room: {
+      type: 'lobby-state',
+      lobby: {
         code: '7G8KZ',
         members: [
           { id: 'host-id', name: 'host', role: 'host', connected: true, ready: true },
@@ -194,12 +194,12 @@ describe('Lobby client', () => {
   })
 
   it('returns home with a terminal notice when the Lobby closes', async () => {
-    const socket = renderApp('/room/7G8KZ')
+    const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const clientId = sentClientId(socket)
-    act(() => socket.receive({ type: 'room-state', room: hostLobby(clientId) }))
+    act(() => socket.receive({ type: 'lobby-state', lobby: hostLobby(clientId) }))
     act(() => socket.receive({
-      type: 'room-closed',
+      type: 'lobby-closed',
       message: 'The other player left. The lobby has been closed.',
     }))
 
@@ -213,18 +213,18 @@ describe('Lobby client', () => {
 
   it('leaves a Lobby explicitly and returns home', async () => {
     const user = userEvent.setup()
-    const socket = renderApp('/room/7G8KZ')
+    const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const clientId = sentClientId(socket)
-    act(() => socket.receive({ type: 'room-state', room: hostLobby(clientId) }))
+    act(() => socket.receive({ type: 'lobby-state', lobby: hostLobby(clientId) }))
 
     await user.click(screen.getByRole('button', { name: 'Leave lobby' }))
 
-    expect(sentMessages(socket)).toContainEqual({ type: 'leave-room' })
+    expect(sentMessages(socket)).toContainEqual({ type: 'leave-lobby' })
     expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeInTheDocument()
   })
 
-  it('presents a disconnected transport state', () => {
+  it('presents a disconnected WebSocket state', () => {
     const socket = renderApp()
     act(() => socket.open())
     act(() => socket.close())

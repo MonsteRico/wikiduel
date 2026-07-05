@@ -36,16 +36,16 @@ class ControllableWebSocket extends EventTarget implements WebSocketConnection {
 describe('WebSocketTransport', () => {
   it('opens one shared connection and reports when it connects', () => {
     const sockets: ControllableWebSocket[] = []
-    const transport = new WebSocketTransport('ws://example.test/ws', () => {
+    const webSocket = new WebSocketTransport('ws://example.test/ws', () => {
       const socket = new ControllableWebSocket()
       sockets.push(socket)
       return socket
     })
     const statuses: string[] = []
-    transport.subscribeStatus((status) => statuses.push(status))
+    webSocket.subscribeStatus((status) => statuses.push(status))
 
-    transport.connect()
-    transport.connect()
+    webSocket.connect()
+    webSocket.connect()
     sockets[0]?.open()
 
     expect(sockets).toHaveLength(1)
@@ -54,13 +54,13 @@ describe('WebSocketTransport', () => {
 
   it('closes the shared connection and reports that it disconnected', () => {
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport('ws://example.test/ws', () => socket)
+    const webSocket = new WebSocketTransport('ws://example.test/ws', () => socket)
     const statuses: string[] = []
-    transport.subscribeStatus((status) => statuses.push(status))
-    transport.connect()
+    webSocket.subscribeStatus((status) => statuses.push(status))
+    webSocket.connect()
     socket.open()
 
-    transport.close()
+    webSocket.close()
 
     expect(socket.readyState).toBe(WebSocket.CLOSED)
     expect(statuses.at(-1)).toBe('disconnected')
@@ -68,36 +68,36 @@ describe('WebSocketTransport', () => {
 
   it('sends typed JSON messages only while the connection is open', () => {
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport<{ type: 'ping' }>(
+    const webSocket = new WebSocketTransport<{ type: 'ping' }>(
       'ws://example.test/ws',
       () => socket,
     )
 
-    expect(transport.send({ type: 'ping' })).toBe(false)
-    transport.connect()
+    expect(webSocket.send({ type: 'ping' })).toBe(false)
+    webSocket.connect()
     socket.open()
 
-    expect(transport.send({ type: 'ping' })).toBe(true)
+    expect(webSocket.send({ type: 'ping' })).toBe(true)
     expect(socket.sentMessages).toEqual(['{"type":"ping"}'])
   })
 
   it('decodes and dispatches a server message to multiple relevant subscribers', () => {
     type ServerMessage =
       | { type: 'pong'; message: string }
-      | { type: 'room-state'; code: string }
+      | { type: 'lobby-state'; code: string }
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport<object, ServerMessage>(
+    const webSocket = new WebSocketTransport<object, ServerMessage>(
       'ws://example.test/ws',
       () => socket,
     )
     const firstSubscriber: string[] = []
     const secondSubscriber: string[] = []
-    transport.subscribe('pong', (message) => firstSubscriber.push(message.message))
-    transport.subscribe('pong', (message) => secondSubscriber.push(message.message))
-    transport.connect()
+    webSocket.subscribe('pong', (message) => firstSubscriber.push(message.message))
+    webSocket.subscribe('pong', (message) => secondSubscriber.push(message.message))
+    webSocket.connect()
 
     socket.receive({ type: 'pong', message: 'Pong from server' })
-    socket.receive({ type: 'room-state', code: '7G8KZ' })
+    socket.receive({ type: 'lobby-state', code: '7G8KZ' })
 
     expect(firstSubscriber).toEqual(['Pong from server'])
     expect(secondSubscriber).toEqual(['Pong from server'])
@@ -106,15 +106,15 @@ describe('WebSocketTransport', () => {
   it('reports unreadable messages without interrupting later delivery', () => {
     type ServerMessage = { type: 'pong'; message: string }
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport<object, ServerMessage>(
+    const webSocket = new WebSocketTransport<object, ServerMessage>(
       'ws://example.test/ws',
       () => socket,
     )
     const failures: string[] = []
     const received: string[] = []
-    transport.subscribeFailure((failure) => failures.push(failure))
-    transport.subscribe('pong', (message) => received.push(message.message))
-    transport.connect()
+    webSocket.subscribeFailure((failure) => failures.push(failure))
+    webSocket.subscribe('pong', (message) => received.push(message.message))
+    webSocket.connect()
 
     socket.receiveRaw('not-json')
     socket.receive({ type: 'pong', message: 'Still connected' })
@@ -125,12 +125,12 @@ describe('WebSocketTransport', () => {
 
   it('reports a stable disconnected outcome when the connection fails', () => {
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport('ws://example.test/ws', () => socket)
+    const webSocket = new WebSocketTransport('ws://example.test/ws', () => socket)
     const failures: string[] = []
     const statuses: string[] = []
-    transport.subscribeFailure((failure) => failures.push(failure))
-    transport.subscribeStatus((status) => statuses.push(status))
-    transport.connect()
+    webSocket.subscribeFailure((failure) => failures.push(failure))
+    webSocket.subscribeStatus((status) => statuses.push(status))
+    webSocket.connect()
 
     socket.fail()
 
@@ -139,15 +139,15 @@ describe('WebSocketTransport', () => {
   })
 
   it('reports the same stable outcome when opening the connection fails', () => {
-    const transport = new WebSocketTransport('not-a-websocket-url', () => {
+    const webSocket = new WebSocketTransport('not-a-websocket-url', () => {
       throw new Error('Invalid WebSocket URL')
     })
     const failures: string[] = []
     const statuses: string[] = []
-    transport.subscribeFailure((failure) => failures.push(failure))
-    transport.subscribeStatus((status) => statuses.push(status))
+    webSocket.subscribeFailure((failure) => failures.push(failure))
+    webSocket.subscribeStatus((status) => statuses.push(status))
 
-    expect(() => transport.connect()).not.toThrow()
+    expect(() => webSocket.connect()).not.toThrow()
     expect(failures).toEqual(['connection-error'])
     expect(statuses.at(-1)).toBe('disconnected')
   })
@@ -155,13 +155,13 @@ describe('WebSocketTransport', () => {
   it('stops delivery after a subscriber cleans up', () => {
     type ServerMessage = { type: 'pong'; message: string }
     const socket = new ControllableWebSocket()
-    const transport = new WebSocketTransport<object, ServerMessage>(
+    const webSocket = new WebSocketTransport<object, ServerMessage>(
       'ws://example.test/ws',
       () => socket,
     )
     const received: string[] = []
-    const unsubscribe = transport.subscribe('pong', (message) => received.push(message.message))
-    transport.connect()
+    const unsubscribe = webSocket.subscribe('pong', (message) => received.push(message.message))
+    webSocket.connect()
 
     socket.receive({ type: 'pong', message: 'Before cleanup' })
     unsubscribe()
@@ -175,15 +175,15 @@ describe('WebSocketTransport', () => {
     const closedSocket = new ControllableWebSocket()
     const activeSocket = new ControllableWebSocket()
     let connectionCount = 0
-    const transport = new WebSocketTransport<object, ServerMessage>(
+    const webSocket = new WebSocketTransport<object, ServerMessage>(
       'ws://example.test/ws',
       () => connectionCount++ === 0 ? closedSocket : activeSocket,
     )
     const received: string[] = []
-    transport.subscribe('pong', (message) => received.push(message.message))
-    transport.connect()
-    transport.close()
-    transport.connect()
+    webSocket.subscribe('pong', (message) => received.push(message.message))
+    webSocket.connect()
+    webSocket.close()
+    webSocket.connect()
 
     closedSocket.receive({ type: 'pong', message: 'Stale delivery' })
     activeSocket.receive({ type: 'pong', message: 'Current delivery' })

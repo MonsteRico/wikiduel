@@ -1,5 +1,5 @@
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
-export type TransportFailure = 'connection-error' | 'unreadable-message'
+export type WebSocketFailure = 'connection-error' | 'unreadable-message'
 
 export type WebSocketConnection = Pick<
   WebSocket,
@@ -8,7 +8,7 @@ export type WebSocketConnection = Pick<
 
 type WebSocketFactory = (url: string) => WebSocketConnection
 type StatusListener = (status: ConnectionStatus) => void
-type FailureListener = (failure: TransportFailure) => void
+type FailureListener = (failure: WebSocketFailure) => void
 type MessageEnvelope = { type: string }
 type MessageListener<Message> = (message: Message) => void
 
@@ -149,7 +149,7 @@ export class WebSocketTransport<
       && typeof message.type === 'string'
   }
 
-  private reportFailure(failure: TransportFailure) {
+  private reportFailure(failure: WebSocketFailure) {
     for (const listener of this.failureListeners) listener(failure)
   }
 

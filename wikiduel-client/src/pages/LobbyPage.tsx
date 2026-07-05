@@ -5,45 +5,45 @@ import { Button } from '../components/ui/Button'
 import { AppShell } from '../components/ui/AppShell'
 import { CopyIcon } from '../components/ui/Icons'
 import { Panel } from '../components/ui/Panel'
-import { PlayerRoster } from '../features/rooms/PlayerRoster'
-import { useRoom } from '../features/rooms/roomContext'
+import { PlayerRoster } from '../features/lobby/PlayerRoster'
+import { useLobby } from '../features/lobby/lobbyContext'
 
-export function RoomPage() {
+export function LobbyPage() {
   const navigate = useNavigate()
-  const { roomCode } = useParams()
+  const { lobbyCode } = useParams()
   const requestedCodeRef = useRef<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const normalizedRoomCode = roomCode?.toUpperCase() ?? ''
-  const isValidRoomCode = /^[A-Z2-9]{5}$/.test(normalizedRoomCode)
-  const { status, room, error, notice, clientId, joinRoom, leaveRoom, setReady, startGame } = useRoom()
-  const currentMember = room?.members.find((member) => member.id === clientId)
+  const normalizedLobbyCode = lobbyCode?.toUpperCase() ?? ''
+  const isValidLobbyCode = /^[A-Z2-9]{5}$/.test(normalizedLobbyCode)
+  const { status, lobby, error, notice, clientId, joinLobby, leaveLobby, setReady, startGame } = useLobby()
+  const currentMember = lobby?.members.find((member) => member.id === clientId)
 
   useEffect(() => {
     if (
       status !== 'connected'
-      || !isValidRoomCode
+      || !isValidLobbyCode
       || notice
-      || room?.code === normalizedRoomCode
-      || requestedCodeRef.current === normalizedRoomCode
+      || lobby?.code === normalizedLobbyCode
+      || requestedCodeRef.current === normalizedLobbyCode
     ) return
 
-    requestedCodeRef.current = normalizedRoomCode
-    joinRoom(normalizedRoomCode)
-  }, [isValidRoomCode, joinRoom, normalizedRoomCode, notice, room?.code, status])
+    requestedCodeRef.current = normalizedLobbyCode
+    joinLobby(normalizedLobbyCode)
+  }, [isValidLobbyCode, joinLobby, lobby?.code, normalizedLobbyCode, notice, status])
 
   useEffect(() => {
     if (notice) navigate('/', { replace: true })
   }, [navigate, notice])
 
-  if (!isValidRoomCode) return <Navigate to="/" replace />
+  if (!isValidLobbyCode) return <Navigate to="/" replace />
 
   const handleLeave = () => {
-    leaveRoom()
+    leaveLobby()
     navigate('/')
   }
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(normalizedRoomCode)
+    await navigator.clipboard.writeText(normalizedLobbyCode)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1600)
   }
@@ -61,7 +61,7 @@ export function RoomPage() {
             <div className="ds-inset min-w-[210px] p-3 max-[560px]:w-full">
               <span className="ds-label block text-[10px]">Lobby code</span>
               <div className="mt-1 flex items-center justify-between gap-3">
-                <strong className="font-mono text-[22px] tracking-[0.12em] text-host">{normalizedRoomCode}</strong>
+                <strong className="font-mono text-[22px] tracking-[0.12em] text-host">{normalizedLobbyCode}</strong>
                 <button className="ds-focus grid size-9 cursor-pointer place-items-center rounded-control border border-line bg-surface-raised text-ink-soft hover:border-host hover:text-ink" type="button" onClick={handleCopy} aria-label="Copy lobby code">
                   <CopyIcon />
                 </button>
@@ -71,7 +71,7 @@ export function RoomPage() {
           </header>
 
           <PlayerRoster
-            room={room?.code === normalizedRoomCode ? room : null}
+            lobby={lobby?.code === normalizedLobbyCode ? lobby : null}
             currentMember={currentMember}
             error={error}
             onSetReady={setReady}

@@ -1,21 +1,21 @@
 import { Navigate, Route, Routes } from 'react-router'
 
-import { RoomProvider } from './features/rooms/RoomProvider'
+import { LobbyProvider } from './features/lobby/LobbyProvider'
 import { HomePage } from './pages/HomePage'
-import { RoomPage } from './pages/RoomPage'
-import { TransportProvider } from './realtime/TransportProvider'
+import { LobbyPage } from './pages/LobbyPage'
+import { WebSocketProvider } from './websocket/WebSocketProvider'
 
 function App() {
   return (
-    <TransportProvider>
-      <RoomProvider>
+    <WebSocketProvider>
+      <LobbyProvider>
         <Routes>
           <Route index element={<HomePage />} />
-          <Route path="room/:roomCode" element={<RoomPage />} />
+          <Route path="lobby/:lobbyCode" element={<LobbyPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </RoomProvider>
-    </TransportProvider>
+      </LobbyProvider>
+    </WebSocketProvider>
   )
 }
 
