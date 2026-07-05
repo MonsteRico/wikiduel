@@ -2,9 +2,10 @@
 
 # Extract the Shared WebSocket Transport
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-04 09:55 PM
 
 ## What to build
 
@@ -12,12 +13,14 @@ Extract the browser's physical WebSocket connection from Lobby-specific state in
 
 ## Acceptance criteria
 
-- [ ] The application opens one shared WebSocket connection for Lobby, Playable Article Lab, and future Duel consumers.
-- [ ] Feature consumers can send typed messages and subscribe to relevant decoded server messages without owning a second socket.
-- [ ] Unreadable messages and connection failures produce stable transport outcomes without crashing feature consumers.
-- [ ] Listener cleanup prevents duplicate delivery after unmounting or route changes.
-- [ ] Transport tests cover opening, closing, sending, decoding, dispatch, multiple subscribers, cleanup, and failure behavior.
-- [ ] The strengthened Lobby regression suite continues to pass without changing existing Lobby behavior.
+- [x] The application opens one shared WebSocket connection for Lobby, Playable Article Lab, and future Duel consumers.
+- [x] Feature consumers can send typed messages and subscribe to relevant decoded server messages without owning a second socket.
+- [x] Unreadable messages and connection failures produce stable transport outcomes without crashing feature consumers.
+- [x] Listener cleanup prevents duplicate delivery after unmounting or route changes.
+- [x] Transport tests cover opening, closing, sending, decoding, dispatch, multiple subscribers, cleanup, and failure behavior.
+- [x] The strengthened Lobby regression suite continues to pass without changing existing Lobby behavior.
+
+Implementation note: Added an application-level typed WebSocket transport and provider, migrated Lobby to subscriptions on that shared transport, and covered lifecycle, dispatch, cleanup, and stable failure outcomes through the transport boundary.
 
 ## Blocked by
 
