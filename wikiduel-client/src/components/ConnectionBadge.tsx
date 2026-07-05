@@ -1,4 +1,4 @@
-import type { ConnectionStatus } from '../features/rooms/types'
+import type { ConnectionStatus } from '../realtime/WebSocketTransport'
 import { StatusIndicator, type StatusTone } from './ui/StatusIndicator'
 
 export function ConnectionBadge({ status }: { status: ConnectionStatus }) {

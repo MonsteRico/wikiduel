@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
-import type { Room as Lobby, ServerMessage } from './features/rooms/types'
+import type { Room as Lobby } from './features/rooms/types'
+import type { ServerMessage } from './realtime/messages'
 
 type WithoutTimestamp<Message> = Message extends unknown ? Omit<Message, 'sentAt'> : never
 
@@ -106,6 +107,7 @@ describe('Lobby client', () => {
     expect(await screen.findByRole('heading', { name: 'Waiting for the duel' })).toBeInTheDocument()
     expect(screen.getByText('1 / 2 joined')).toBeInTheDocument()
     expect(screen.getByText('You')).toBeInTheDocument()
+    expect(sockets).toHaveLength(1)
   })
 
   it('joins a Lobby and presents rejected join notices', async () => {

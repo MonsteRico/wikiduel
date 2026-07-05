@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react'
 
-import type { useRoomSocket } from './useRoomSocket'
+import type { useLobbyTransport } from './useLobbyTransport'
 
-type RoomContextValue = ReturnType<typeof useRoomSocket>
+type RoomContextValue = ReturnType<typeof useLobbyTransport>
 
 export const RoomContext = createContext<RoomContextValue | null>(null)
 
