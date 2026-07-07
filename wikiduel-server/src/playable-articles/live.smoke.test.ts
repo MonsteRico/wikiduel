@@ -18,6 +18,28 @@ live("live English Wikipedia smoke", () => {
     }
   }, 20_000);
 
+  test("loads safe attributed figures from live Wikimedia metadata", async () => {
+    const repository = createLivePlayableArticleRepository(process.env);
+    const result = await repository.getByTitle("Cat");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const figure = result.article.document.blocks.find((block) => block.type === "figure");
+      expect(figure).toBeDefined();
+      if (figure) {
+        expect(figure.sourceUrl).toMatch(/^https:\/\/upload\.wikimedia\.org\/wikipedia\//);
+        expect(figure.width).toBeGreaterThan(1);
+        expect(figure.height).toBeGreaterThan(1);
+        expect(figure.alt.trim().length + figure.caption.length).toBeGreaterThan(0);
+        expect(figure.attribution.descriptionUrl).toMatch(
+          /^https:\/\/(?:commons\.wikimedia|en\.wikipedia)\.org\/wiki\/File:/,
+        );
+        expect(figure.attribution.historyUrl).toContain("action=history");
+        expect(figure.attribution.licenseName.trim()).not.toBe("");
+        expect(figure.attribution.licenseUrl).toMatch(/^https:\/\//);
+      }
+    }
+  }, 30_000);
+
   test("resolves a redirect to canonical identity", async () => {
     const repository = createLivePlayableArticleRepository(process.env);
     const result = await repository.getByTitle("USA");
