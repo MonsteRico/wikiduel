@@ -48,10 +48,17 @@ function classification(
 }
 
 function articleTitleSegment(title: string): string {
+  // Wikipedia article URLs spell spaces as underscores and leave the namespace
+  // colon readable. Keeping this conversion here makes attribution URLs match
+  // the canonical MediaWiki shape without letting callers hand-build paths.
   return encodeURIComponent(title.replace(/ /g, "_")).replace(/%3A/gi, ":");
 }
 
 function attributionFor(snapshot: WikipediaPageSnapshot): ArticleAttribution | undefined {
+  // Article attribution is required for the whole Playable Article: without a
+  // stable oldid and timestamp we cannot tell users which revision we modified.
+  // Image attribution is handled separately so bad media can be omitted without
+  // rejecting an otherwise valid article.
   if (
     !Number.isInteger(snapshot.revisionId)
     || snapshot.revisionId <= 0
@@ -70,6 +77,10 @@ function attributionFor(snapshot: WikipediaPageSnapshot): ArticleAttribution | u
 }
 
 function safeUrl(value: string, origins?: readonly string[]): URL | undefined {
+  // All externally supplied URLs are parsed through this helper before use so
+  // the policy is expressed on structured URL fields, not brittle string checks.
+  // HTTPS prevents mixed-content and downgrade surprises; rejecting credentials
+  // avoids preserving attacker-controlled authority text in rendered links.
   let url: URL;
   try {
     url = new URL(value);
@@ -82,6 +93,10 @@ function safeUrl(value: string, origins?: readonly string[]): URL | undefined {
 }
 
 function plainText(html: string | undefined): string | undefined {
+  // Wikimedia creator/credit fields are HTML fragments supplied by file pages.
+  // The article contract only needs readable attribution text, so we parse the
+  // fragment, keep text nodes, and deliberately skip executable or embedded
+  // subtrees instead of trying to sanitize and preserve markup.
   if (!html) return undefined;
   const fragment = parseFragment(html);
   const parts: string[] = [];
@@ -104,6 +119,10 @@ function plainText(html: string | undefined): string | undefined {
 }
 
 function descriptionFileTitle(url: URL): string | undefined {
+  // The image-history URL is not returned by imageinfo, but MediaWiki history is
+  // keyed by the file page title. Deriving that title only from an approved,
+  // query-free `/wiki/File:*` description URL ties history back to the same file
+  // identity and avoids trusting a separate, caller-supplied title for links.
   if (url.search || url.hash || !url.pathname.startsWith("/wiki/")) return undefined;
   try {
     const title = decodeURIComponent(url.pathname.slice("/wiki/".length));
@@ -116,6 +135,11 @@ function descriptionFileTitle(url: URL): string | undefined {
 function safeFigure(
   metadata: WikipediaImageMetadata,
 ): Omit<ArticleFigure, "type" | "alt" | "caption"> | undefined {
+  // This is the repository's image policy reducer. The gateway translates
+  // Wikimedia's response into project-owned fields; this function decides
+  // whether those fields are safe and complete enough to become article output.
+  // Returning undefined is intentional degradation: unsafe media disappears, but
+  // the surrounding article can still be playable as text.
   const source = safeUrl(metadata.sourceUrl, ["https://upload.wikimedia.org"]);
   const description = safeUrl(metadata.descriptionUrl, [
     "https://commons.wikimedia.org",
@@ -124,6 +148,10 @@ function safeFigure(
   const license = metadata.licenseUrl ? safeUrl(metadata.licenseUrl) : undefined;
   const licenseName = metadata.licenseName?.trim();
   const fileTitle = description ? descriptionFileTitle(description) : undefined;
+  // The source check is narrower than "any upload.wikimedia.org URL": thumbnails
+  // must be ordinary `/wikipedia/` media with no query/hash. That keeps redirect
+  // endpoints, tracking parameters, and non-file service URLs out of the render
+  // contract even when they came from upstream metadata.
   if (
     !source || !source.pathname.startsWith("/wikipedia/") || source.search || source.hash
     || !description || !fileTitle || !license || !licenseName || metadata.nonFree
@@ -134,6 +162,9 @@ function safeFigure(
     || (metadata.width === 1 && metadata.height === 1)
   ) return undefined;
 
+  // History lives on the same wiki as the approved description page: Commons
+  // files should link to Commons history, while local enwiki files should link
+  // to enwiki history. Reusing `fileTitle` keeps the attribution links coherent.
   const history = new URL("/w/index.php", description.origin);
   history.search = new URLSearchParams({ title: fileTitle, action: "history" }).toString();
   const creator = plainText(metadata.creatorHtml);

@@ -83,16 +83,25 @@ function retryAfter(response: Response): number | undefined {
 }
 
 function metadataText(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+  // `extmetadata` entries are objects shaped like `{ value: string }`, and the
+  // useful license fields are sometimes absent or blank. Collapse that API shape
+  // at the boundary so repository policy never reaches into Wikimedia internals.
   const entry = asRecord(metadata?.[key]);
   return typeof entry?.value === "string" && entry.value.trim() ? entry.value : undefined;
 }
 
 function metadataBoolean(metadata: Record<string, unknown> | undefined, key: string): boolean {
+  // Wikimedia boolean-ish metadata is represented as text. Treat any present
+  // value except common false spellings as true so conservative safety flags
+  // such as NonFree cannot be bypassed by an unexpected truthy string.
   const value = metadataText(metadata, key)?.toLocaleLowerCase("en-US");
   return value !== undefined && !["", "0", "false", "no"].includes(value);
 }
 
 function aliasesFrom(query: Record<string, unknown>): ReadonlyMap<string, string> {
+  // The action API reports normalization and redirects separately. Both mean
+  // "the page data may be under a different title than the caller requested",
+  // so we merge them into one alias map shared by link and image lookups.
   const aliases = new Map<string, string>();
   for (const entry of [
     ...(Array.isArray(query.normalized) ? query.normalized : []),
@@ -107,6 +116,9 @@ function aliasesFrom(query: Record<string, unknown>): ReadonlyMap<string, string
 }
 
 function canonicalTitle(requestedTitle: string, aliases: ReadonlyMap<string, string>): string {
+  // Follow alias chains defensively because normalization can feed a redirect.
+  // The visited set prevents a malformed upstream response from trapping the
+  // gateway in a loop while still preserving the original requestedTitle later.
   let title = requestedTitle;
   const visited = new Set<string>();
   while (aliases.has(title) && !visited.has(title)) {
@@ -212,9 +224,16 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
       };
     },
+    // Image rendering needs data the `wikipedia` package does not expose:
+    // thumbnail URL, dimensions, MIME type, description page, and machine-
+    // readable license/creator metadata. Keep that enrichment here so callers
+    // receive one project-owned shape instead of raw action API objects.
     async fetchImageMetadata(titles): Promise<readonly WikipediaImageMetadata[]> {
       if (titles.length === 0) return [];
       if (titles.length > 50) {
+        // `titles=` is capped at 50 pages for this anonymous/user request mode.
+        // Batching here keeps the repository simple and preserves input order
+        // semantics by concatenating each slice's translated results.
         const images: WikipediaImageMetadata[] = [];
         for (let start = 0; start < titles.length; start += 50) {
           images.push(...await this.fetchImageMetadata(titles.slice(start, start + 50)));
@@ -262,6 +281,9 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       const pages = query.pages.map(asRecord);
       const images: WikipediaImageMetadata[] = [];
       for (const requestedTitle of titles) {
+        // Return metadata under the original requested title even when Wikimedia
+        // normalizes or redirects it. The normalizer's figure map is keyed by
+        // the title found in article HTML, not necessarily the canonical title.
         const title = canonicalTitle(requestedTitle, aliases);
         const page = pages.find((candidate) => candidate?.title === title);
         const info = asRecord(Array.isArray(page?.imageinfo) ? page.imageinfo[0] : undefined);
@@ -273,6 +295,9 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
           || !height || typeof info.mime !== "string"
           || typeof info.descriptionurl !== "string"
         ) continue;
+        // Prefer explicit Attribution over Artist when available: Wikimedia
+        // files can use Attribution for the exact credit line requested by the
+        // uploader, while Artist may be a looser creator field.
         const creator = metadataText(metadata, "Attribution") ?? metadataText(metadata, "Artist");
         const credit = metadataText(metadata, "Credit");
         const licenseName = metadataText(metadata, "LicenseShortName")

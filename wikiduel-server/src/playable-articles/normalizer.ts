@@ -39,6 +39,9 @@ function attribute(element: Element, name: string): string | undefined {
 }
 
 function descendant(element: Element, tagName: string): Element | undefined {
+  // Parsoid may wrap the actual <img> in links or spans inside a figure. The
+  // normalizer still needs the image alt text, so this searches structurally
+  // instead of assuming a direct child layout.
   for (const child of childrenOf(element)) {
     if (!isElement(child)) continue;
     if (child.tagName === tagName) return child;
@@ -102,12 +105,19 @@ function linkTitle(element: Element): string | undefined {
 }
 
 function hasMeaningfulInline(nodes: readonly ArticleInline[]): boolean {
+  // A figure must carry either useful alt text or useful caption text. This
+  // keeps attribution-only media from producing empty visual blocks while still
+  // allowing captions made of emphasis/Navigation Nodes to count as meaningful.
   return nodes.some((node) => node.type === "text"
     ? Boolean(node.value.trim())
     : hasMeaningfulInline(node.children));
 }
 
 function imageTitle(element: Element): string | undefined {
+  // We identify figures by MediaWiki's structural `mw:File/*` marker, not by
+  // incidental class names. That keeps the figure path tied to article content
+  // that Parsoid says is a file transclusion, and lets excluded containers
+  // handle infoboxes, galleries, navboxes, maps, and other non-body media.
   if (
     element.tagName !== "figure"
     || !/^mw:File\/(?:Thumb|Frame|Frameless)$/.test(attribute(element, "typeof") ?? "")
@@ -123,6 +133,9 @@ function imageTitle(element: Element): string | undefined {
   };
   const containsInterfaceMarker = (candidate: Element): boolean => hasInterfaceMarker(candidate)
     || childrenOf(candidate).some((child) => isElement(child) && containsInterfaceMarker(child));
+  // Some decorative interface images are still represented as file figures.
+  // If any part of the figure declares itself presentational or icon-like, treat
+  // the whole candidate as UI chrome rather than article content.
   if (containsInterfaceMarker(element)) return undefined;
 
   const visit = (nodes: readonly Node[]): string | undefined => {
@@ -132,6 +145,10 @@ function imageTitle(element: Element): string | undefined {
         const href = attribute(node, "href");
         if (href?.startsWith("/wiki/File:") && !href.includes("?")) {
           try {
+            // The file page link is the stable title that imageinfo accepts.
+            // Thumbnail URLs contain size/path transformations, so deriving the
+            // title from `src` would couple us to upload path conventions and
+            // make redirects/normalization harder to reason about.
             const encodedTitle = href.slice("/wiki/".length).split(/[?#]/, 1)[0];
             if (!encodedTitle) return undefined;
             const title = decodeURIComponent(encodedTitle)
@@ -207,6 +224,9 @@ function blocksFrom(
   for (const node of nodes) {
     if (!isElement(node) || isExcluded(node)) continue;
     if (node.tagName === "figure") {
+      // Normalization performs the final join between source-position markup
+      // and repository-approved image metadata. If the repository did not
+      // approve the file title, the original figure leaves no placeholder.
       const title = imageTitle(node);
       const figure = title ? figures.get(title) : undefined;
       if (!figure) continue;
@@ -217,6 +237,8 @@ function blocksFrom(
         ? inlineFrom(childrenOf(captionElement), false, destinations)
         : [];
       const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
+      // Safe metadata alone is not enough for playable output: the player needs
+      // some meaningful textual context for accessibility and article coherence.
       if (!alt && !hasMeaningfulInline(caption)) continue;
       blocks.push({ type: "figure", ...figure, alt, caption });
     } else if (/^h[2-6]$/.test(node.tagName)) {
@@ -262,6 +284,9 @@ export function extractCandidateLinkTitles(untrustedHtml: string): readonly stri
     for (const node of nodes) {
       if (!isElement(node) || isExcluded(node)) continue;
       if (node.tagName === "figure") {
+        // Figure captions use the same Navigation Node contract as prose, but
+        // links elsewhere inside a figure usually point at file/download chrome.
+        // Only captions contribute candidate article destinations.
         for (const child of childrenOf(node)) {
           if (isElement(child) && child.tagName === "figcaption") visit(childrenOf(child));
         }
@@ -279,6 +304,9 @@ export function extractCandidateLinkTitles(untrustedHtml: string): readonly stri
 }
 
 export function extractCandidateImageTitles(untrustedHtml: string): readonly string[] {
+  // This is the cheap discovery pass used before normalization. It returns only
+  // file titles that appear as supported source-position figures; the repository
+  // then asks Wikimedia for attribution metadata and decides which are safe.
   const fragment = parseFragment(untrustedHtml);
   const titles = new Set<string>();
   const visit = (nodes: readonly Node[]) => {
