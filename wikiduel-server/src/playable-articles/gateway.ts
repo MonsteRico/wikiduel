@@ -164,16 +164,16 @@ function packageError(error: unknown): WikipediaGatewayError {
   }
   const response = asRecord(record?.response) ?? asRecord(asRecord(record?.cause)?.response);
   const status = response?.status;
-  if (status === 404) return new WikipediaGatewayError("not-found", undefined, { cause: error });
-  if (status === 429) {
-    return new WikipediaGatewayError("rate-limited", packageRetryAfter(response), { cause: error });
-  }
   if (status === "maxlag" || /maxlag/i.test(message)) {
     return new WikipediaGatewayError("back-pressure", undefined, { cause: error });
   }
-  if (typeof status === "number" && status >= 500) {
-    return new WikipediaGatewayError("transient", undefined, { cause: error });
-  }
+  const statusFailure = httpStatusFailure(
+    status,
+    packageRetryAfter(response),
+    true,
+    error,
+  );
+  if (statusFailure) return statusFailure;
   if (
     status === undefined
     && (error instanceof TypeError || /network|fetch|socket|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(message))
@@ -183,14 +183,55 @@ function packageError(error: unknown): WikipediaGatewayError {
   return new WikipediaGatewayError("unavailable", undefined, { cause: error });
 }
 
-function responseFailure(response: Response, notFound = false): WikipediaGatewayError | undefined {
-  if (notFound && response.status === 404) return new WikipediaGatewayError("not-found");
-  if (response.status === 429) {
-    return new WikipediaGatewayError("rate-limited", retryAfter(response));
+function httpStatusFailure(
+  status: unknown,
+  retryAfterSeconds?: number,
+  notFound = false,
+  cause?: unknown,
+): WikipediaGatewayError | undefined {
+  if (notFound && status === 404) {
+    return new WikipediaGatewayError("not-found", undefined, { cause });
   }
-  if (response.status >= 500) return new WikipediaGatewayError("transient");
-  if (!response.ok) return new WikipediaGatewayError("unavailable");
+  if (status === 429) {
+    return new WikipediaGatewayError("rate-limited", retryAfterSeconds, { cause });
+  }
+  if (typeof status === "number" && status >= 500) {
+    return new WikipediaGatewayError("transient", undefined, { cause });
+  }
+  if (typeof status === "number" && status >= 400) {
+    return new WikipediaGatewayError("unavailable", undefined, { cause });
+  }
   return undefined;
+}
+
+function responseFailure(response: Response, notFound = false): WikipediaGatewayError | undefined {
+  if (response.ok) return undefined;
+  return httpStatusFailure(response.status, retryAfter(response), notFound)
+    ?? new WikipediaGatewayError("unavailable");
+}
+
+async function requestWikimedia(
+  request: typeof fetch,
+  userAgent: string,
+  url: URL,
+  signal: AbortSignal | undefined,
+  notFound = false,
+): Promise<Response> {
+  let response: Response;
+  try {
+    response = await request(url, {
+      signal,
+      headers: {
+        "Api-User-Agent": userAgent,
+        "User-Agent": userAgent,
+      },
+    });
+  } catch (error) {
+    throw new WikipediaGatewayError("transient", undefined, { cause: error });
+  }
+  const failure = responseFailure(response, notFound);
+  if (failure) throw failure;
+  return response;
 }
 
 function throwIfBackPressure(body: Record<string, unknown> | undefined): void {
@@ -237,20 +278,13 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         rvprop: "ids|timestamp",
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          signal: options?.signal,
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("transient", undefined, { cause: error });
-      }
-      const failure = responseFailure(response, true);
-      if (failure) throw failure;
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+        true,
+      );
 
       const body = asRecord(await response.json());
       throwIfBackPressure(body);
@@ -316,20 +350,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         ].join("|"),
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          signal: options?.signal,
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("transient", undefined, { cause: error });
-      }
-      const failure = responseFailure(response);
-      if (failure) throw failure;
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+      );
 
       const body = asRecord(await response.json());
       throwIfBackPressure(body);
@@ -404,20 +430,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         prop: "pageprops",
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          signal: options?.signal,
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("transient", undefined, { cause: error });
-      }
-      const failure = responseFailure(response);
-      if (failure) throw failure;
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+      );
 
       const body = asRecord(await response.json());
       throwIfBackPressure(body);

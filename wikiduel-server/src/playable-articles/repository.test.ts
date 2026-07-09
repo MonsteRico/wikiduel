@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   WikipediaGatewayError,
+  type WikipediaGateway,
   type WikipediaImageMetadata,
   type WikipediaPageSnapshot,
   type WikipediaResolvedLink,
@@ -33,28 +34,32 @@ const safeImageMetadata: WikipediaImageMetadata = {
   restrictions: [],
 };
 
+function gatewayWith(overrides: Partial<WikipediaGateway> = {}): WikipediaGateway {
+  return {
+    fetchPage: async () => baseSnapshot,
+    resolveLinks: async () => [],
+    fetchImageMetadata: async () => [],
+    ...overrides,
+  };
+}
+
 function repositoryFor(
   value: WikipediaPageSnapshot | Error,
   resolvedLinks: readonly WikipediaResolvedLink[] = [],
 ) {
-  return createPlayableArticleRepository({
+  return createPlayableArticleRepository(gatewayWith({
     fetchPage: async () => {
       if (value instanceof Error) throw value;
       return value;
     },
     resolveLinks: async () => resolvedLinks,
-    fetchImageMetadata: async () => [],
-  });
+  }));
 }
 
 describe("PlayableArticleRepository", () => {
   test("reuses a complete article for repeated normalized-title requests", async () => {
     const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
-    const repository = createPlayableArticleRepository({
-      fetchPage,
-      resolveLinks: async () => [],
-      fetchImageMetadata: async () => [],
-    });
+    const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
     const first = await repository.getByTitle("  Ada_Lovelace  ");
     const second = await repository.getByTitle("Ada Lovelace");
@@ -68,11 +73,10 @@ describe("PlayableArticleRepository", () => {
   test("maps distinct redirect aliases to one cached canonical page ID", async () => {
     const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
     const resolveLinks = vi.fn().mockResolvedValue([]);
-    const repository = createPlayableArticleRepository({
+    const repository = createPlayableArticleRepository(gatewayWith({
       fetchPage,
       resolveLinks,
-      fetchImageMetadata: async () => [],
-    });
+    }));
 
     const first = await repository.getByTitle("Augusta Ada King");
     const second = await repository.getByTitle("Countess of Lovelace");
@@ -90,11 +94,7 @@ describe("PlayableArticleRepository", () => {
     const fetchPage = vi.fn().mockReturnValue(new Promise<WikipediaPageSnapshot>((resolve) => {
       completeFetch = resolve;
     }));
-    const repository = createPlayableArticleRepository({
-      fetchPage,
-      resolveLinks: async () => [],
-      fetchImageMetadata: async () => [],
-    });
+    const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
     const first = repository.getByTitle("Ada_Lovelace");
     const second = repository.getByTitle("  Ada Lovelace  ");
@@ -116,11 +116,7 @@ describe("PlayableArticleRepository", () => {
           completeLateFetch = resolve;
         }))
         .mockResolvedValue(baseSnapshot);
-      const repository = createPlayableArticleRepository({
-        fetchPage,
-        resolveLinks: async () => [],
-        fetchImageMetadata: async () => [],
-      });
+      const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
       const timedOut = repository.getByTitle("Ada Lovelace");
       await vi.advanceTimersByTimeAsync(15_000);
@@ -145,11 +141,7 @@ describe("PlayableArticleRepository", () => {
       const fetchPage = vi.fn()
         .mockRejectedValueOnce(new WikipediaGatewayError("transient"))
         .mockResolvedValue(baseSnapshot);
-      const repository = createPlayableArticleRepository({
-        fetchPage,
-        resolveLinks: async () => [],
-        fetchImageMetadata: async () => [],
-      });
+      const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
       const result = repository.getByTitle("Ada Lovelace");
       await Promise.resolve();
@@ -171,11 +163,10 @@ describe("PlayableArticleRepository", () => {
         .mockRejectedValueOnce(new WikipediaGatewayError("transient"))
         .mockResolvedValue(baseSnapshot);
       const logger = { debug: vi.fn(), warn: vi.fn() };
-      const repository = createPlayableArticleRepository({
-        fetchPage,
-        resolveLinks: async () => [],
-        fetchImageMetadata: async () => [],
-      }, { logger, random: () => 0 });
+      const repository = createPlayableArticleRepository(
+        gatewayWith({ fetchPage }),
+        { logger, random: () => 0 },
+      );
 
       const failed = repository.getByTitle("Ada Lovelace");
       await vi.advanceTimersByTimeAsync(1_000);
@@ -205,6 +196,34 @@ describe("PlayableArticleRepository", () => {
     }
   });
 
+  test("returns image-enrichment rate limits instead of caching a partial article", async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      ...baseSnapshot,
+      html: `<p>Article text.</p><figure typeof="mw:File/Thumb">
+        <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+      </figure>`,
+    });
+    const fetchImageMetadata = vi.fn().mockRejectedValue(
+      new WikipediaGatewayError("rate-limited", 31),
+    );
+    const resolveLinks = vi.fn().mockResolvedValue([]);
+    const repository = createPlayableArticleRepository(gatewayWith({
+      fetchPage,
+      resolveLinks,
+      fetchImageMetadata,
+    }));
+
+    const expected = {
+      ok: false,
+      failure: { code: "upstream-rate-limited", retryAfterSeconds: 31 },
+    } as const;
+    await expect(repository.getByTitle("Ada Lovelace")).resolves.toEqual(expected);
+    await expect(repository.getByTitle("Ada Lovelace")).resolves.toEqual(expected);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(fetchImageMetadata).toHaveBeenCalledTimes(2);
+    expect(resolveLinks).not.toHaveBeenCalled();
+  });
+
   test.each([
     ["missing page", new WikipediaGatewayError("not-found")],
     ["non-playable page", { ...baseSnapshot, disambiguation: true }],
@@ -214,11 +233,7 @@ describe("PlayableArticleRepository", () => {
       if (outcome instanceof Error) throw outcome;
       return outcome;
     });
-    const repository = createPlayableArticleRepository({
-      fetchPage,
-      resolveLinks: async () => [],
-      fetchImageMetadata: async () => [],
-    });
+    const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
     const first = await repository.getByTitle("Ada Lovelace");
     const second = await repository.getByTitle("Ada Lovelace");
@@ -238,11 +253,7 @@ describe("PlayableArticleRepository", () => {
     [new WikipediaGatewayError("invalid-response"), { code: "upstream-unavailable" }],
   ] as const)("does not automatically retry %s", async (error, failure) => {
     const fetchPage = vi.fn().mockRejectedValue(error);
-    const repository = createPlayableArticleRepository({
-      fetchPage,
-      resolveLinks: async () => [],
-      fetchImageMetadata: async () => [],
-    });
+    const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));
 
     await expect(repository.getByTitle("Ada Lovelace")).resolves.toEqual({ ok: false, failure });
     expect(fetchPage).toHaveBeenCalledOnce();
@@ -250,11 +261,7 @@ describe("PlayableArticleRepository", () => {
 
   test("keeps completed caches local to each repository process instance", async () => {
     const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
-    const gateway = {
-      fetchPage,
-      resolveLinks: async () => [],
-      fetchImageMetadata: async () => [],
-    };
+    const gateway = gatewayWith({ fetchPage });
     const firstProcessRepository = createPlayableArticleRepository(gateway);
     const restartedProcessRepository = createPlayableArticleRepository(gateway);
 

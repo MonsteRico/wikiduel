@@ -293,21 +293,17 @@ export function createPlayableArticleRepository(
     const imageCandidates = extractCandidateImageTitles(snapshot.html);
     const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
     if (imageCandidates.length > 0) {
-      try {
-        const metadataResults = await withTransientRetry(
-          () => gateway.fetchImageMetadata(imageCandidates, { signal }),
-          title,
-          signal,
-          retryState,
-        );
-        for (const metadata of metadataResults) {
-          const figure = safeFigure(metadata);
-          if (figure && imageCandidates.includes(metadata.requestedTitle)) {
-            figures.set(metadata.requestedTitle, figure);
-          }
+      const metadataResults = await withTransientRetry(
+        () => gateway.fetchImageMetadata(imageCandidates, { signal }),
+        title,
+        signal,
+        retryState,
+      );
+      for (const metadata of metadataResults) {
+        const figure = safeFigure(metadata);
+        if (figure && imageCandidates.includes(metadata.requestedTitle)) {
+          figures.set(metadata.requestedTitle, figure);
         }
-      } catch {
-        // Image failure degrades the article to safe text instead of rejecting it.
       }
     }
     const resolvedLinks = await withTransientRetry(

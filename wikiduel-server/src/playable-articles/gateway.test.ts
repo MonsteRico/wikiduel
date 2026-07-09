@@ -378,6 +378,35 @@ describe("WikipediaGateway", () => {
     expect(options.signal).toBe(controller.signal);
   });
 
+  test("treats late package work as uncancellable and applies cancellation to later direct work", async () => {
+    let completePackagePage!: (page: object) => void;
+    const html = vi.fn().mockResolvedValue("<p>Late package result.</p>");
+    wikipediaPackage.page.mockReturnValue(new Promise((resolve) => {
+      completePackagePage = resolve;
+    }));
+    const request = vi.fn((_url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+      if (options?.signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+      return Promise.resolve(metadataResponse());
+    });
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+    const controller = new AbortController();
+
+    const operation = gateway.fetchPage("Ada Lovelace", { signal: controller.signal });
+    controller.abort();
+    await Promise.resolve();
+    expect(request).not.toHaveBeenCalled();
+    expect(wikipediaPackage.page).toHaveBeenCalledWith("Ada Lovelace", { redirect: true });
+
+    completePackagePage({ pageid: 974, ns: 0, title: "Ada Lovelace", html });
+    await expect(operation).rejects.toMatchObject({ kind: "transient" });
+    expect(html).toHaveBeenCalledWith({ redirect: true });
+    const options = request.mock.calls[0]?.[1] as RequestInit;
+    expect(options.signal).toBe(controller.signal);
+  });
+
   test("recognizes disambiguation metadata without exposing the raw response", async () => {
     wikipediaPackage.page.mockResolvedValue({
       pageid: 12,
