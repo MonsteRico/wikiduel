@@ -2,9 +2,10 @@
 
 # Add Repository Caching and Upstream Resilience
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-09 06:55 PM
 
 ## Parent
 
@@ -17,14 +18,18 @@ Make Playable Article retrieval bounded, atomic, and efficient. Cache only compl
 
 ## Acceptance criteria
 
-- [ ] Complete successful Playable Articles are cached by canonical page ID with normalized requested-title and redirect aliases until process restart.
-- [ ] Concurrent requests for the same normalized title share one in-flight build and receive the same completed result.
-- [ ] Partial work, transient failures, missing pages, and non-playable results are not cached.
-- [ ] One article build observes an initial 15-second total upstream budget and ignores uncancellable late completions after that budget.
-- [ ] Network interruptions and transient `5xx` failures receive at most one jittered retry within the same budget; deterministic failures are not retried.
-- [ ] `429` returns `upstream-rate-limited` with retry timing, while maxlag/back-pressure and exhausted transient failures map to the agreed retryable outcomes.
-- [ ] Cache behavior is verified through gateway call counts; per-request cache and retry details are debug-only and normal operation emits at most one concise warning for a final failed build.
-- [ ] Vitest coverage includes hits, misses, aliases, concurrency, atomicity, deadlines, retries, rate limits, cancellation, late completion, and process-local reset behavior.
+- [x] Complete successful Playable Articles are cached by canonical page ID with normalized requested-title and redirect aliases until process restart.
+- [x] Concurrent requests for the same normalized title share one in-flight build and receive the same completed result.
+- [x] Partial work, transient failures, missing pages, and non-playable results are not cached.
+- [x] One article build observes an initial 15-second total upstream budget and ignores uncancellable late completions after that budget.
+- [x] Network interruptions and transient `5xx` failures receive at most one jittered retry within the same budget; deterministic failures are not retried.
+- [x] `429` returns `upstream-rate-limited` with retry timing, while maxlag/back-pressure and exhausted transient failures map to the agreed retryable outcomes.
+- [x] Cache behavior is verified through gateway call counts; per-request cache and retry details are debug-only and normal operation emits at most one concise warning for a final failed build.
+- [x] Vitest coverage includes hits, misses, aliases, concurrency, atomicity, deadlines, retries, rate limits, cancellation, late completion, and process-local reset behavior.
+
+## Implementation note
+
+Repository instances now own process-local canonical article and title-alias caches, one normalized-title in-flight build map, and a shared one-retry/15-second resilience budget. Gateway failures retain rate-limit and back-pressure distinctions, while only complete immutable articles are published to cache.
 
 ## Blocked by
 
