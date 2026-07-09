@@ -114,6 +114,18 @@ test("GET /health reports that the server is healthy", async () => {
   await app.close();
 });
 
+test("responses permit only the approved Wikimedia image origin", async () => {
+  const app = await buildApp();
+  const response = await app.inject({ method: "GET", url: "/health" });
+
+  const policy = response.headers["content-security-policy"];
+  expect(policy).toContain("img-src 'self' https://upload.wikimedia.org");
+  expect(policy).not.toContain("img-src *");
+  expect(policy).not.toMatch(/img-src[^;]*\shttps:(?:\s|;|$)/);
+
+  await app.close();
+});
+
 test("a two-player lobby supports readiness, starting, and closure", async () => {
   const app = await buildApp();
   await app.ready();

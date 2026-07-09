@@ -22,9 +22,25 @@ export type WikipediaResolvedLink = Readonly<
     }
 >;
 
+export type WikipediaImageMetadata = Readonly<{
+  requestedTitle: string;
+  sourceUrl: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  descriptionUrl: string;
+  creatorHtml?: string;
+  creditHtml?: string;
+  licenseName?: string;
+  licenseUrl?: string;
+  nonFree: boolean;
+  restrictions: readonly string[];
+}>;
+
 export interface WikipediaGateway {
   fetchPage(title: string): Promise<WikipediaPageSnapshot>;
   resolveLinks(titles: readonly string[]): Promise<readonly WikipediaResolvedLink[]>;
+  fetchImageMetadata(titles: readonly string[]): Promise<readonly WikipediaImageMetadata[]>;
 }
 
 export type GatewayFailureKind = "not-found" | "rate-limited" | "unavailable" | "invalid-response";
@@ -64,6 +80,52 @@ function positiveInteger(value: unknown): number | undefined {
 function retryAfter(response: Response): number | undefined {
   const value = Number(response.headers.get("retry-after"));
   return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function metadataText(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+  // `extmetadata` entries are objects shaped like `{ value: string }`, and the
+  // useful license fields are sometimes absent or blank. Collapse that API shape
+  // at the boundary so repository policy never reaches into Wikimedia internals.
+  const entry = asRecord(metadata?.[key]);
+  return typeof entry?.value === "string" && entry.value.trim() ? entry.value : undefined;
+}
+
+function metadataBoolean(metadata: Record<string, unknown> | undefined, key: string): boolean {
+  // Wikimedia boolean-ish metadata is represented as text. Treat any present
+  // value except common false spellings as true so conservative safety flags
+  // such as NonFree cannot be bypassed by an unexpected truthy string.
+  const value = metadataText(metadata, key)?.toLocaleLowerCase("en-US");
+  return value !== undefined && !["", "0", "false", "no"].includes(value);
+}
+
+function aliasesFrom(query: Record<string, unknown>): ReadonlyMap<string, string> {
+  // The action API reports normalization and redirects separately. Both mean
+  // "the page data may be under a different title than the caller requested",
+  // so we merge them into one alias map shared by link and image lookups.
+  const aliases = new Map<string, string>();
+  for (const entry of [
+    ...(Array.isArray(query.normalized) ? query.normalized : []),
+    ...(Array.isArray(query.redirects) ? query.redirects : []),
+  ]) {
+    const alias = asRecord(entry);
+    if (typeof alias?.from === "string" && typeof alias.to === "string") {
+      aliases.set(alias.from, alias.to);
+    }
+  }
+  return aliases;
+}
+
+function canonicalTitle(requestedTitle: string, aliases: ReadonlyMap<string, string>): string {
+  // Follow alias chains defensively because normalization can feed a redirect.
+  // The visited set prevents a malformed upstream response from trapping the
+  // gateway in a loop while still preserving the original requestedTitle later.
+  let title = requestedTitle;
+  const visited = new Set<string>();
+  while (aliases.has(title) && !visited.has(title)) {
+    visited.add(title);
+    title = aliases.get(title)!;
+  }
+  return title;
 }
 
 function packageError(error: unknown): WikipediaGatewayError {
@@ -162,6 +224,105 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         disambiguation: Object.hasOwn(asRecord(page.pageprops) ?? {}, "disambiguation"),
       };
     },
+    // Image rendering needs data the `wikipedia` package does not expose:
+    // thumbnail URL, dimensions, MIME type, description page, and machine-
+    // readable license/creator metadata. Keep that enrichment here so callers
+    // receive one project-owned shape instead of raw action API objects.
+    async fetchImageMetadata(titles): Promise<readonly WikipediaImageMetadata[]> {
+      if (titles.length === 0) return [];
+      if (titles.length > 50) {
+        // `titles=` is capped at 50 pages for this anonymous/user request mode.
+        // Batching here keeps the repository simple and preserves input order
+        // semantics by concatenating each slice's translated results.
+        const images: WikipediaImageMetadata[] = [];
+        for (let start = 0; start < titles.length; start += 50) {
+          images.push(...await this.fetchImageMetadata(titles.slice(start, start + 50)));
+        }
+        return images;
+      }
+
+      const url = new URL("https://en.wikipedia.org/w/api.php");
+      url.search = new URLSearchParams({
+        action: "query",
+        format: "json",
+        formatversion: "2",
+        redirects: "1",
+        titles: titles.join("|"),
+        prop: "imageinfo",
+        iiprop: "url|size|mime|mediatype|extmetadata",
+        iiurlwidth: "800",
+        iiextmetadatalanguage: "en",
+        iiextmetadatafilter: [
+          "Artist", "Credit", "Attribution", "LicenseShortName", "LicenseUrl",
+          "UsageTerms", "NonFree", "Restrictions",
+        ].join("|"),
+      }).toString();
+
+      let response: Response;
+      try {
+        response = await request(url, {
+          headers: {
+            "Api-User-Agent": dependencies.userAgent,
+            "User-Agent": dependencies.userAgent,
+          },
+        });
+      } catch (error) {
+        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
+      }
+      if (response.status === 429) {
+        throw new WikipediaGatewayError("rate-limited", retryAfter(response));
+      }
+      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+
+      const body = asRecord(await response.json());
+      const query = asRecord(body?.query);
+      if (!query || !Array.isArray(query.pages)) throw new WikipediaGatewayError("invalid-response");
+      const aliases = aliasesFrom(query);
+      const pages = query.pages.map(asRecord);
+      const images: WikipediaImageMetadata[] = [];
+      for (const requestedTitle of titles) {
+        // Return metadata under the original requested title even when Wikimedia
+        // normalizes or redirects it. The normalizer's figure map is keyed by
+        // the title found in article HTML, not necessarily the canonical title.
+        const title = canonicalTitle(requestedTitle, aliases);
+        const page = pages.find((candidate) => candidate?.title === title);
+        const info = asRecord(Array.isArray(page?.imageinfo) ? page.imageinfo[0] : undefined);
+        const metadata = asRecord(info?.extmetadata);
+        const width = positiveInteger(info?.thumbwidth);
+        const height = positiveInteger(info?.thumbheight);
+        if (
+          !info || typeof info.thumburl !== "string" || !width
+          || !height || typeof info.mime !== "string"
+          || typeof info.descriptionurl !== "string"
+        ) continue;
+        // Prefer explicit Attribution over Artist when available: Wikimedia
+        // files can use Attribution for the exact credit line requested by the
+        // uploader, while Artist may be a looser creator field.
+        const creator = metadataText(metadata, "Attribution") ?? metadataText(metadata, "Artist");
+        const credit = metadataText(metadata, "Credit");
+        const licenseName = metadataText(metadata, "LicenseShortName")
+          ?? metadataText(metadata, "UsageTerms");
+        const licenseUrl = metadataText(metadata, "LicenseUrl");
+        const restrictionValue = metadataText(metadata, "Restrictions");
+        images.push({
+          requestedTitle,
+          sourceUrl: info.thumburl,
+          width,
+          height,
+          mimeType: info.mime,
+          descriptionUrl: info.descriptionurl,
+          ...(creator ? { creatorHtml: creator } : {}),
+          ...(credit ? { creditHtml: credit } : {}),
+          ...(licenseName ? { licenseName } : {}),
+          ...(licenseUrl ? { licenseUrl } : {}),
+          nonFree: metadataBoolean(metadata, "NonFree"),
+          restrictions: restrictionValue
+            ? restrictionValue.split("|").map((value) => value.trim()).filter(Boolean)
+            : [],
+        });
+      }
+      return images;
+    },
     // wikipedia@2.5.0 exposes links as source-page title strings only. It does
     // not bulk-resolve redirects, existence, namespaces, or page properties,
     // so this missing contract uses the official query API in 50-title batches.
@@ -206,26 +367,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
       if (!query || !Array.isArray(query.pages)) {
         throw new WikipediaGatewayError("invalid-response");
       }
-      const aliases = new Map<string, string>();
-      for (const entry of [
-        ...(Array.isArray(query.normalized) ? query.normalized : []),
-        ...(Array.isArray(query.redirects) ? query.redirects : []),
-      ]) {
-        const alias = asRecord(entry);
-        if (typeof alias?.from === "string" && typeof alias.to === "string") {
-          aliases.set(alias.from, alias.to);
-        }
-      }
+      const aliases = aliasesFrom(query);
       const pages = query.pages.map(asRecord);
 
       return titles.map((requestedTitle): WikipediaResolvedLink => {
-        let canonicalTitle = requestedTitle;
-        const visited = new Set<string>();
-        while (aliases.has(canonicalTitle) && !visited.has(canonicalTitle)) {
-          visited.add(canonicalTitle);
-          canonicalTitle = aliases.get(canonicalTitle)!;
-        }
-        const page = pages.find((candidate) => candidate?.title === canonicalTitle);
+        const title = canonicalTitle(requestedTitle, aliases);
+        const page = pages.find((candidate) => candidate?.title === title);
         if (!page || Object.hasOwn(page, "missing")) {
           return { requestedTitle, exists: false };
         }

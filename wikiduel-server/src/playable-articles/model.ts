@@ -10,6 +10,25 @@ export type ArticleInline =
       children: readonly ArticleInline[];
     }>;
 
+export type ImageAttribution = Readonly<{
+  descriptionUrl: string;
+  historyUrl: string;
+  creator?: string;
+  credit?: string;
+  licenseName: string;
+  licenseUrl: string;
+}>;
+
+export type ArticleFigure = Readonly<{
+  type: "figure";
+  sourceUrl: string;
+  width: number;
+  height: number;
+  alt: string;
+  caption: readonly ArticleInline[];
+  attribution: ImageAttribution;
+}>;
+
 export type ArticleBlock =
   | Readonly<{ type: "heading"; level: 2 | 3 | 4 | 5 | 6; children: readonly ArticleInline[] }>
   | Readonly<{ type: "paragraph"; children: readonly ArticleInline[] }>
@@ -20,7 +39,8 @@ export type ArticleBlock =
         children: readonly ArticleInline[];
         blocks: readonly ArticleBlock[];
       }>[];
-    }>;
+    }>
+  | ArticleFigure;
 
 export type ArticleDocument = Readonly<{
   title: string;

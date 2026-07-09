@@ -1,16 +1,24 @@
 import {
   WikipediaGatewayError,
   type WikipediaGateway,
+  type WikipediaImageMetadata,
   type WikipediaPageSnapshot,
 } from "./gateway.js";
 import type {
   ArticleAttribution,
+  ArticleFigure,
   ArticleNotPlayableReason,
   NavigationDestination,
   PlayableArticle,
   PlayableArticleResult,
 } from "./model.js";
-import { extractCandidateLinkTitles, normalizeArticleDocument } from "./normalizer.js";
+import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
+
+import {
+  extractCandidateImageTitles,
+  extractCandidateLinkTitles,
+  normalizeArticleDocument,
+} from "./normalizer.js";
 import { isValidWikipediaTitle } from "./title.js";
 
 export interface PlayableArticleRepository {
@@ -40,10 +48,17 @@ function classification(
 }
 
 function articleTitleSegment(title: string): string {
+  // Wikipedia article URLs spell spaces as underscores and leave the namespace
+  // colon readable. Keeping this conversion here makes attribution URLs match
+  // the canonical MediaWiki shape without letting callers hand-build paths.
   return encodeURIComponent(title.replace(/ /g, "_")).replace(/%3A/gi, ":");
 }
 
 function attributionFor(snapshot: WikipediaPageSnapshot): ArticleAttribution | undefined {
+  // Article attribution is required for the whole Playable Article: without a
+  // stable oldid and timestamp we cannot tell users which revision we modified.
+  // Image attribution is handled separately so bad media can be omitted without
+  // rejecting an otherwise valid article.
   if (
     !Number.isInteger(snapshot.revisionId)
     || snapshot.revisionId <= 0
@@ -58,6 +73,114 @@ function attributionFor(snapshot: WikipediaPageSnapshot): ArticleAttribution | u
     licenseName: "Creative Commons Attribution-ShareAlike 4.0 International",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
     modificationNotice: "Wiki Duel simplified and modified this Wikipedia article.",
+  };
+}
+
+function safeUrl(value: string, origins?: readonly string[]): URL | undefined {
+  // All externally supplied URLs are parsed through this helper before use so
+  // the policy is expressed on structured URL fields, not brittle string checks.
+  // HTTPS prevents mixed-content and downgrade surprises; rejecting credentials
+  // avoids preserving attacker-controlled authority text in rendered links.
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return undefined;
+  if (origins && !origins.includes(url.origin)) return undefined;
+  return url;
+}
+
+function plainText(html: string | undefined): string | undefined {
+  // Wikimedia creator/credit fields are HTML fragments supplied by file pages.
+  // The article contract only needs readable attribution text, so we parse the
+  // fragment, keep text nodes, and deliberately skip executable or embedded
+  // subtrees instead of trying to sanitize and preserve markup.
+  if (!html) return undefined;
+  const fragment = parseFragment(html);
+  const parts: string[] = [];
+  const excluded = new Set(["script", "style", "template", "noscript", "svg", "math"]);
+  const visit = (nodes: readonly DefaultTreeAdapterMap["node"][]) => {
+    for (const node of nodes) {
+      if (node.nodeName === "#text" && "value" in node) {
+        parts.push(node.value);
+      } else if (
+        "childNodes" in node
+        && (!("tagName" in node) || !excluded.has(node.tagName))
+      ) {
+        visit(node.childNodes);
+      }
+    }
+  };
+  visit(fragment.childNodes);
+  const text = parts.join(" ").replace(/\s+/g, " ").trim();
+  return text || undefined;
+}
+
+function descriptionFileTitle(url: URL): string | undefined {
+  // The image-history URL is not returned by imageinfo, but MediaWiki history is
+  // keyed by the file page title. Deriving that title only from an approved,
+  // query-free `/wiki/File:*` description URL ties history back to the same file
+  // identity and avoids trusting a separate, caller-supplied title for links.
+  if (url.search || url.hash || !url.pathname.startsWith("/wiki/")) return undefined;
+  try {
+    const title = decodeURIComponent(url.pathname.slice("/wiki/".length));
+    return /^File:/i.test(title) && isValidWikipediaTitle(title) ? title : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeFigure(
+  metadata: WikipediaImageMetadata,
+): Omit<ArticleFigure, "type" | "alt" | "caption"> | undefined {
+  // This is the repository's image policy reducer. The gateway translates
+  // Wikimedia's response into project-owned fields; this function decides
+  // whether those fields are safe and complete enough to become article output.
+  // Returning undefined is intentional degradation: unsafe media disappears, but
+  // the surrounding article can still be playable as text.
+  const source = safeUrl(metadata.sourceUrl, ["https://upload.wikimedia.org"]);
+  const description = safeUrl(metadata.descriptionUrl, [
+    "https://commons.wikimedia.org",
+    "https://en.wikipedia.org",
+  ]);
+  const license = metadata.licenseUrl ? safeUrl(metadata.licenseUrl) : undefined;
+  const licenseName = metadata.licenseName?.trim();
+  const fileTitle = description ? descriptionFileTitle(description) : undefined;
+  // The source check is narrower than "any upload.wikimedia.org URL": thumbnails
+  // must be ordinary `/wikipedia/` media with no query/hash. That keeps redirect
+  // endpoints, tracking parameters, and non-file service URLs out of the render
+  // contract even when they came from upstream metadata.
+  if (
+    !source || !source.pathname.startsWith("/wikipedia/") || source.search || source.hash
+    || !description || !fileTitle || !license || !licenseName || metadata.nonFree
+    || metadata.restrictions.some((restriction) => /fair[ -]?use|non[ -]?free/i.test(restriction))
+    || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(metadata.mimeType)
+    || !Number.isInteger(metadata.width) || metadata.width <= 0
+    || !Number.isInteger(metadata.height) || metadata.height <= 0
+    || (metadata.width === 1 && metadata.height === 1)
+  ) return undefined;
+
+  // History lives on the same wiki as the approved description page: Commons
+  // files should link to Commons history, while local enwiki files should link
+  // to enwiki history. Reusing `fileTitle` keeps the attribution links coherent.
+  const history = new URL("/w/index.php", description.origin);
+  history.search = new URLSearchParams({ title: fileTitle, action: "history" }).toString();
+  const creator = plainText(metadata.creatorHtml);
+  const credit = plainText(metadata.creditHtml);
+  return {
+    sourceUrl: source.href,
+    width: metadata.width,
+    height: metadata.height,
+    attribution: {
+      descriptionUrl: description.href,
+      historyUrl: history.href,
+      ...(creator ? { creator } : {}),
+      ...(credit ? { credit } : {}),
+      licenseName,
+      licenseUrl: license.href,
+    },
   };
 }
 
@@ -103,6 +226,20 @@ export function createPlayableArticleRepository(gateway: WikipediaGateway): Play
       if (!attribution) return { ok: false, failure: { code: "article-attribution-incomplete" } };
 
       const candidates = extractCandidateLinkTitles(snapshot.html);
+      const imageCandidates = extractCandidateImageTitles(snapshot.html);
+      const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
+      if (imageCandidates.length > 0) {
+        try {
+          for (const metadata of await gateway.fetchImageMetadata(imageCandidates)) {
+            const figure = safeFigure(metadata);
+            if (figure && imageCandidates.includes(metadata.requestedTitle)) {
+              figures.set(metadata.requestedTitle, figure);
+            }
+          }
+        } catch {
+          // Image failure degrades the article to safe text instead of rejecting it.
+        }
+      }
       let resolvedLinks;
       try {
         resolvedLinks = await gateway.resolveLinks(candidates);
@@ -115,7 +252,7 @@ export function createPlayableArticleRepository(gateway: WikipediaGateway): Play
           destinations.set(link.requestedTitle, { pageId: link.pageId, title: link.title });
         }
       }
-      const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations);
+      const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations, figures);
       if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
 
       const article: PlayableArticle = {

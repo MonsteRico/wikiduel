@@ -81,6 +81,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
   const lobbies = new Map<string, LobbyRecord>();
 
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("Content-Security-Policy", [
+      "default-src 'self'",
+      "base-uri 'none'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "img-src 'self' https://upload.wikimedia.org",
+    ].join("; "));
+    return payload;
+  });
+
   await app.register(websocket);
 
   app.get("/", async () => ({ name: "wikiduel-server", status: "ok" }));
