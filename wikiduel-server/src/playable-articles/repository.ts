@@ -35,6 +35,8 @@ export type PlayableArticleRepositoryOptions = Readonly<{
   random?: () => number;
 }>;
 
+type RetryBudget = { remaining: number };
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -252,7 +254,7 @@ export function createPlayableArticleRepository(
     operation: () => Promise<T>,
     title: string,
     signal: AbortSignal,
-    retryState: { available: boolean },
+    retryBudget: RetryBudget,
   ): Promise<T> {
     try {
       return await operation();
@@ -260,9 +262,9 @@ export function createPlayableArticleRepository(
       if (
         !(error instanceof WikipediaGatewayError)
         || error.kind !== "transient"
-        || !retryState.available
+        || retryBudget.remaining === 0
       ) throw error;
-      retryState.available = false;
+      retryBudget.remaining -= 1;
       if (!await waitForRetry(title, signal)) throw error;
       return operation();
     }
@@ -271,13 +273,13 @@ export function createPlayableArticleRepository(
   async function buildArticle(
     title: string,
     signal: AbortSignal,
-    retryState: { available: boolean },
+    retryBudget: RetryBudget,
   ): Promise<PlayableArticleResult> {
     const snapshot = await withTransientRetry(
       () => gateway.fetchPage(title, { signal }),
       title,
       signal,
-      retryState,
+      retryBudget,
     );
 
     const canonicalArticle = articlesByPageId.get(snapshot.pageId);
@@ -297,7 +299,7 @@ export function createPlayableArticleRepository(
         () => gateway.fetchImageMetadata(imageCandidates, { signal }),
         title,
         signal,
-        retryState,
+        retryBudget,
       );
       for (const metadata of metadataResults) {
         const figure = safeFigure(metadata);
@@ -310,7 +312,7 @@ export function createPlayableArticleRepository(
       () => gateway.resolveLinks(candidates, { signal }),
       title,
       signal,
-      retryState,
+      retryBudget,
     );
     const destinations = new Map<string, NavigationDestination>();
     for (const link of resolvedLinks) {
@@ -343,7 +345,7 @@ export function createPlayableArticleRepository(
     });
     const work = (async (): Promise<PlayableArticleResult> => {
       try {
-        return await buildArticle(title, controller.signal, { available: true });
+        return await buildArticle(title, controller.signal, { remaining: 1 });
       } catch (error) {
         return gatewayFailure(error);
       }
