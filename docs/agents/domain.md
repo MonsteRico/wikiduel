@@ -24,7 +24,7 @@ There is no `CONTEXT-MAP.md` and no separate client/server bounded context. The 
 
 ## Use the glossary's vocabulary
 
-Use the canonical terms from `CONTEXT.md` in issue titles, acceptance criteria, tests, architecture proposals, and user-facing product documentation. Avoid synonyms explicitly listed under `_Avoid_`.
+Use the canonical terms from `CONTEXT.md` in ticket titles, acceptance criteria, tests, architecture proposals, and user-facing product documentation. Avoid synonyms explicitly listed under `_Avoid_`.
 
 If a needed domain concept is absent, either reconsider whether it is truly project-specific or resolve it through domain modeling before adding it to the glossary.
 

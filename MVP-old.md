@@ -1,6 +1,6 @@
 # Wiki Duel MVP Guide
 
-> **Historical concept guide:** this file preserves the original broad product direction. The scope-refined implementation contract is [`.scratch/wiki-duel-mvp/PRD.md`](./.scratch/wiki-duel-mvp/PRD.md), and categorized work lives in [`.scratch/wiki-duel-mvp/BACKLOG.md`](./.scratch/wiki-duel-mvp/BACKLOG.md). Where they differ, the scope-refined PRD wins.
+> **Historical concept guide:** this file preserves the original broad product direction. The scope-refined implementation contract is [`.scratch/wiki-duel-mvp/spec.md`](./.scratch/wiki-duel-mvp/spec.md), and categorized work lives in [`.scratch/wiki-duel-mvp/BACKLOG.md`](./.scratch/wiki-duel-mvp/BACKLOG.md). Where they differ, the scope-refined spec wins.
 
 ## Working Title
 
@@ -565,7 +565,7 @@ Add Redis later if you need:
 
 Practical MVP deployment:
 
-We will deploy the MVP to a personal server running Dokploy. Dokploy can handle deploying a project with multiple services within it or can deploy one project with one service containing a docker compose made up of multiple things. I commonly use this for hosting personal web apps and self hosted projects, so it is perfect for a prototype MVP like this. So long as the MVP can be deployed via Docker we will have no issues.
+We will deploy the MVP to a personal server running Dokploy. Dokploy can handle deploying a project with multiple services within it or can deploy one project with one service containing a docker compose made up of multiple things. I commonly use this for hosting personal web apps and self hosted projects, so it is perfect for a prototype MVP like this. So long as the MVP can be deployed via Docker, deployment will not be a blocker.
 
 ---
 

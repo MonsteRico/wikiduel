@@ -1,12 +1,12 @@
 ## Agent skills
 
-### Issue tracker
+### Ticket tracker
 
-Issues and PRDs are tracked as local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Tickets and specs are tracked as local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Issue states use the six canonical role names. See `docs/agents/triage-labels.md`.
+Five canonical triage roles map to local statuses; `completed` is this tracker's terminal ticket status. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
@@ -29,7 +29,7 @@ Use the following publishing order for this repository:
    as a Bearer token to `POST /repos/<owner>/<repo>/pulls`, and discard it when
    the process exits. Never print the token, write it to the workspace, or
    include it in tool output.
-5. After the pull request exists, add its link to the local issue's `Completed:`
+5. After the pull request exists, add its link to the local ticket's `Completed:`
    line when applicable, commit that tracker update, and push again.
 
 Pull requests should include a summary, rationale, user/developer impact, and
