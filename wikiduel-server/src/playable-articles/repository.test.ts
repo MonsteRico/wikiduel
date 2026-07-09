@@ -48,6 +48,223 @@ function repositoryFor(
 }
 
 describe("PlayableArticleRepository", () => {
+  test("reuses a complete article for repeated normalized-title requests", async () => {
+    const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
+    const repository = createPlayableArticleRepository({
+      fetchPage,
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [],
+    });
+
+    const first = await repository.getByTitle("  Ada_Lovelace  ");
+    const second = await repository.getByTitle("Ada Lovelace");
+
+    expect(first).toMatchObject({ ok: true, article: { identity: { pageId: 974 } } });
+    expect(second).toEqual(first);
+    expect(fetchPage).toHaveBeenCalledOnce();
+    expect(fetchPage.mock.calls[0]?.[0]).toBe("Ada Lovelace");
+  });
+
+  test("maps distinct redirect aliases to one cached canonical page ID", async () => {
+    const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
+    const resolveLinks = vi.fn().mockResolvedValue([]);
+    const repository = createPlayableArticleRepository({
+      fetchPage,
+      resolveLinks,
+      fetchImageMetadata: async () => [],
+    });
+
+    const first = await repository.getByTitle("Augusta Ada King");
+    const second = await repository.getByTitle("Countess of Lovelace");
+    const repeatedAlias = await repository.getByTitle("Countess_of_Lovelace");
+
+    expect(first).toMatchObject({ ok: true, article: { identity: { pageId: 974 } } });
+    expect(second).toEqual(first);
+    expect(repeatedAlias).toEqual(first);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(resolveLinks).toHaveBeenCalledOnce();
+  });
+
+  test("coalesces concurrent work for the same normalized title", async () => {
+    let completeFetch!: (snapshot: WikipediaPageSnapshot) => void;
+    const fetchPage = vi.fn().mockReturnValue(new Promise<WikipediaPageSnapshot>((resolve) => {
+      completeFetch = resolve;
+    }));
+    const repository = createPlayableArticleRepository({
+      fetchPage,
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [],
+    });
+
+    const first = repository.getByTitle("Ada_Lovelace");
+    const second = repository.getByTitle("  Ada Lovelace  ");
+
+    expect(fetchPage).toHaveBeenCalledOnce();
+    completeFetch(baseSnapshot);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(secondResult).toBe(firstResult);
+  });
+
+  test("ends a build at the 15-second budget and never caches its late completion", async () => {
+    vi.useFakeTimers();
+    try {
+      let completeLateFetch!: (snapshot: WikipediaPageSnapshot) => void;
+      let buildSignal: AbortSignal | undefined;
+      const fetchPage = vi.fn()
+        .mockImplementationOnce((_title: string, options?: { signal?: AbortSignal }) => new Promise<WikipediaPageSnapshot>((resolve) => {
+          buildSignal = options?.signal;
+          completeLateFetch = resolve;
+        }))
+        .mockResolvedValue(baseSnapshot);
+      const repository = createPlayableArticleRepository({
+        fetchPage,
+        resolveLinks: async () => [],
+        fetchImageMetadata: async () => [],
+      });
+
+      const timedOut = repository.getByTitle("Ada Lovelace");
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(timedOut).resolves.toEqual({
+        ok: false,
+        failure: { code: "upstream-unavailable" },
+      });
+      expect(buildSignal?.aborted).toBe(true);
+
+      completeLateFetch(baseSnapshot);
+      await vi.runAllTimersAsync();
+      await expect(repository.getByTitle("Ada Lovelace")).resolves.toMatchObject({ ok: true });
+      expect(fetchPage).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 1_000);
+
+  test("retries one transient upstream failure after short jitter within the build budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchPage = vi.fn()
+        .mockRejectedValueOnce(new WikipediaGatewayError("transient"))
+        .mockResolvedValue(baseSnapshot);
+      const repository = createPlayableArticleRepository({
+        fetchPage,
+        resolveLinks: async () => [],
+        fetchImageMetadata: async () => [],
+      });
+
+      const result = repository.getByTitle("Ada Lovelace");
+      await Promise.resolve();
+      expect(fetchPage).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(result).resolves.toMatchObject({ ok: true });
+      expect(fetchPage).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("keeps cache and retry details debug-only and warns once for a final failed build", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchPage = vi.fn()
+        .mockRejectedValueOnce(new WikipediaGatewayError("transient"))
+        .mockRejectedValueOnce(new WikipediaGatewayError("transient"))
+        .mockResolvedValue(baseSnapshot);
+      const logger = { debug: vi.fn(), warn: vi.fn() };
+      const repository = createPlayableArticleRepository({
+        fetchPage,
+        resolveLinks: async () => [],
+        fetchImageMetadata: async () => [],
+      }, { logger, random: () => 0 });
+
+      const failed = repository.getByTitle("Ada Lovelace");
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(failed).resolves.toEqual({
+        ok: false,
+        failure: { code: "upstream-unavailable" },
+      });
+      await expect(repository.getByTitle("Ada Lovelace")).resolves.toMatchObject({ ok: true });
+      await expect(repository.getByTitle("Ada_Lovelace")).resolves.toMatchObject({ ok: true });
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({ requestedTitle: "Ada Lovelace", event: "retry" }),
+        expect.any(String),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        { requestedTitle: "Ada Lovelace", event: "cache-hit" },
+        expect.any(String),
+      );
+      expect(logger.warn).toHaveBeenCalledOnce();
+      expect(logger.warn).toHaveBeenCalledWith(
+        { requestedTitle: "Ada Lovelace", failureCode: "upstream-unavailable" },
+        expect.any(String),
+      );
+      expect(fetchPage).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each([
+    ["missing page", new WikipediaGatewayError("not-found")],
+    ["non-playable page", { ...baseSnapshot, disambiguation: true }],
+    ["normalization failure", { ...baseSnapshot, html: "<script>bad()</script>" }],
+  ] as const)("does not cache a %s result", async (_case, outcome) => {
+    const fetchPage = vi.fn().mockImplementation(async () => {
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    });
+    const repository = createPlayableArticleRepository({
+      fetchPage,
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [],
+    });
+
+    const first = await repository.getByTitle("Ada Lovelace");
+    const second = await repository.getByTitle("Ada Lovelace");
+
+    expect(first).toMatchObject({ ok: false });
+    expect(second).toEqual(first);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([
+    [
+      new WikipediaGatewayError("rate-limited", 23),
+      { code: "upstream-rate-limited", retryAfterSeconds: 23 },
+    ],
+    [new WikipediaGatewayError("back-pressure"), { code: "upstream-unavailable" }],
+    [new WikipediaGatewayError("unavailable"), { code: "upstream-unavailable" }],
+    [new WikipediaGatewayError("invalid-response"), { code: "upstream-unavailable" }],
+  ] as const)("does not automatically retry %s", async (error, failure) => {
+    const fetchPage = vi.fn().mockRejectedValue(error);
+    const repository = createPlayableArticleRepository({
+      fetchPage,
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [],
+    });
+
+    await expect(repository.getByTitle("Ada Lovelace")).resolves.toEqual({ ok: false, failure });
+    expect(fetchPage).toHaveBeenCalledOnce();
+  });
+
+  test("keeps completed caches local to each repository process instance", async () => {
+    const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
+    const gateway = {
+      fetchPage,
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [],
+    };
+    const firstProcessRepository = createPlayableArticleRepository(gateway);
+    const restartedProcessRepository = createPlayableArticleRepository(gateway);
+
+    await firstProcessRepository.getByTitle("Ada Lovelace");
+    await firstProcessRepository.getByTitle("Ada Lovelace");
+    await restartedProcessRepository.getByTitle("Ada Lovelace");
+
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
   test("preserves a safe attributed article-body figure at its source position", async () => {
     const repository = createPlayableArticleRepository({
       fetchPage: async () => ({
@@ -332,7 +549,7 @@ describe("PlayableArticleRepository", () => {
 
     const result = await repository.getByTitle("Ada Lovelace");
 
-    expect(resolveLinks).toHaveBeenCalledWith(["Ordinary article"]);
+    expect(resolveLinks.mock.calls[0]?.[0]).toEqual(["Ordinary article"]);
     expect(result).toMatchObject({ ok: true });
     if (result.ok) {
       const serialized = JSON.stringify(result.article.document);

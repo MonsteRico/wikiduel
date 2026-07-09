@@ -282,6 +282,102 @@ describe("WikipediaGateway", () => {
     await expect(gateway.fetchPage("Missing")).rejects.toMatchObject({ kind: "not-found" });
   });
 
+  test("preserves retry timing from a package-originated 429", async () => {
+    wikipediaPackage.page.mockRejectedValue(Object.assign(new Error("Too many requests"), {
+      response: { status: 429, headers: { "retry-after": "19" } },
+    }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request: vi.fn(),
+    });
+
+    await expect(gateway.fetchPage("Ada Lovelace")).rejects.toMatchObject({
+      kind: "rate-limited",
+      retryAfterSeconds: 19,
+    });
+  });
+
+  test("classifies a package-originated 5xx as transient", async () => {
+    wikipediaPackage.page.mockRejectedValue(Object.assign(new Error("Service unavailable"), {
+      response: { status: 503 },
+    }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request: vi.fn(),
+    });
+
+    await expect(gateway.fetchPage("Ada Lovelace")).rejects.toMatchObject({ kind: "transient" });
+  });
+
+  test.each([
+    ["a network interruption", vi.fn().mockRejectedValue(new TypeError("fetch failed"))],
+    ["an upstream 5xx response", vi.fn().mockResolvedValue(new Response(null, { status: 503 }))],
+  ])("classifies %s as transient", async (_case, request) => {
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    await expect(gateway.resolveLinks(["Ada Lovelace"])).rejects.toMatchObject({
+      kind: "transient",
+    });
+  });
+
+  test("keeps deterministic 4xx failures out of the transient retry class", async () => {
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request: vi.fn().mockResolvedValue(new Response(null, { status: 400 })),
+    });
+
+    await expect(gateway.resolveLinks(["Bad request"])).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+  });
+
+  test("preserves 429 retry timing without classifying it as transient", async () => {
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request: vi.fn().mockResolvedValue(new Response(null, {
+        status: 429,
+        headers: { "retry-after": "17" },
+      })),
+    });
+
+    await expect(gateway.resolveLinks(["Ada Lovelace"])).rejects.toMatchObject({
+      kind: "rate-limited",
+      retryAfterSeconds: 17,
+    });
+  });
+
+  test("classifies Wikimedia maxlag as back-pressure", async () => {
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: { code: "maxlag", info: "Waiting for replicas", lag: 4.2 },
+      }), { status: 200 })),
+    });
+
+    await expect(gateway.resolveLinks(["Ada Lovelace"])).rejects.toMatchObject({
+      kind: "back-pressure",
+    });
+  });
+
+  test("passes repository cancellation to direct Wikimedia requests", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      query: { pages: [{ pageid: 974, ns: 0, title: "Ada Lovelace", pageprops: {} }] },
+    }), { status: 200 }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+    const controller = new AbortController();
+
+    await gateway.resolveLinks(["Ada Lovelace"], { signal: controller.signal });
+
+    const options = request.mock.calls[0]?.[1] as RequestInit;
+    expect(options.signal).toBe(controller.signal);
+  });
+
   test("recognizes disambiguation metadata without exposing the raw response", async () => {
     wikipediaPackage.page.mockResolvedValue({
       pageid: 12,
