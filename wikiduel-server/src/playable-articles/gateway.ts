@@ -38,12 +38,26 @@ export type WikipediaImageMetadata = Readonly<{
 }>;
 
 export interface WikipediaGateway {
-  fetchPage(title: string): Promise<WikipediaPageSnapshot>;
-  resolveLinks(titles: readonly string[]): Promise<readonly WikipediaResolvedLink[]>;
-  fetchImageMetadata(titles: readonly string[]): Promise<readonly WikipediaImageMetadata[]>;
+  fetchPage(title: string, options?: GatewayRequestOptions): Promise<WikipediaPageSnapshot>;
+  resolveLinks(
+    titles: readonly string[],
+    options?: GatewayRequestOptions,
+  ): Promise<readonly WikipediaResolvedLink[]>;
+  fetchImageMetadata(
+    titles: readonly string[],
+    options?: GatewayRequestOptions,
+  ): Promise<readonly WikipediaImageMetadata[]>;
 }
 
-export type GatewayFailureKind = "not-found" | "rate-limited" | "unavailable" | "invalid-response";
+export type GatewayRequestOptions = Readonly<{ signal?: AbortSignal }>;
+
+export type GatewayFailureKind =
+  | "not-found"
+  | "rate-limited"
+  | "back-pressure"
+  | "transient"
+  | "unavailable"
+  | "invalid-response";
 
 export class WikipediaGatewayError extends Error {
   constructor(
@@ -77,9 +91,23 @@ function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+function parsedRetryAfter(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, Math.ceil((date - Date.now()) / 1_000)) : undefined;
+}
+
 function retryAfter(response: Response): number | undefined {
-  const value = Number(response.headers.get("retry-after"));
-  return Number.isFinite(value) && value >= 0 ? value : undefined;
+  return parsedRetryAfter(response.headers.get("retry-after"));
+}
+
+function packageRetryAfter(response: Record<string, unknown> | undefined): number | undefined {
+  const headers = response?.headers;
+  if (headers instanceof Headers) return parsedRetryAfter(headers.get("retry-after"));
+  const headerRecord = asRecord(headers);
+  return parsedRetryAfter(headerRecord?.["retry-after"] ?? headerRecord?.["Retry-After"]);
 }
 
 function metadataText(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -136,9 +164,79 @@ function packageError(error: unknown): WikipediaGatewayError {
   }
   const response = asRecord(record?.response) ?? asRecord(asRecord(record?.cause)?.response);
   const status = response?.status;
-  if (status === 404) return new WikipediaGatewayError("not-found", undefined, { cause: error });
-  if (status === 429) return new WikipediaGatewayError("rate-limited", undefined, { cause: error });
+  if (status === "maxlag" || /maxlag/i.test(message)) {
+    return new WikipediaGatewayError("back-pressure", undefined, { cause: error });
+  }
+  const statusFailure = httpStatusFailure(
+    status,
+    packageRetryAfter(response),
+    true,
+    error,
+  );
+  if (statusFailure) return statusFailure;
+  if (
+    status === undefined
+    && (error instanceof TypeError || /network|fetch|socket|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(message))
+  ) {
+    return new WikipediaGatewayError("transient", undefined, { cause: error });
+  }
   return new WikipediaGatewayError("unavailable", undefined, { cause: error });
+}
+
+function httpStatusFailure(
+  status: unknown,
+  retryAfterSeconds?: number,
+  notFound = false,
+  cause?: unknown,
+): WikipediaGatewayError | undefined {
+  if (notFound && status === 404) {
+    return new WikipediaGatewayError("not-found", undefined, { cause });
+  }
+  if (status === 429) {
+    return new WikipediaGatewayError("rate-limited", retryAfterSeconds, { cause });
+  }
+  if (typeof status === "number" && status >= 500) {
+    return new WikipediaGatewayError("transient", undefined, { cause });
+  }
+  if (typeof status === "number" && status >= 400) {
+    return new WikipediaGatewayError("unavailable", undefined, { cause });
+  }
+  return undefined;
+}
+
+function responseFailure(response: Response, notFound = false): WikipediaGatewayError | undefined {
+  if (response.ok) return undefined;
+  return httpStatusFailure(response.status, retryAfter(response), notFound)
+    ?? new WikipediaGatewayError("unavailable");
+}
+
+async function requestWikimedia(
+  request: typeof fetch,
+  userAgent: string,
+  url: URL,
+  signal: AbortSignal | undefined,
+  notFound = false,
+): Promise<Response> {
+  let response: Response;
+  try {
+    response = await request(url, {
+      signal,
+      headers: {
+        "Api-User-Agent": userAgent,
+        "User-Agent": userAgent,
+      },
+    });
+  } catch (error) {
+    throw new WikipediaGatewayError("transient", undefined, { cause: error });
+  }
+  const failure = responseFailure(response, notFound);
+  if (failure) throw failure;
+  return response;
+}
+
+function throwIfBackPressure(body: Record<string, unknown> | undefined): void {
+  const apiError = asRecord(body?.error);
+  if (apiError?.code === "maxlag") throw new WikipediaGatewayError("back-pressure");
 }
 
 export function createWikipediaGateway(dependencies: GatewayDependencies): WikipediaGateway {
@@ -146,7 +244,7 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
   wiki.setUserAgent(dependencies.userAgent);
 
   return {
-    async fetchPage(title) {
+    async fetchPage(title, options) {
       let packagePage: Awaited<ReturnType<typeof wiki.page>>;
       let html: string;
       try {
@@ -180,22 +278,16 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         rvprop: "ids|timestamp",
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
-      }
-      if (response.status === 404) throw new WikipediaGatewayError("not-found");
-      if (response.status === 429) throw new WikipediaGatewayError("rate-limited", retryAfter(response));
-      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+        true,
+      );
 
       const body = asRecord(await response.json());
+      throwIfBackPressure(body);
       const query = asRecord(body?.query);
       const pages = asRecord(query?.pages);
       const page = pages ? Object.values(pages).map(asRecord).find(Boolean) : undefined;
@@ -228,7 +320,7 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
     // thumbnail URL, dimensions, MIME type, description page, and machine-
     // readable license/creator metadata. Keep that enrichment here so callers
     // receive one project-owned shape instead of raw action API objects.
-    async fetchImageMetadata(titles): Promise<readonly WikipediaImageMetadata[]> {
+    async fetchImageMetadata(titles, options): Promise<readonly WikipediaImageMetadata[]> {
       if (titles.length === 0) return [];
       if (titles.length > 50) {
         // `titles=` is capped at 50 pages for this anonymous/user request mode.
@@ -236,7 +328,7 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         // semantics by concatenating each slice's translated results.
         const images: WikipediaImageMetadata[] = [];
         for (let start = 0; start < titles.length; start += 50) {
-          images.push(...await this.fetchImageMetadata(titles.slice(start, start + 50)));
+          images.push(...await this.fetchImageMetadata(titles.slice(start, start + 50), options));
         }
         return images;
       }
@@ -258,23 +350,15 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         ].join("|"),
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
-      }
-      if (response.status === 429) {
-        throw new WikipediaGatewayError("rate-limited", retryAfter(response));
-      }
-      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+      );
 
       const body = asRecord(await response.json());
+      throwIfBackPressure(body);
       const query = asRecord(body?.query);
       if (!query || !Array.isArray(query.pages)) throw new WikipediaGatewayError("invalid-response");
       const aliases = aliasesFrom(query);
@@ -326,12 +410,12 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
     // wikipedia@2.5.0 exposes links as source-page title strings only. It does
     // not bulk-resolve redirects, existence, namespaces, or page properties,
     // so this missing contract uses the official query API in 50-title batches.
-    async resolveLinks(titles): Promise<readonly WikipediaResolvedLink[]> {
+    async resolveLinks(titles, options): Promise<readonly WikipediaResolvedLink[]> {
       if (titles.length === 0) return [];
       if (titles.length > 50) {
         const resolved: WikipediaResolvedLink[] = [];
         for (let start = 0; start < titles.length; start += 50) {
-          resolved.push(...await this.resolveLinks(titles.slice(start, start + 50)));
+          resolved.push(...await this.resolveLinks(titles.slice(start, start + 50), options));
         }
         return resolved;
       }
@@ -346,23 +430,15 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         prop: "pageprops",
       }).toString();
 
-      let response: Response;
-      try {
-        response = await request(url, {
-          headers: {
-            "Api-User-Agent": dependencies.userAgent,
-            "User-Agent": dependencies.userAgent,
-          },
-        });
-      } catch (error) {
-        throw new WikipediaGatewayError("unavailable", undefined, { cause: error });
-      }
-      if (response.status === 429) {
-        throw new WikipediaGatewayError("rate-limited", retryAfter(response));
-      }
-      if (!response.ok) throw new WikipediaGatewayError("unavailable");
+      const response = await requestWikimedia(
+        request,
+        dependencies.userAgent,
+        url,
+        options?.signal,
+      );
 
       const body = asRecord(await response.json());
+      throwIfBackPressure(body);
       const query = asRecord(body?.query);
       if (!query || !Array.isArray(query.pages)) {
         throw new WikipediaGatewayError("invalid-response");

@@ -25,6 +25,18 @@ export interface PlayableArticleRepository {
   getByTitle(requestedTitle: string): Promise<PlayableArticleResult>;
 }
 
+export interface PlayableArticleRepositoryLogger {
+  debug(details: Readonly<Record<string, unknown>>, message: string): void;
+  warn(details: Readonly<Record<string, unknown>>, message: string): void;
+}
+
+export type PlayableArticleRepositoryOptions = Readonly<{
+  logger?: PlayableArticleRepositoryLogger;
+  random?: () => number;
+}>;
+
+type RetryBudget = { remaining: number };
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -206,62 +218,183 @@ function gatewayFailure(error: unknown): PlayableArticleResult {
   return { ok: false, failure: { code: "upstream-unavailable" } };
 }
 
-export function createPlayableArticleRepository(gateway: WikipediaGateway): PlayableArticleRepository {
+export function createPlayableArticleRepository(
+  gateway: WikipediaGateway,
+  options: PlayableArticleRepositoryOptions = {},
+): PlayableArticleRepository {
+  const logger: PlayableArticleRepositoryLogger = options.logger ?? {
+    debug: () => undefined,
+    warn: () => undefined,
+  };
+  const random = options.random ?? Math.random;
+  const articlesByPageId = new Map<number, PlayableArticle>();
+  const pageIdsByTitle = new Map<string, number>();
+  const buildsByTitle = new Map<string, Promise<PlayableArticleResult>>();
+
+  async function waitForRetry(title: string, signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) return false;
+    return new Promise((resolve) => {
+      const delayMilliseconds = 50 + Math.floor(random() * 150);
+      logger.debug(
+        { requestedTitle: title, event: "retry", delayMilliseconds },
+        "Retrying transient Playable Article upstream request",
+      );
+      const timer = setTimeout(() => finish(true), delayMilliseconds);
+      const onAbort = () => finish(false);
+      const finish = (mayRetry: boolean) => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        resolve(mayRetry);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  async function withTransientRetry<T>(
+    operation: () => Promise<T>,
+    title: string,
+    signal: AbortSignal,
+    retryBudget: RetryBudget,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (
+        !(error instanceof WikipediaGatewayError)
+        || error.kind !== "transient"
+        || retryBudget.remaining === 0
+      ) throw error;
+      retryBudget.remaining -= 1;
+      if (!await waitForRetry(title, signal)) throw error;
+      return operation();
+    }
+  }
+
+  async function buildArticle(
+    title: string,
+    signal: AbortSignal,
+    retryBudget: RetryBudget,
+  ): Promise<PlayableArticleResult> {
+    const snapshot = await withTransientRetry(
+      () => gateway.fetchPage(title, { signal }),
+      title,
+      signal,
+      retryBudget,
+    );
+
+    const canonicalArticle = articlesByPageId.get(snapshot.pageId);
+    if (canonicalArticle) return { ok: true, article: canonicalArticle };
+
+    const reason = classification(snapshot);
+    if (reason) return { ok: false, failure: { code: "article-not-playable", reason } };
+
+    const attribution = attributionFor(snapshot);
+    if (!attribution) return { ok: false, failure: { code: "article-attribution-incomplete" } };
+
+    const candidates = extractCandidateLinkTitles(snapshot.html);
+    const imageCandidates = extractCandidateImageTitles(snapshot.html);
+    const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
+    if (imageCandidates.length > 0) {
+      const metadataResults = await withTransientRetry(
+        () => gateway.fetchImageMetadata(imageCandidates, { signal }),
+        title,
+        signal,
+        retryBudget,
+      );
+      for (const metadata of metadataResults) {
+        const figure = safeFigure(metadata);
+        if (figure && imageCandidates.includes(metadata.requestedTitle)) {
+          figures.set(metadata.requestedTitle, figure);
+        }
+      }
+    }
+    const resolvedLinks = await withTransientRetry(
+      () => gateway.resolveLinks(candidates, { signal }),
+      title,
+      signal,
+      retryBudget,
+    );
+    const destinations = new Map<string, NavigationDestination>();
+    for (const link of resolvedLinks) {
+      if (link.exists && classification(link) === undefined) {
+        destinations.set(link.requestedTitle, { pageId: link.pageId, title: link.title });
+      }
+    }
+    const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations, figures);
+    if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
+
+    return {
+      ok: true,
+      article: deepFreeze<PlayableArticle>({
+        identity: { pageId: snapshot.pageId, title: snapshot.title },
+        revision: { id: snapshot.revisionId, timestamp: snapshot.revisionTimestamp },
+        attribution,
+        document,
+      }),
+    };
+  }
+
+  async function buildWithinBudget(title: string): Promise<PlayableArticleResult> {
+    const controller = new AbortController();
+    let deadlineTimer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<PlayableArticleResult>((resolve) => {
+      deadlineTimer = setTimeout(() => {
+        controller.abort();
+        resolve({ ok: false, failure: { code: "upstream-unavailable" } });
+      }, 15_000);
+    });
+    const work = (async (): Promise<PlayableArticleResult> => {
+      try {
+        return await buildArticle(title, controller.signal, { remaining: 1 });
+      } catch (error) {
+        return gatewayFailure(error);
+      }
+    })();
+    const result = await Promise.race([work, deadline]);
+    clearTimeout(deadlineTimer!);
+
+    if (result.ok && !controller.signal.aborted) {
+      articlesByPageId.set(result.article.identity.pageId, result.article);
+      pageIdsByTitle.set(title, result.article.identity.pageId);
+      pageIdsByTitle.set(result.article.identity.title, result.article.identity.pageId);
+    } else if (!result.ok) {
+      logger.warn(
+        { requestedTitle: title, failureCode: result.failure.code },
+        "Playable Article build failed",
+      );
+    }
+    return result;
+  }
+
   return {
     async getByTitle(requestedTitle) {
       const title = requestedTitle.trim().replace(/_/g, " ");
       if (!isValidWikipediaTitle(title)) return { ok: false, failure: { code: "invalid-title" } };
 
-      let snapshot: WikipediaPageSnapshot;
+      const cachedPageId = pageIdsByTitle.get(title);
+      const cachedArticle = cachedPageId === undefined ? undefined : articlesByPageId.get(cachedPageId);
+      if (cachedArticle) {
+        logger.debug({ requestedTitle: title, event: "cache-hit" }, "Playable Article cache hit");
+        return { ok: true, article: cachedArticle };
+      }
+
+      const existingBuild = buildsByTitle.get(title);
+      if (existingBuild) {
+        logger.debug(
+          { requestedTitle: title, event: "in-flight-hit" },
+          "Playable Article build already in flight",
+        );
+        return existingBuild;
+      }
+
+      logger.debug({ requestedTitle: title, event: "cache-miss" }, "Playable Article cache miss");
+      const build = buildWithinBudget(title);
+      buildsByTitle.set(title, build);
       try {
-        snapshot = await gateway.fetchPage(title);
-      } catch (error) {
-        return gatewayFailure(error);
+        return await build;
+      } finally {
+        if (buildsByTitle.get(title) === build) buildsByTitle.delete(title);
       }
-
-      const reason = classification(snapshot);
-      if (reason) return { ok: false, failure: { code: "article-not-playable", reason } };
-
-      const attribution = attributionFor(snapshot);
-      if (!attribution) return { ok: false, failure: { code: "article-attribution-incomplete" } };
-
-      const candidates = extractCandidateLinkTitles(snapshot.html);
-      const imageCandidates = extractCandidateImageTitles(snapshot.html);
-      const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
-      if (imageCandidates.length > 0) {
-        try {
-          for (const metadata of await gateway.fetchImageMetadata(imageCandidates)) {
-            const figure = safeFigure(metadata);
-            if (figure && imageCandidates.includes(metadata.requestedTitle)) {
-              figures.set(metadata.requestedTitle, figure);
-            }
-          }
-        } catch {
-          // Image failure degrades the article to safe text instead of rejecting it.
-        }
-      }
-      let resolvedLinks;
-      try {
-        resolvedLinks = await gateway.resolveLinks(candidates);
-      } catch (error) {
-        return gatewayFailure(error);
-      }
-      const destinations = new Map<string, NavigationDestination>();
-      for (const link of resolvedLinks) {
-        if (link.exists && classification(link) === undefined) {
-          destinations.set(link.requestedTitle, { pageId: link.pageId, title: link.title });
-        }
-      }
-      const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations, figures);
-      if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
-
-      const article: PlayableArticle = {
-        identity: { pageId: snapshot.pageId, title: snapshot.title },
-        revision: { id: snapshot.revisionId, timestamp: snapshot.revisionTimestamp },
-        attribution,
-        document,
-      };
-      return { ok: true, article: deepFreeze(article) };
     },
   };
 }
