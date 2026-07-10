@@ -2,9 +2,10 @@
 
 # Render Typed Article Documents
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-10 01:30 AM via [PR #9](https://github.com/MonsteRico/wikiduel/pull/9)
 
 ## Parent
 
@@ -17,13 +18,17 @@ Create the production React renderer for the typed Article Document independentl
 
 ## Acceptance criteria
 
-- [ ] Canonical article title, headings, paragraphs, nested ordered/unordered lists, text, emphasis, and strong emphasis render as appropriate semantic elements.
-- [ ] Navigation Nodes in prose and captions invoke a supplied callback with canonical page ID/title and are keyboard operable.
-- [ ] Figures render approved sources, intrinsic dimensions, alternative text, optional captions, and complete attribution without becoming navigational images.
-- [ ] Article attribution, revision/source links, license, and modification notice are visibly renderable at the bottom of the article surface.
-- [ ] Upstream text is escaped and no Article Document path requires arbitrary HTML injection.
-- [ ] Focused Vitest and React Testing Library coverage verifies semantics, nested content, interactions, escaping, images, captions, and attribution.
-- [ ] The renderer has no dependency on Lobby, Round, Lab diagnostics, or a physical WebSocket.
+- [x] Canonical article title, headings, paragraphs, nested ordered/unordered lists, text, emphasis, and strong emphasis render as appropriate semantic elements.
+- [x] Navigation Nodes in prose and captions invoke a supplied callback with canonical page ID/title and are keyboard operable.
+- [x] Figures render approved sources, intrinsic dimensions, alternative text, optional captions, and complete attribution without becoming navigational images.
+- [x] Article attribution, revision/source links, license, and modification notice are visibly renderable at the bottom of the article surface.
+- [x] Upstream text is escaped and no Article Document path requires arbitrary HTML injection.
+- [x] Focused Vitest and React Testing Library coverage verifies semantics, nested content, interactions, escaping, images, captions, and attribution.
+- [x] The renderer has no dependency on Lobby, Round, Lab diagnostics, or a physical WebSocket.
+
+## Implementation note
+
+The client renders the canonical server-owned Article Document model through semantic React elements. Navigation Nodes compose the shared Button focus behavior with an inline prose variant, while article and image attribution remain visible typed content rather than injected HTML.
 
 ## Blocked by
 
