@@ -1,7 +1,6 @@
 import type {
   ArticleBlock,
   ArticleInline,
-  NavigationDestination,
   PlayableArticle,
   PlayableArticleFailure,
   PlayableArticleResult,
@@ -218,5 +217,3 @@ export function previewError(
     failure: { code },
   };
 }
-
-export type PreviewDestination = NavigationDestination;

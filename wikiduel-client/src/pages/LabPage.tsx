@@ -2,16 +2,19 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AppShell } from '../components/ui/AppShell'
 import { ArticleDocumentRenderer } from '../features/playable-articles/ArticleDocumentRenderer'
-import type { PlayableArticle, NavigationDestination } from '../features/playable-articles/types'
+import type {
+  NavigationDestination,
+  PlayableArticle,
+  PlayableArticleFailure,
+} from '../features/playable-articles/types'
 import type {
   PreviewDiagnostics,
   PreviewOmissionBucket,
 } from '../../../wikiduel-server/src/playable-articles/preview.js'
 import { useWebSocket } from '../websocket/webSocketContext'
 
-type LabFailure = Readonly<{
-  code: string
-  retryAfterSeconds?: number
+type LabFailure = PlayableArticleFailure | Readonly<{
+  code: 'malformed-message' | 'preview-unavailable'
 }>
 
 type NavigationHistoryEntry = Readonly<{
@@ -24,7 +27,9 @@ function formatFailure(failure: LabFailure): string {
     case 'article-not-found':
       return 'No article was found for that title.'
     case 'article-not-playable':
-      return 'That page is not a Playable Article.'
+      return failure.reason
+        ? `That page is not a Playable Article (${failure.reason}).`
+        : 'That page is not a Playable Article.'
     case 'invalid-title':
       return 'Enter a valid Wikipedia article title.'
     case 'upstream-rate-limited':

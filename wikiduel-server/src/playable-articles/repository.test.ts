@@ -653,6 +653,16 @@ describe("PlayableArticleRepository", () => {
       ok: false,
       failure: { code: "article-normalization-failed" },
     });
+    const normalizationWithDiagnostics = normalization.getByTitleWithDiagnostics;
+    expect(normalizationWithDiagnostics).toBeDefined();
+    await expect(normalizationWithDiagnostics!("Ada Lovelace")).resolves.toMatchObject({
+      result: { ok: false, failure: { code: "article-normalization-failed" } },
+      cacheOutcome: "not-cached",
+      details: {
+        omissions: { structure: { count: 1, reasons: ["script"] } },
+        retry: { attempts: 0 },
+      },
+    });
 
     const attribution = repositoryFor({ ...baseSnapshot, revisionTimestamp: "" });
     await expect(attribution.getByTitle("Ada Lovelace")).resolves.toEqual({

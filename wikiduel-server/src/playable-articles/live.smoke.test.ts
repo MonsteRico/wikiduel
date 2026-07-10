@@ -61,6 +61,21 @@ reportedStrange("reported-strange live article", () => {
   test("returns a typed result that can be inspected in the Lab", async () => {
     const repository = createLivePlayableArticleRepository(process.env);
     const result = await repository.getByTitle(reportedStrangeTitle!);
-    expect(result.ok || result.failure.code).toBeTruthy();
+    if (result.ok) {
+      expect(result.article.identity.pageId).toBeGreaterThan(0);
+      expect(result.article.revision.id).toBeGreaterThan(0);
+      expect(result.article.document.blocks.length).toBeGreaterThan(0);
+      expect(JSON.stringify(result.article)).not.toContain("<html");
+    } else {
+      expect([
+        "invalid-title",
+        "article-not-found",
+        "article-not-playable",
+        "upstream-rate-limited",
+        "upstream-unavailable",
+        "article-normalization-failed",
+        "article-attribution-incomplete",
+      ]).toContain(result.failure.code);
+    }
   }, 30_000);
 });

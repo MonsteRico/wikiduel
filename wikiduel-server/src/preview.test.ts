@@ -1,7 +1,11 @@
 import type { RawData, WebSocket } from "ws";
 import { expect, test } from "vitest";
 
-import type { PlayableArticle, PlayableArticleRepository } from "./playable-articles/index.js";
+import type {
+  PlayableArticle,
+  PlayableArticleFailure,
+  PlayableArticleRepository,
+} from "./playable-articles/index.js";
 import { buildApp } from "./app.js";
 import type {
   PreviewArticleResultMessage,
@@ -41,6 +45,16 @@ function nextMessage<T>(socket: WebSocket, type: string): Promise<T> {
     socket.on("message", onMessage);
   });
 }
+
+const publicFailures: readonly PlayableArticleFailure[] = [
+  { code: "invalid-title" },
+  { code: "article-not-found" },
+  { code: "article-not-playable", reason: "disambiguation" },
+  { code: "upstream-rate-limited", retryAfterSeconds: 7 },
+  { code: "upstream-unavailable" },
+  { code: "article-normalization-failed" },
+  { code: "article-attribution-incomplete" },
+];
 
 test("the preview WebSocket returns a canonical article and separate safe diagnostics", async () => {
   const repository: PlayableArticleRepository = {
@@ -92,6 +106,28 @@ test("the preview WebSocket returns a canonical article and separate safe diagno
   socket.terminate();
   await app.close();
 });
+
+for (const failure of publicFailures) {
+  test(`the preview WebSocket preserves typed ${failure.code} failures`, async () => {
+    const repository: PlayableArticleRepository = {
+      getByTitle: async () => ({ ok: false, failure }),
+    };
+    const app = await buildApp({ repository });
+    await app.ready();
+    const socket = await app.injectWS("/ws");
+    const responsePromise = nextMessage<PreviewArticleResultMessage>(socket, "preview-article-result");
+
+    socket.send(JSON.stringify({
+      type: "preview-article",
+      requestId: `failure-${failure.code}`,
+      requestedTitle: "Requested title",
+    }));
+
+    await expect(responsePromise).resolves.toMatchObject({ ok: false, failure });
+    socket.terminate();
+    await app.close();
+  });
+}
 
 test("preview requests correlate repeated and Navigation requests with typed failures without changing Lobby messages", async () => {
   const requestedTitles: string[] = [];

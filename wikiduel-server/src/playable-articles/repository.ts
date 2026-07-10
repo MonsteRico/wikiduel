@@ -275,6 +275,7 @@ export function createPlayableArticleRepository(
   const random = options.random ?? Math.random;
   const articlesByPageId = new Map<number, PlayableArticle>();
   const detailsByPageId = new Map<number, PreviewBuildDetails>();
+  const detailsByTitle = new Map<string, PreviewBuildDetails>();
   const pageIdsByTitle = new Map<string, number>();
   const buildsByTitle = new Map<string, Promise<PlayableArticleResult>>();
 
@@ -323,8 +324,8 @@ export function createPlayableArticleRepository(
     title: string,
     signal: AbortSignal,
     retryBudget: RetryBudget,
+    retryDetails: RetryDetails,
   ): Promise<PlayableArticleResult> {
-    const retryDetails: RetryDetails = { attempts: 0 };
     const snapshot = await withTransientRetry(
       () => gateway.fetchPage(title, { signal }),
       title,
@@ -381,7 +382,16 @@ export function createPlayableArticleRepository(
       figures,
       normalizationDiagnostics,
     );
-    if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
+    const details = previewBuildDetails(
+      normalizationDiagnostics,
+      imageCandidates.length,
+      figures.size,
+      retryDetails,
+    );
+    if (!document) {
+      detailsByTitle.set(title, details);
+      return { ok: false, failure: { code: "article-normalization-failed" } };
+    }
 
     const article: PlayableArticle = deepFreeze<PlayableArticle>({
       identity: { pageId: snapshot.pageId, title: snapshot.title },
@@ -389,15 +399,7 @@ export function createPlayableArticleRepository(
       attribution,
       document,
     });
-    detailsByPageId.set(
-      article.identity.pageId,
-      previewBuildDetails(
-        normalizationDiagnostics,
-        imageCandidates.length,
-        figures.size,
-        retryDetails,
-      ),
-    );
+    detailsByPageId.set(article.identity.pageId, details);
 
     return {
       ok: true,
@@ -407,6 +409,7 @@ export function createPlayableArticleRepository(
 
   async function buildWithinBudget(title: string): Promise<PlayableArticleResult> {
     const controller = new AbortController();
+    const retryDetails: RetryDetails = { attempts: 0 };
     let deadlineTimer: ReturnType<typeof setTimeout>;
     const deadline = new Promise<PlayableArticleResult>((resolve) => {
       deadlineTimer = setTimeout(() => {
@@ -416,7 +419,7 @@ export function createPlayableArticleRepository(
     });
     const work = (async (): Promise<PlayableArticleResult> => {
       try {
-        return await buildArticle(title, controller.signal, { remaining: 1 });
+        return await buildArticle(title, controller.signal, { remaining: 1 }, retryDetails);
       } catch (error) {
         return gatewayFailure(error);
       }
@@ -425,10 +428,19 @@ export function createPlayableArticleRepository(
     clearTimeout(deadlineTimer!);
 
     if (result.ok && !controller.signal.aborted) {
+      const details = {
+        ...detailsByPageId.get(result.article.identity.pageId),
+        retry: retryDetails,
+      };
+      detailsByPageId.set(result.article.identity.pageId, details);
       articlesByPageId.set(result.article.identity.pageId, result.article);
       pageIdsByTitle.set(title, result.article.identity.pageId);
       pageIdsByTitle.set(result.article.identity.title, result.article.identity.pageId);
     } else if (!result.ok) {
+      detailsByTitle.set(title, {
+        ...detailsByTitle.get(title),
+        retry: retryDetails,
+      });
       logger.warn(
         { requestedTitle: title, failureCode: result.failure.code },
         "Playable Article build failed",
@@ -470,7 +482,9 @@ export function createPlayableArticleRepository(
       return {
         result,
         cacheOutcome: "in-flight",
-        details: result.ok ? detailsByPageId.get(result.article.identity.pageId) ?? {} : {},
+        details: result.ok
+          ? detailsByPageId.get(result.article.identity.pageId) ?? {}
+          : detailsByTitle.get(title) ?? {},
       };
     }
 
@@ -482,10 +496,13 @@ export function createPlayableArticleRepository(
       return {
         result,
         cacheOutcome: result.ok ? "miss" : "not-cached",
-        details: result.ok ? detailsByPageId.get(result.article.identity.pageId) ?? {} : {},
+        details: result.ok
+          ? detailsByPageId.get(result.article.identity.pageId) ?? {}
+          : detailsByTitle.get(title) ?? {},
       };
     } finally {
       if (buildsByTitle.get(title) === build) buildsByTitle.delete(title);
+      detailsByTitle.delete(title);
     }
   }
 

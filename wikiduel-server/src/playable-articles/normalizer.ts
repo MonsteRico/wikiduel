@@ -284,7 +284,7 @@ function blocksFrom(
       const captionElement = childrenOf(node)
         .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
       const caption = captionElement
-        ? inlineFrom(childrenOf(captionElement), false, destinations)
+        ? inlineFrom(childrenOf(captionElement), false, destinations, diagnostics)
         : [];
       const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
       // Safe metadata alone is not enough for playable output: the player needs
