@@ -77,10 +77,26 @@ describe("PlayableArticleRepository", () => {
       cacheOutcome: "miss",
       details: {
         omissions: {
-          structure: { count: 1, reasons: ["table"] },
-          links: { count: 2 },
-          images: { count: 1 },
-          imageAttribution: { count: 1 },
+          structure: {
+            count: 1,
+            reasons: ["table"],
+            examples: [{ reason: "table", subject: "table" }],
+          },
+          links: {
+            count: 2,
+            examples: expect.arrayContaining([
+              { reason: "unsupported-link", subject: "external" },
+              { reason: "unresolved-or-not-playable", subject: "Unknown (unknown)" },
+            ]),
+          },
+          images: {
+            count: 1,
+            examples: [{ reason: "unapproved-or-missing-metadata", subject: "File:Rejected.jpg" }],
+          },
+          imageAttribution: {
+            count: 1,
+            examples: [{ reason: "incomplete-or-unacceptable-attribution", subject: "File:Rejected.jpg" }],
+          },
         },
       },
     });
