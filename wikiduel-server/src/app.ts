@@ -4,6 +4,20 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 
+import type { PlayableArticleRepository } from "./playable-articles/repository.js";
+import {
+  buildPreviewDiagnostics,
+  isPreviewRequest,
+  previewArticleResult,
+  previewError,
+  type PreviewArticleRequest,
+} from "./playable-articles/preview.js";
+
+export type BuildAppOptions = Readonly<{
+  repository?: PlayableArticleRepository;
+  production?: boolean;
+}>;
+
 type ClientMessage =
   | { type: "ping" }
   | { type: "create-lobby"; clientId: string }
@@ -77,7 +91,22 @@ function broadcastLobby(lobby: LobbyRecord): void {
   }
 }
 
-export async function buildApp(): Promise<FastifyInstance> {
+function previewRequestHints(value: unknown): Partial<PreviewArticleRequest> {
+  if (typeof value !== "object" || value === null) return {};
+  const message = value as Record<string, unknown>;
+  return {
+    ...(typeof message.requestId === "string" ? { requestId: message.requestId } : {}),
+    ...(typeof message.requestedTitle === "string" ? { requestedTitle: message.requestedTitle } : {}),
+  };
+}
+
+function isPreviewMessage(value: unknown): boolean {
+  return typeof value === "object"
+    && value !== null
+    && (value as Record<string, unknown>).type === "preview-article";
+}
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
   const lobbies = new Map<string, LobbyRecord>();
 
@@ -155,9 +184,50 @@ export async function buildApp(): Promise<FastifyInstance> {
       broadcastLobby(lobby);
     };
 
-    socket.on("message", (data) => {
+    socket.on("message", async (data) => {
       try {
-        const message = JSON.parse(data.toString()) as ClientMessage;
+        const parsedMessage: unknown = JSON.parse(data.toString());
+
+        if (isPreviewMessage(parsedMessage)) {
+          const hints = previewRequestHints(parsedMessage);
+          if (!isPreviewRequest(parsedMessage)) {
+            socket.send(serializeMessage(previewError(hints, "malformed-message")));
+            return;
+          }
+          if (options.production || !options.repository) {
+            socket.send(serializeMessage(previewError(parsedMessage, "preview-unavailable")));
+            return;
+          }
+
+          const startedAt = performance.now();
+          let lookup;
+          try {
+            lookup = options.repository.getByTitleWithDiagnostics
+              ? await options.repository.getByTitleWithDiagnostics(parsedMessage.requestedTitle)
+              : {
+                result: await options.repository.getByTitle(parsedMessage.requestedTitle),
+                cacheOutcome: "miss" as const,
+                details: {},
+              };
+          } catch {
+            lookup = {
+              result: { ok: false as const, failure: { code: "upstream-unavailable" as const } },
+              cacheOutcome: "not-cached" as const,
+              details: {},
+            };
+          }
+          const diagnostics = buildPreviewDiagnostics(
+            parsedMessage.requestedTitle,
+            lookup.result,
+            performance.now() - startedAt,
+            lookup.cacheOutcome,
+            lookup.details,
+          );
+          socket.send(serializeMessage(previewArticleResult(parsedMessage, lookup.result, diagnostics)));
+          return;
+        }
+
+        const message = parsedMessage as ClientMessage;
 
         if (message.type === "ping") {
           socket.send(serializeMessage({ type: "pong", message: "Pong from WikiDuel server" }));

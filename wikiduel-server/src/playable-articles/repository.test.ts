@@ -57,6 +57,39 @@ function repositoryFor(
 }
 
 describe("PlayableArticleRepository", () => {
+  test("reports cache and omission diagnostics without changing the article result", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<table><tr><td>omitted</td></tr></table>
+          <p><a href="https://example.com">external</a> <a href="/wiki/Unknown">unknown</a></p>
+          <figure typeof="mw:File/Thumb"><a href="/wiki/File:Rejected.jpg"><img alt="Rejected" /></a></figure>`,
+      }),
+      resolveLinks: async () => [{ requestedTitle: "Unknown", exists: false }],
+      fetchImageMetadata: async () => [],
+    });
+    const inspect = repository.getByTitleWithDiagnostics;
+    expect(inspect).toBeDefined();
+
+    const first = await inspect!("Ada Lovelace");
+    expect(first).toMatchObject({
+      result: { ok: true },
+      cacheOutcome: "miss",
+      details: {
+        omissions: {
+          structure: { count: 1, reasons: ["table"] },
+          links: { count: 2 },
+          images: { count: 1 },
+          imageAttribution: { count: 1 },
+        },
+      },
+    });
+
+    const second = await inspect!("Ada Lovelace");
+    expect(second.cacheOutcome).toBe("hit");
+    expect(second.details).toEqual(first.details);
+  });
+
   test("reuses a complete article for repeated normalized-title requests", async () => {
     const fetchPage = vi.fn().mockResolvedValue(baseSnapshot);
     const repository = createPlayableArticleRepository(gatewayWith({ fetchPage }));

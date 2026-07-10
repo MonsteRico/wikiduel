@@ -12,18 +12,32 @@ import type {
   PlayableArticle,
   PlayableArticleResult,
 } from "./model.js";
+import type {
+  PreviewBuildDetails,
+  PreviewDiagnostics,
+  PreviewOmissionBucket,
+} from "./preview.js";
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 
 import {
+  createNormalizationDiagnostics,
   extractCandidateImageTitles,
   extractCandidateLinkTitles,
   normalizeArticleDocument,
 } from "./normalizer.js";
+import type { NormalizationDiagnostics } from "./normalizer.js";
 import { isValidWikipediaTitle } from "./title.js";
 
 export interface PlayableArticleRepository {
   getByTitle(requestedTitle: string): Promise<PlayableArticleResult>;
+  getByTitleWithDiagnostics?(requestedTitle: string): Promise<PlayableArticlePreviewLookup>;
 }
+
+export type PlayableArticlePreviewLookup = Readonly<{
+  result: PlayableArticleResult;
+  cacheOutcome: PreviewDiagnostics["cacheOutcome"];
+  details: PreviewBuildDetails;
+}>;
 
 export interface PlayableArticleRepositoryLogger {
   debug(details: Readonly<Record<string, unknown>>, message: string): void;
@@ -36,6 +50,38 @@ export type PlayableArticleRepositoryOptions = Readonly<{
 }>;
 
 type RetryBudget = { remaining: number };
+type RetryDetails = { attempts: number };
+
+function omissionBucket(count: number, reasons: readonly string[]): PreviewOmissionBucket {
+  return { count, reasons: [...new Set(reasons)] };
+}
+
+function previewBuildDetails(
+  normalization: NormalizationDiagnostics,
+  imageCandidateCount: number,
+  approvedImageCount: number,
+  retry: RetryDetails,
+): PreviewBuildDetails {
+  const rejectedImages = Math.max(0, imageCandidateCount - approvedImageCount);
+  return {
+    omissions: {
+      structure: omissionBucket(normalization.structure.count, [...normalization.structure.reasons]),
+      links: omissionBucket(normalization.links.count, [...normalization.links.reasons]),
+      images: omissionBucket(
+        Math.max(normalization.images.count, rejectedImages),
+        [
+          ...normalization.images.reasons,
+          ...(rejectedImages > 0 ? ["image-policy-or-incomplete-attribution"] : []),
+        ],
+      ),
+      imageAttribution: omissionBucket(
+        rejectedImages,
+        rejectedImages > 0 ? ["incomplete-or-unacceptable-attribution"] : [],
+      ),
+    },
+    retry,
+  };
+}
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -228,6 +274,7 @@ export function createPlayableArticleRepository(
   };
   const random = options.random ?? Math.random;
   const articlesByPageId = new Map<number, PlayableArticle>();
+  const detailsByPageId = new Map<number, PreviewBuildDetails>();
   const pageIdsByTitle = new Map<string, number>();
   const buildsByTitle = new Map<string, Promise<PlayableArticleResult>>();
 
@@ -255,6 +302,7 @@ export function createPlayableArticleRepository(
     title: string,
     signal: AbortSignal,
     retryBudget: RetryBudget,
+    retryDetails?: RetryDetails,
   ): Promise<T> {
     try {
       return await operation();
@@ -265,6 +313,7 @@ export function createPlayableArticleRepository(
         || retryBudget.remaining === 0
       ) throw error;
       retryBudget.remaining -= 1;
+      if (retryDetails) retryDetails.attempts += 1;
       if (!await waitForRetry(title, signal)) throw error;
       return operation();
     }
@@ -275,11 +324,13 @@ export function createPlayableArticleRepository(
     signal: AbortSignal,
     retryBudget: RetryBudget,
   ): Promise<PlayableArticleResult> {
+    const retryDetails: RetryDetails = { attempts: 0 };
     const snapshot = await withTransientRetry(
       () => gateway.fetchPage(title, { signal }),
       title,
       signal,
       retryBudget,
+      retryDetails,
     );
 
     const canonicalArticle = articlesByPageId.get(snapshot.pageId);
@@ -293,6 +344,7 @@ export function createPlayableArticleRepository(
 
     const candidates = extractCandidateLinkTitles(snapshot.html);
     const imageCandidates = extractCandidateImageTitles(snapshot.html);
+    const normalizationDiagnostics = createNormalizationDiagnostics();
     const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
     if (imageCandidates.length > 0) {
       const metadataResults = await withTransientRetry(
@@ -300,6 +352,7 @@ export function createPlayableArticleRepository(
         title,
         signal,
         retryBudget,
+        retryDetails,
       );
       for (const metadata of metadataResults) {
         const figure = safeFigure(metadata);
@@ -313,6 +366,7 @@ export function createPlayableArticleRepository(
       title,
       signal,
       retryBudget,
+      retryDetails,
     );
     const destinations = new Map<string, NavigationDestination>();
     for (const link of resolvedLinks) {
@@ -320,17 +374,34 @@ export function createPlayableArticleRepository(
         destinations.set(link.requestedTitle, { pageId: link.pageId, title: link.title });
       }
     }
-    const document = normalizeArticleDocument(snapshot.title, snapshot.html, destinations, figures);
+    const document = normalizeArticleDocument(
+      snapshot.title,
+      snapshot.html,
+      destinations,
+      figures,
+      normalizationDiagnostics,
+    );
     if (!document) return { ok: false, failure: { code: "article-normalization-failed" } };
+
+    const article: PlayableArticle = deepFreeze<PlayableArticle>({
+      identity: { pageId: snapshot.pageId, title: snapshot.title },
+      revision: { id: snapshot.revisionId, timestamp: snapshot.revisionTimestamp },
+      attribution,
+      document,
+    });
+    detailsByPageId.set(
+      article.identity.pageId,
+      previewBuildDetails(
+        normalizationDiagnostics,
+        imageCandidates.length,
+        figures.size,
+        retryDetails,
+      ),
+    );
 
     return {
       ok: true,
-      article: deepFreeze<PlayableArticle>({
-        identity: { pageId: snapshot.pageId, title: snapshot.title },
-        revision: { id: snapshot.revisionId, timestamp: snapshot.revisionTimestamp },
-        attribution,
-        document,
-      }),
+      article,
     };
   }
 
@@ -366,35 +437,62 @@ export function createPlayableArticleRepository(
     return result;
   }
 
+  async function getByTitleWithDiagnostics(
+    requestedTitle: string,
+  ): Promise<PlayableArticlePreviewLookup> {
+    const title = requestedTitle.trim().replace(/_/g, " ");
+    if (!isValidWikipediaTitle(title)) {
+      return {
+        result: { ok: false, failure: { code: "invalid-title" } },
+        cacheOutcome: "not-cached",
+        details: {},
+      };
+    }
+
+    const cachedPageId = pageIdsByTitle.get(title);
+    const cachedArticle = cachedPageId === undefined ? undefined : articlesByPageId.get(cachedPageId);
+    if (cachedArticle) {
+      logger.debug({ requestedTitle: title, event: "cache-hit" }, "Playable Article cache hit");
+      return {
+        result: { ok: true, article: cachedArticle },
+        cacheOutcome: "hit",
+        details: detailsByPageId.get(cachedArticle.identity.pageId) ?? {},
+      };
+    }
+
+    const existingBuild = buildsByTitle.get(title);
+    if (existingBuild) {
+      logger.debug(
+        { requestedTitle: title, event: "in-flight-hit" },
+        "Playable Article build already in flight",
+      );
+      const result = await existingBuild;
+      return {
+        result,
+        cacheOutcome: "in-flight",
+        details: result.ok ? detailsByPageId.get(result.article.identity.pageId) ?? {} : {},
+      };
+    }
+
+    logger.debug({ requestedTitle: title, event: "cache-miss" }, "Playable Article cache miss");
+    const build = buildWithinBudget(title);
+    buildsByTitle.set(title, build);
+    try {
+      const result = await build;
+      return {
+        result,
+        cacheOutcome: result.ok ? "miss" : "not-cached",
+        details: result.ok ? detailsByPageId.get(result.article.identity.pageId) ?? {} : {},
+      };
+    } finally {
+      if (buildsByTitle.get(title) === build) buildsByTitle.delete(title);
+    }
+  }
+
   return {
     async getByTitle(requestedTitle) {
-      const title = requestedTitle.trim().replace(/_/g, " ");
-      if (!isValidWikipediaTitle(title)) return { ok: false, failure: { code: "invalid-title" } };
-
-      const cachedPageId = pageIdsByTitle.get(title);
-      const cachedArticle = cachedPageId === undefined ? undefined : articlesByPageId.get(cachedPageId);
-      if (cachedArticle) {
-        logger.debug({ requestedTitle: title, event: "cache-hit" }, "Playable Article cache hit");
-        return { ok: true, article: cachedArticle };
-      }
-
-      const existingBuild = buildsByTitle.get(title);
-      if (existingBuild) {
-        logger.debug(
-          { requestedTitle: title, event: "in-flight-hit" },
-          "Playable Article build already in flight",
-        );
-        return existingBuild;
-      }
-
-      logger.debug({ requestedTitle: title, event: "cache-miss" }, "Playable Article cache miss");
-      const build = buildWithinBudget(title);
-      buildsByTitle.set(title, build);
-      try {
-        return await build;
-      } finally {
-        if (buildsByTitle.get(title) === build) buildsByTitle.delete(title);
-      }
+      return (await getByTitleWithDiagnostics(requestedTitle)).result;
     },
+    getByTitleWithDiagnostics,
   };
 }

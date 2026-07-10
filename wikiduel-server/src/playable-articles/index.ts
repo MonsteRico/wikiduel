@@ -20,9 +20,19 @@ export type {
 } from "./model.js";
 export type {
   PlayableArticleRepository,
+  PlayableArticlePreviewLookup,
   PlayableArticleRepositoryLogger,
   PlayableArticleRepositoryOptions,
 } from "./repository.js";
+export type {
+  PreviewArticleRequest,
+  PreviewArticleResultMessage,
+  PreviewBuildDetails,
+  PreviewDiagnostics,
+  PreviewErrorMessage,
+  PreviewMessage,
+  PreviewOmissionBucket,
+} from "./preview.js";
 
 export function createLivePlayableArticleRepository(
   environment: Readonly<Record<string, string | undefined>>,
