@@ -1,5 +1,6 @@
 import { createElement, type ReactNode } from 'react'
 
+import { Button } from '../../components/ui/Button'
 import type {
   ArticleAttribution,
   ArticleBlock,
@@ -36,9 +37,14 @@ function renderInline(inline: ArticleInline, key: number, onNavigate: Navigate):
       )
     case 'navigation':
       return (
-        <button key={key} type="button" onClick={() => onNavigate(inline.destination)}>
+        <Button
+          key={key}
+          type="button"
+          variant="inline"
+          onClick={() => onNavigate(inline.destination)}
+        >
           {inline.children.map((child, index) => renderInline(child, index, onNavigate))}
-        </button>
+        </Button>
       )
   }
 }
