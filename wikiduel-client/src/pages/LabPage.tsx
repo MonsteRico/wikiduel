@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AppShell } from '../components/ui/AppShell'
-import { ArticleDocumentRenderer } from '../features/playable-articles/ArticleDocumentRenderer'
+import { PlayableArticleArea } from '../features/playable-articles/PlayableArticleArea'
 import type {
   NavigationDestination,
   PlayableArticle,
@@ -258,10 +258,8 @@ export function LabPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] lg:items-start">
           <div className="grid min-w-0 gap-6">
           {article ? (
-          <ArticleDocumentRenderer
-            document={article.document}
-            revision={article.revision}
-            attribution={article.attribution}
+          <PlayableArticleArea
+            article={article}
             onNavigate={handleNavigation}
           />
         ) : null}
