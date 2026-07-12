@@ -2,9 +2,15 @@
 
 # Render Wikipedia Infoboxes
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP optional
 Category: enhancement
+
+Completed: 2026-07-12 04:41 PM
+
+Implementation: Added semantic Infobox normalization, shared link/image
+discovery, typed media placeholders, production rendering, responsive
+presentation, and focused server/client coverage.
 
 ## Parent
 
@@ -102,52 +108,52 @@ enter the client contract.
 
 **Acceptance criteria:**
 
-- [ ] Recognized Wikipedia Infoboxes become dedicated typed Article Document
+- [x] Recognized Wikipedia Infoboxes become dedicated typed Article Document
       blocks at their normalized source positions; no raw or sanitized Infobox
       HTML crosses the server boundary.
-- [ ] Every supported title, section, fact, line/paragraph group, simple list,
+- [x] Every supported title, section, fact, line/paragraph group, simple list,
       inline element, image, caption, and media placeholder is retained in
       source order without importance heuristics or arbitrary item limits.
-- [ ] Eligible Infobox links are resolved and classified through the same
+- [x] Eligible Infobox links are resolved and classified through the same
       authoritative Navigation flow as prose and caption links, and activating
       them invokes the surrounding renderer's canonical Navigation callback.
-- [ ] Unsupported and non-playable links remain readable and noninteractive,
+- [x] Unsupported and non-playable links remain readable and noninteractive,
       consistent with existing Article Document behavior.
-- [ ] Infobox image candidates use the shared discovery/enrichment seam and the
+- [x] Infobox image candidates use the shared discovery/enrichment seam and the
       standard image acceptance policy exactly; Infobox code does not duplicate
       or specialize that policy.
-- [ ] Qualifying static maps render as ordinary attributed images, while
+- [x] Qualifying static maps render as ordinary attributed images, while
       interactive maps, galleries, controls, forms, and embedded applications
       are omitted safely.
-- [ ] Audio and video produce typed, noninteractive omission placeholders with
+- [x] Audio and video produce typed, noninteractive omission placeholders with
       no playable media, executable source, or upstream controls.
-- [ ] Supported descendants survive beside malformed or unsupported content;
+- [x] Supported descendants survive beside malformed or unsupported content;
       an item disappears only when no meaningful supported content remains, and
       an otherwise valid Playable Article does not fail because one Infobox or
       Infobox item is malformed.
-- [ ] Infobox-only content does not satisfy the existing meaningful article-body
+- [x] Infobox-only content does not satisfy the existing meaningful article-body
       normalization requirement.
-- [ ] Infobox titles and section labels remain internal to the Infobox and do
+- [x] Infobox titles and section labels remain internal to the Infobox and do
       not enter the Article Document table of contents or heading-target model.
-- [ ] A dedicated production Infobox component accepts the typed block and
+- [x] A dedicated production Infobox component accepts the typed block and
       Navigation callback, and the Article Document renderer uses it in both the
       Lab and other production-renderer consumers.
-- [ ] Infoboxes render expanded by default at their source position, provide a
+- [x] Infoboxes render expanded by default at their source position, provide a
       keyboard-operable and accessibly named collapse control, and collapsing
       does not request or count as Navigation.
-- [ ] Infoboxes are readable beside introductory prose at wide widths and as
+- [x] Infoboxes are readable beside introductory prose at wide widths and as
       full-width content at narrow widths without horizontal page overflow.
-- [ ] Existing omission diagnostics account for unsupported Infobox structures,
+- [x] Existing omission diagnostics account for unsupported Infobox structures,
       links, and images without exposing upstream HTML or adding diagnostics to
       the production Playable Article contract.
-- [ ] Focused server fixtures cover representative person and place Infoboxes,
+- [x] Focused server fixtures cover representative person and place Infoboxes,
       mixed label/value shapes, simple lists, multiple links and images,
       audio/video, static and interactive maps, malformed nesting, hostile
       markup, granular fallback, and the meaningful-body invariant.
-- [ ] Focused client tests cover the dedicated component, renderer dispatch,
+- [x] Focused client tests cover the dedicated component, renderer dispatch,
       semantic content, Navigation callbacks, image and placeholder rendering,
       keyboard collapse behavior, and narrow/wide presentation semantics.
-- [ ] Existing Article Document normalization, Navigation, image-policy,
+- [x] Existing Article Document normalization, Navigation, image-policy,
       renderer, Playable Article area, and Lab tests continue to pass.
 
 **Out of scope:**
