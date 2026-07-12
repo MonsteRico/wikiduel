@@ -1,7 +1,7 @@
 # Render Wikipedia Data Tables
 
 Status: needs-triage
-Scope: Future
+Scope: MVP optional
 Category: enhancement
 
 ## What to build
