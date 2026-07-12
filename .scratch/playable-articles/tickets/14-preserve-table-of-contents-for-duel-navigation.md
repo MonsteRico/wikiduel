@@ -2,9 +2,10 @@
 
 # Preserve Wikipedia Table of Contents for Duel Navigation
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-12 12:44 PM (local implementation; PR not opened yet)
 
 ## Parent
 
@@ -28,19 +29,19 @@ not become a Navigation or count as a race click.
 
 ## Acceptance criteria
 
-- [ ] The triage investigation identifies the upstream structures that produce
+- [x] The triage investigation identifies the upstream structures that produce
   the table of contents and the current leakage path.
-- [ ] Rendered Article Document body content excludes table-of-contents labels,
+- [x] Rendered Article Document body content excludes table-of-contents labels,
   links, and surrounding presentation chrome without removing real article
   content.
-- [ ] The retained table of contents has a typed or otherwise explicit contract
+- [x] The retained table of contents has a typed or otherwise explicit contract
   that the Duel screen can consume for same-article heading jumps.
-- [ ] The Playable Article Lab renders the retained table of contents in a
+- [x] The Playable Article Lab renders the retained table of contents in a
   dedicated component, visually paired with the diagnostics panel and placed to
   the left of the rendered Playable Article.
-- [ ] A table-of-contents jump does not create a Navigation, change the
+- [x] A table-of-contents jump does not create a Navigation, change the
   authoritative article path, or increment the race click count.
-- [ ] Nested headings, missing or malformed entries, accessibility, and
+- [x] Nested headings, missing or malformed entries, accessibility, and
   headings removed by normalizer policy are covered by the implementation plan
   and regression fixtures.
 
@@ -78,14 +79,26 @@ The Playable Article Lab should render the retained table of contents through a 
 - Normalizer diagnostics should continue to account for omitted upstream chrome, including TOC structures, without exposing raw HTML.
 
 **Acceptance criteria:**
-- [ ] Upstream TOC structures from parsed Wikipedia HTML are covered by focused regression fixtures, including at least the structures observed in the Lab and representative MediaWiki TOC class/id patterns.
-- [ ] Rendered Article Document body content excludes TOC labels, numbering, links, wrappers, and surrounding presentation chrome while preserving real article headings, paragraphs, lists, figures, captions, and Navigation Nodes.
-- [ ] Links found only inside excluded TOC chrome are not resolved as article candidates and never become `Navigation Node`s.
-- [ ] The Article Document contract includes a typed table of contents whose entries target normalized rendered headings in the same article.
-- [ ] TOC entries are derived only from headings retained by normalizer policy; malformed entries, missing headings, duplicate heading labels, and skipped heading levels produce deterministic, accessible output.
-- [ ] The Lab renders a dedicated table-of-contents component in a diagnostics-like panel to the left of the Playable Article at desktop sizes, with a responsive layout that remains usable on narrow screens.
-- [ ] Activating a Lab TOC entry scrolls or focuses the matching heading without sending a preview request, changing Lab navigation history, or invoking the Navigation callback.
-- [ ] Focused tests cover server normalization, contract serialization, renderer heading targets, Lab TOC rendering, keyboard/mouse activation, and the non-Navigation behavior of TOC jumps.
+- [x] Upstream TOC structures from parsed Wikipedia HTML are covered by focused regression fixtures, including at least the structures observed in the Lab and representative MediaWiki TOC class/id patterns.
+- [x] Rendered Article Document body content excludes TOC labels, numbering, links, wrappers, and surrounding presentation chrome while preserving real article headings, paragraphs, lists, figures, captions, and Navigation Nodes.
+- [x] Links found only inside excluded TOC chrome are not resolved as article candidates and never become `Navigation Node`s.
+- [x] The Article Document contract includes a typed table of contents whose entries target normalized rendered headings in the same article.
+- [x] TOC entries are derived only from headings retained by normalizer policy; malformed entries, missing headings, duplicate heading labels, and skipped heading levels produce deterministic, accessible output.
+- [x] The Lab renders a dedicated table-of-contents component in a diagnostics-like panel to the left of the Playable Article at desktop sizes, with a responsive layout that remains usable on narrow screens.
+- [x] Activating a Lab TOC entry scrolls or focuses the matching heading without sending a preview request, changing Lab navigation history, or invoking the Navigation callback.
+- [x] Focused tests cover server normalization, contract serialization, renderer heading targets, Lab TOC rendering, keyboard/mouse activation, and the non-Navigation behavior of TOC jumps.
+
+## Implementation note
+
+The leakage path was the normalizer's recursive traversal of incidental
+containers: MediaWiki TOC wrappers that were not excluded could contribute
+their labels, numbering, same-page anchors, and any ordinary-looking internal
+links to Article Document body blocks and candidate link discovery. The
+implemented fixtures cover representative `id="toc"`, `.toc`, `#mw-panel-toc`,
+and `.vector-toc` structures. The server now excludes those wrappers, records
+them as omitted structure, derives the retained TOC from normalized headings
+that survive policy, and emits stable `targetId`s on heading blocks for
+same-article focus/scroll jumps.
 
 **Out of scope:**
 - Implementing full production Duel screen layout beyond the typed contract and same-article jump semantics needed for later Duel reuse.

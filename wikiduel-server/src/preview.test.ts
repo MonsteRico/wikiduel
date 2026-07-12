@@ -24,6 +24,7 @@ const article: PlayableArticle = {
   },
   document: {
     title: "Canonical title",
+    tableOfContents: [],
     blocks: [
       {
         type: "paragraph",

@@ -21,7 +21,14 @@ const article: PlayableArticle = {
   },
   document: {
     title: 'Canonical title',
+    tableOfContents: [{ targetId: 'section-history', level: 2, label: 'History' }],
     blocks: [
+      {
+        type: 'heading',
+        targetId: 'section-history',
+        level: 2,
+        children: [{ type: 'text', value: 'History' }],
+      },
       {
         type: 'paragraph',
         children: [
@@ -46,7 +53,7 @@ const diagnostics = {
   durationMs: 23,
   cacheOutcome: 'miss' as const,
   emittedNodeCounts: {
-    headings: 0,
+    headings: 1,
     paragraphs: 1,
     lists: 0,
     listItems: 0,
@@ -123,6 +130,7 @@ describe('Playable Article Lab', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Canonical title', level: 1 })).toBeVisible())
     expect(screen.getByRole('article')).toHaveTextContent('Read the destination.')
+    expect(screen.getByRole('region', { name: 'Table of contents' })).toHaveTextContent('History')
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('Alias title')
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('Cache: miss')
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('table')
@@ -136,6 +144,36 @@ describe('Playable Article Lab', () => {
     expect(screen.getByRole('region', { name: 'Article diagnostics' }).closest('aside')).toHaveClass(
       'lg:sticky',
       'lg:top-6',
+    )
+  })
+
+  it('jumps through the retained table of contents without sending a Navigation preview request', async () => {
+    const user = userEvent.setup()
+    const socket = renderLab()
+
+    await user.type(screen.getByLabelText('Wikipedia title'), 'Alias title')
+    await user.click(screen.getByRole('button', { name: 'Load article' }))
+    const request = lastRequest(socket)
+    socket.receive({
+      type: 'preview-article-result',
+      requestId: request.requestId,
+      requestedTitle: request.requestedTitle,
+      ok: true,
+      article,
+      diagnostics,
+    })
+
+    const historyHeading = await screen.findByRole('heading', { name: 'History', level: 2 })
+    historyHeading.scrollIntoView = vi.fn()
+    const sentMessageCount = socket.sentMessages.length
+
+    await user.click(screen.getByRole('button', { name: 'History' }))
+
+    expect(historyHeading).toHaveFocus()
+    expect(historyHeading.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(socket.sentMessages).toHaveLength(sentMessageCount)
+    expect(screen.getByRole('region', { name: 'Navigation history' })).toHaveTextContent(
+      'No Navigation yet.',
     )
   })
 

@@ -54,7 +54,7 @@ function renderBlock(block: ArticleBlock, key: number, onNavigate: Navigate): Re
     case 'heading':
       return createElement(
         `h${block.level}`,
-        { key },
+        { id: block.targetId, key, tabIndex: -1 },
         block.children.map((child, index) => renderInline(child, index, onNavigate)),
       )
     case 'paragraph':

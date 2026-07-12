@@ -5,6 +5,7 @@ import type {
   ArticleDocument,
   ArticleFigure,
   ArticleInline,
+  ArticleTableOfContentsEntry,
   NavigationDestination,
 } from "./model.js";
 import { isValidWikipediaTitle } from "./title.js";
@@ -58,6 +59,8 @@ const EXCLUDED_CLASSES = [
   "metadata", "ambox", "mbox-small", "tmbox", "ombox", "fmbox", "cmbox", "imbox",
   "vertical-navbox", "mw-kartographer", "mw-kartographer-map",
 ];
+const TOC_CLASSES = ["toc", "mw-toc", "vector-toc", "sidebar-toc"];
+const TOC_IDS = new Set(["toc", "mw-panel-toc"]);
 const NON_ARTICLE_NAMESPACES = new Set(["category", "file", "help", "special", "talk"]);
 
 function isElement(node: Node): node is Element {
@@ -91,6 +94,7 @@ function descendant(element: Element, tagName: string): Element | undefined {
 
 function isExcluded(element: Element): boolean {
   if (EXCLUDED_TAGS.has(element.tagName)) return true;
+  if (tableOfContentsReason(element)) return true;
   const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
   const classes = new Set(className.split(/\s+/));
   return EXCLUDED_CLASSES.some((excluded) => classes.has(excluded));
@@ -98,9 +102,18 @@ function isExcluded(element: Element): boolean {
 
 function structureOmissionReason(element: Element): string {
   if (EXCLUDED_TAGS.has(element.tagName)) return element.tagName;
+  const tocReason = tableOfContentsReason(element);
+  if (tocReason) return tocReason;
   const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
   return EXCLUDED_CLASSES.find((excluded) => className.split(/\s+/).includes(excluded))
     ?? "unsupported-structure";
+}
+
+function tableOfContentsReason(element: Element): string | undefined {
+  const id = attribute(element, "id");
+  if (id && TOC_IDS.has(id)) return id === "toc" ? "toc" : "vector-toc";
+  const classes = new Set((attribute(element, "class") ?? "").split(/\s+/));
+  return TOC_CLASSES.find((tocClass) => classes.has(tocClass));
 }
 
 function plainTextFromNodes(nodes: readonly Node[]): string {
@@ -134,6 +147,21 @@ function compactInline(nodes: readonly ArticleInline[]): ArticleInline[] {
     }
   }
   return compacted;
+}
+
+function plainTextFromInlines(nodes: readonly ArticleInline[]): string {
+  const parts: string[] = [];
+  const visit = (children: readonly ArticleInline[]) => {
+    for (const child of children) {
+      if (child.type === "text") {
+        parts.push(child.value);
+      } else {
+        visit(child.children);
+      }
+    }
+  };
+  visit(nodes);
+  return parts.join("").replace(/\s+/g, " ").trim();
 }
 
 function linkTitle(element: Element): string | undefined {
@@ -329,7 +357,7 @@ function blocksFrom(
       const level = Number(node.tagName[1]) as 2 | 3 | 4 | 5 | 6;
       const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
       if (children.some((child) => child.type !== "text" || child.value.trim())) {
-        blocks.push({ type: "heading", level, children });
+        blocks.push({ type: "heading", targetId: "", level, children });
       }
     } else if (node.tagName === "p") {
       const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
@@ -359,6 +387,51 @@ function normalizeHeadingHierarchy(blocks: readonly ArticleBlock[]): ArticleBloc
     previousLevel = level;
     return { ...block, level };
   });
+}
+
+function targetIdFromLabel(label: string): string {
+  const slug = label
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `section-${slug || "heading"}`;
+}
+
+function addHeadingTargets(
+  blocks: readonly ArticleBlock[],
+): Readonly<{ blocks: readonly ArticleBlock[]; tableOfContents: readonly ArticleTableOfContentsEntry[] }> {
+  const tableOfContents: ArticleTableOfContentsEntry[] = [];
+  const targetCounts = new Map<string, number>();
+
+  const nextTargetId = (label: string) => {
+    const base = targetIdFromLabel(label);
+    const count = targetCounts.get(base) ?? 0;
+    targetCounts.set(base, count + 1);
+    return count === 0 ? base : `${base}-${count + 1}`;
+  };
+
+  const visit = (candidates: readonly ArticleBlock[]): readonly ArticleBlock[] => candidates.map((block) => {
+    if (block.type === "heading") {
+      const label = plainTextFromInlines(block.children);
+      const targetId = nextTargetId(label);
+      tableOfContents.push({ targetId, level: block.level, label });
+      return { ...block, targetId };
+    }
+    if (block.type === "list") {
+      return {
+        ...block,
+        items: block.items.map((item) => ({
+          ...item,
+          blocks: visit(item.blocks),
+        })),
+      };
+    }
+    return block;
+  });
+
+  return { blocks: visit(blocks), tableOfContents };
 }
 
 export function extractCandidateLinkTitles(untrustedHtml: string): readonly string[] {
@@ -416,7 +489,8 @@ export function normalizeArticleDocument(
   diagnostics?: NormalizationDiagnostics,
 ): ArticleDocument | null {
   const fragment = parseFragment(untrustedHtml);
-  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures, diagnostics));
+  const normalizedBlocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures, diagnostics));
+  const { blocks, tableOfContents } = addHeadingTargets(normalizedBlocks);
   const hasMeaningfulText = JSON.stringify(blocks).replace(/[\s\W]/g, "").length > 0;
-  return hasMeaningfulText ? { title, blocks } : null;
+  return hasMeaningfulText ? { title, tableOfContents, blocks } : null;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AppShell } from '../components/ui/AppShell'
+import { ArticleTableOfContents } from '../features/playable-articles/ArticleTableOfContents'
 import { PlayableArticleArea } from '../features/playable-articles/PlayableArticleArea'
 import type {
   NavigationDestination,
@@ -71,21 +72,20 @@ function OmissionSummary({ label, bucket }: Readonly<{
 
 function DiagnosticsPanel({ diagnostics }: Readonly<{ diagnostics: PreviewDiagnostics }>) {
   return (
-    <aside className="lg:sticky lg:top-6" aria-label="Sticky article diagnostics">
-      <section className="ds-panel p-5" aria-label="Article diagnostics">
-        <h2 className="m-0 font-display text-lg font-extrabold text-ink">Diagnostics</h2>
-        {diagnostics.wikipediaUrl ? (
-          <p className="mt-2 mb-0 text-sm">
-            <a
-              className="text-host underline underline-offset-2"
-              href={diagnostics.wikipediaUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open on Wikipedia
-            </a>
-          </p>
-        ) : null}
+    <section className="ds-panel p-5" aria-label="Article diagnostics">
+      <h2 className="m-0 font-display text-lg font-extrabold text-ink">Diagnostics</h2>
+      {diagnostics.wikipediaUrl ? (
+        <p className="mt-2 mb-0 text-sm">
+          <a
+            className="text-host underline underline-offset-2"
+            href={diagnostics.wikipediaUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open on Wikipedia
+          </a>
+        </p>
+      ) : null}
       <dl className="mt-4 grid gap-2 text-sm text-ink-soft">
         <div><dt className="inline font-semibold text-ink">Requested title:</dt>{' '}<dd className="inline">{diagnostics.requestedTitle}</dd></div>
         <div>
@@ -122,8 +122,7 @@ function DiagnosticsPanel({ diagnostics }: Readonly<{ diagnostics: PreviewDiagno
           ? null
           : `; upstream retry timing: ${diagnostics.retry.retryAfterSeconds} seconds`}
       </p>
-      </section>
-    </aside>
+    </section>
   )
 }
 
@@ -255,31 +254,34 @@ export function LabPage() {
           ) : null}
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] lg:items-start">
+        <div className="grid gap-6 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start">
+          <aside className="grid gap-6 lg:sticky lg:top-6" aria-label="Article tools">
+            {article ? <ArticleTableOfContents entries={article.document.tableOfContents} /> : null}
+            {diagnostics ? <DiagnosticsPanel diagnostics={diagnostics} /> : null}
+          </aside>
           <div className="grid min-w-0 gap-6">
-          {article ? (
-          <PlayableArticleArea
-            article={article}
-            onNavigate={handleNavigation}
-          />
-        ) : null}
+            {article ? (
+              <PlayableArticleArea
+                article={article}
+                onNavigate={handleNavigation}
+              />
+            ) : null}
 
-        <section className="ds-panel p-5" aria-label="Navigation history">
-          <h2 className="m-0 font-display text-lg font-extrabold text-ink">Navigation history</h2>
-          {navigationHistory.length === 0 ? (
-            <p className="mt-2 mb-0 text-sm text-ink-soft">No Navigation yet.</p>
-          ) : (
-            <ol className="mt-3 mb-0 grid gap-2 pl-5 text-sm text-ink-soft">
-              {navigationHistory.map((entry, index) => (
-                <li key={`${entry.destination.pageId}-${index}`}>
+            <section className="ds-panel p-5" aria-label="Navigation history">
+              <h2 className="m-0 font-display text-lg font-extrabold text-ink">Navigation history</h2>
+              {navigationHistory.length === 0 ? (
+                <p className="mt-2 mb-0 text-sm text-ink-soft">No Navigation yet.</p>
+              ) : (
+                <ol className="mt-3 mb-0 grid gap-2 pl-5 text-sm text-ink-soft">
+                  {navigationHistory.map((entry, index) => (
+                    <li key={`${entry.destination.pageId}-${index}`}>
                   {entry.fromTitle} → {entry.destination.title} (#{entry.destination.pageId})
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
           </div>
-          {diagnostics ? <DiagnosticsPanel diagnostics={diagnostics} /> : null}
         </div>
       </div>
     </AppShell>

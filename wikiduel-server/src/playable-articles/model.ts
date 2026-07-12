@@ -30,7 +30,12 @@ export type ArticleFigure = Readonly<{
 }>;
 
 export type ArticleBlock =
-  | Readonly<{ type: "heading"; level: 2 | 3 | 4 | 5 | 6; children: readonly ArticleInline[] }>
+  | Readonly<{
+      type: "heading";
+      targetId: string;
+      level: 2 | 3 | 4 | 5 | 6;
+      children: readonly ArticleInline[];
+    }>
   | Readonly<{ type: "paragraph"; children: readonly ArticleInline[] }>
   | Readonly<{
       type: "list";
@@ -42,8 +47,15 @@ export type ArticleBlock =
     }>
   | ArticleFigure;
 
+export type ArticleTableOfContentsEntry = Readonly<{
+  targetId: string;
+  level: 2 | 3 | 4 | 5 | 6;
+  label: string;
+}>;
+
 export type ArticleDocument = Readonly<{
   title: string;
+  tableOfContents: readonly ArticleTableOfContentsEntry[];
   blocks: readonly ArticleBlock[];
 }>;
 

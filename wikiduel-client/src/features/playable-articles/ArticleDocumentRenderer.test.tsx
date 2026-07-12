@@ -20,6 +20,7 @@ describe('ArticleDocumentRenderer', () => {
   it('renders the canonical title and article prose with semantic headings and paragraphs', () => {
     const document: ArticleDocument = {
       title: 'Ada Lovelace',
+      tableOfContents: [{ targetId: 'section-early-life', level: 2, label: 'Early life' }],
       blocks: [
         {
           type: 'paragraph',
@@ -27,6 +28,7 @@ describe('ArticleDocumentRenderer', () => {
         },
         {
           type: 'heading',
+          targetId: 'section-early-life',
           level: 2,
           children: [{ type: 'text', value: 'Early life' }],
         },
@@ -46,12 +48,16 @@ describe('ArticleDocumentRenderer', () => {
       screen.getByRole('heading', { level: 1, name: 'Ada Lovelace' }),
     )
     expect(screen.getByText('Ada was an English mathematician.').tagName).toBe('P')
-    expect(screen.getByRole('heading', { level: 2, name: 'Early life' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Early life' })).toHaveAttribute(
+      'id',
+      'section-early-life',
+    )
   })
 
   it('preserves nested list structure and semantic inline emphasis', () => {
     const document: ArticleDocument = {
       title: 'Computing',
+      tableOfContents: [],
       blocks: [
         {
           type: 'list',
@@ -108,6 +114,7 @@ describe('ArticleDocumentRenderer', () => {
     const onNavigate = vi.fn()
     const document: ArticleDocument = {
       title: 'Ada Lovelace',
+      tableOfContents: [],
       blocks: [
         {
           type: 'paragraph',
@@ -146,6 +153,7 @@ describe('ArticleDocumentRenderer', () => {
     const onNavigate = vi.fn()
     const document: ArticleDocument = {
       title: 'Ada Lovelace',
+      tableOfContents: [],
       blocks: [
         {
           type: 'figure',
@@ -209,6 +217,7 @@ describe('ArticleDocumentRenderer', () => {
   it('renders revision and article attribution at the bottom of the article surface', () => {
     const document: ArticleDocument = {
       title: 'Ada Lovelace',
+      tableOfContents: [],
       blocks: [
         {
           type: 'paragraph',
@@ -249,6 +258,7 @@ describe('ArticleDocumentRenderer', () => {
   it('renders upstream markup-shaped text without creating executable elements', () => {
     const document: ArticleDocument = {
       title: '<img src=x onerror=alert(1)>',
+      tableOfContents: [],
       blocks: [
         {
           type: 'paragraph',

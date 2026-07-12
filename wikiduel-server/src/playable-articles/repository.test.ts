@@ -634,6 +634,7 @@ describe("PlayableArticleRepository", () => {
         },
         document: {
           title: "Ada Lovelace",
+          tableOfContents: [],
           blocks: [{
             type: "paragraph",
             children: [

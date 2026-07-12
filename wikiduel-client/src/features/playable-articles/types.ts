@@ -6,6 +6,7 @@ export type {
   ArticleDocument,
   ArticleFigure,
   ArticleInline,
+  ArticleTableOfContentsEntry,
   ImageAttribution,
   NavigationDestination,
   PlayableArticle,

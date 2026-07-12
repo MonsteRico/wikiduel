@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { extractCandidateImageTitles, normalizeArticleDocument } from "./normalizer.js";
+import {
+  extractCandidateImageTitles,
+  extractCandidateLinkTitles,
+  createNormalizationDiagnostics,
+  normalizeArticleDocument,
+} from "./normalizer.js";
 
 describe("normalizeArticleDocument", () => {
   test("discovers figures only in supported article-body structure", () => {
@@ -119,8 +124,14 @@ describe("normalizeArticleDocument", () => {
 
     expect(result).toEqual({
       title: "Ada Lovelace",
+      tableOfContents: [{ targetId: "section-biography", level: 2, label: "Biography" }],
       blocks: [
-        { type: "heading", level: 2, children: [{ type: "text", value: "Biography" }] },
+        {
+          type: "heading",
+          targetId: "section-biography",
+          level: 2,
+          children: [{ type: "text", value: "Biography" }],
+        },
         {
           type: "paragraph",
           children: [
@@ -164,6 +175,7 @@ describe("normalizeArticleDocument", () => {
 
     expect(result).toEqual({
       title: "Safe",
+      tableOfContents: [],
       blocks: [{
         type: "paragraph",
         children: [{ type: "text", value: "Readable label" }],
@@ -184,9 +196,122 @@ describe("normalizeArticleDocument", () => {
     );
 
     expect(result?.blocks).toEqual([
-      { type: "heading", level: 2, children: [{ type: "text", value: "First" }] },
-      { type: "heading", level: 3, children: [{ type: "text", value: "Child" }] },
-      { type: "heading", level: 2, children: [{ type: "text", value: "Sibling" }] },
+      {
+        type: "heading",
+        targetId: "section-first",
+        level: 2,
+        children: [{ type: "text", value: "First" }],
+      },
+      {
+        type: "heading",
+        targetId: "section-child",
+        level: 3,
+        children: [{ type: "text", value: "Child" }],
+      },
+      {
+        type: "heading",
+        targetId: "section-sibling",
+        level: 2,
+        children: [{ type: "text", value: "Sibling" }],
+      },
     ]);
+  });
+
+  test("excludes MediaWiki table-of-contents chrome and keeps its links out of candidates", () => {
+    const html = `
+      <div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading">
+        <div id="mw-toc-heading">Contents</div>
+        <ul>
+          <li class="toclevel-1 tocsection-1">
+            <a href="#History"><span class="tocnumber">1</span> <span class="toctext">History</span></a>
+          </li>
+          <li><a href="/wiki/Chrome_only">Chrome-only link</a></li>
+        </ul>
+      </div>
+      <nav id="mw-panel-toc" class="vector-toc">
+        <div>Contents</div>
+        <ul><li><a href="#Culture">Culture</a></li></ul>
+      </nav>
+      <p>Readable <a href="/wiki/Real_destination">article link</a>.</p>
+      <h2>History</h2>
+    `;
+    const diagnostics = createNormalizationDiagnostics();
+    const destinations = new Map([[
+      "Real destination",
+      { pageId: 9, title: "Real destination" },
+    ]]);
+
+    expect(extractCandidateLinkTitles(html)).toEqual(["Real destination"]);
+    expect(normalizeArticleDocument("TOC", html, destinations, new Map(), diagnostics)).toEqual({
+      title: "TOC",
+      tableOfContents: [{ targetId: "section-history", level: 2, label: "History" }],
+      blocks: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", value: "Readable " },
+            {
+              type: "navigation",
+              destination: { pageId: 9, title: "Real destination" },
+              children: [{ type: "text", value: "article link" }],
+            },
+            { type: "text", value: "." },
+          ],
+        },
+        {
+          type: "heading",
+          targetId: "section-history",
+          level: 2,
+          children: [{ type: "text", value: "History" }],
+        },
+      ],
+    });
+    expect(diagnostics.structure.reasons).toEqual(new Set(["toc", "vector-toc"]));
+  });
+
+  test("derives deterministic table-of-contents entries from retained normalized headings", () => {
+    const result = normalizeArticleDocument("Outline", `
+      <h3>Early life</h3>
+      <h5>Skipped level repaired</h5>
+      <h2><a href="https://example.invalid">External label</a></h2>
+      <h2><span class="mw-editsection">edit</span></h2>
+      <h2>Early life</h2>
+    `);
+
+    expect(result).toEqual({
+      title: "Outline",
+      tableOfContents: [
+        { targetId: "section-early-life", level: 2, label: "Early life" },
+        { targetId: "section-skipped-level-repaired", level: 3, label: "Skipped level repaired" },
+        { targetId: "section-external-label", level: 2, label: "External label" },
+        { targetId: "section-early-life-2", level: 2, label: "Early life" },
+      ],
+      blocks: [
+        {
+          type: "heading",
+          targetId: "section-early-life",
+          level: 2,
+          children: [{ type: "text", value: "Early life" }],
+        },
+        {
+          type: "heading",
+          targetId: "section-skipped-level-repaired",
+          level: 3,
+          children: [{ type: "text", value: "Skipped level repaired" }],
+        },
+        {
+          type: "heading",
+          targetId: "section-external-label",
+          level: 2,
+          children: [{ type: "text", value: "External label" }],
+        },
+        {
+          type: "heading",
+          targetId: "section-early-life-2",
+          level: 2,
+          children: [{ type: "text", value: "Early life" }],
+        },
+      ],
+    });
   });
 });
