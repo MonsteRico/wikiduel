@@ -44,6 +44,10 @@ _Avoid_: Wiki page, destination page
 The typed, allowlisted content tree of a Playable Article that may cross from the server to a client. It contains only the structural, inline, Navigation, and media elements Wiki Duel explicitly supports.
 _Avoid_: Sanitized HTML, article HTML, document AST
 
+**Infobox**:
+A compact Playable Article summary that groups identifying media and concise facts separately from the article body while retaining eligible Navigation Nodes.
+_Avoid_: Generic table, sidebar table
+
 **Navigation Node**:
 An interactive Article Document element whose destination has been resolved and accepted as a canonical Playable Article. Activating it requests a Navigation to that destination.
 _Avoid_: True link, playable anchor, clickable link
