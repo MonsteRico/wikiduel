@@ -15,6 +15,7 @@ export type PreviewArticleRequest = Readonly<{
 export type PreviewOmissionDetail = Readonly<{
   reason: string;
   subject?: string;
+  properties?: Readonly<Record<string, unknown>>;
 }>;
 
 export type PreviewOmissionBucket = Readonly<{

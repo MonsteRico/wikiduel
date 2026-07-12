@@ -145,6 +145,13 @@ export function LabPage() {
 
       setLoadingTitle(null)
       setDiagnostics(message.diagnostics)
+      if (import.meta.env.MODE !== "production")
+      message.diagnostics.omissions.imageAttribution.examples.forEach((omission) => {
+        console.groupCollapsed(`[Wiki Duel] Omitted image: ${omission.subject ?? 'unknown image'}`)
+        console.log('Reasons:', omission.reason)
+        console.log('Evaluated metadata:', omission.properties ?? 'No metadata was returned')
+        console.groupEnd()
+      })
       if (message.ok) {
         setArticle(message.article)
         setFailure(null)

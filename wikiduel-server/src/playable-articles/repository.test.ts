@@ -419,12 +419,11 @@ describe("PlayableArticleRepository", () => {
       sourceUrl: "https://upload.wikimedia.org/redirect?to=https://images.example/image.jpg",
     }],
     ["unapproved description origin", { descriptionUrl: "https://example.com/wiki/File:Ada_portrait.jpg" }],
-    ["HTTP license", { licenseUrl: "http://creativecommons.org/licenses/by/4.0/" }],
-    ["unsupported SVG MIME type", { mimeType: "image/svg+xml" }],
+    ["non-Creative-Commons HTTP license", { licenseUrl: "http://licenses.example/by/4.0/" }],
     ["non-free status", { nonFree: true }],
     ["fair-use restriction", { restrictions: ["fair-use"] }],
     ["one-pixel tracking dimensions", { width: 1, height: 1 }],
-    ["missing license URL", { licenseUrl: undefined }],
+    ["missing license URL", { licenseName: "CC BY 4.0", licenseUrl: undefined }],
   ] as const)("omits media with %s without rejecting the article", async (_case, changes) => {
     const repository = createPlayableArticleRepository({
       fetchPage: async () => ({
@@ -441,6 +440,97 @@ describe("PlayableArticleRepository", () => {
 
     expect(result).toMatchObject({ ok: true });
     if (result.ok) expect(result.article.document.blocks).toHaveLength(1);
+  });
+
+  test("keeps public-domain media without an upstream license URL", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        ...safeImageMetadata,
+        licenseName: "Public domain",
+        licenseUrl: undefined,
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{
+        type: "figure",
+        attribution: {
+          licenseName: "Public domain",
+          licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+        },
+      }] } },
+    });
+  });
+
+  test("keeps CC0 SVG media with Wikimedia's HTTP license URL", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        ...safeImageMetadata,
+        mimeType: "image/svg+xml",
+        licenseName: "CC0",
+        licenseUrl: "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{
+        type: "figure",
+        attribution: {
+          licenseName: "CC0",
+          licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        },
+      }] } },
+    });
+  });
+
+  test("keeps CC BY-SA 3.0 media with Wikimedia's HTTP license URL", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        ...safeImageMetadata,
+        licenseName: "CC BY-SA 3.0",
+        licenseUrl: "http://creativecommons.org/licenses/by-sa/3.0/",
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{
+        type: "figure",
+        attribution: {
+          licenseName: "CC BY-SA 3.0",
+          licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
+        },
+      }] } },
+    });
   });
 
   test("omits a figure whose description URL is not an approved file page", async () => {

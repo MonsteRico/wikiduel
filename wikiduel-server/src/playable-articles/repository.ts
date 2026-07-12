@@ -52,6 +52,14 @@ export type PlayableArticleRepositoryOptions = Readonly<{
 
 type RetryBudget = { remaining: number };
 type RetryDetails = { attempts: number };
+type ImagePolicyResult =
+  | { figure: Omit<ArticleFigure, "type" | "alt" | "caption">; reasons: readonly [] }
+  | { reasons: readonly string[] };
+type RejectedImage = Readonly<{
+  title: string;
+  reasons: readonly string[];
+  properties?: Readonly<Record<string, unknown>>;
+}>;
 const MAX_PREVIEW_OMISSION_EXAMPLES = 25;
 
 function omissionBucket(
@@ -77,19 +85,19 @@ function previewBuildDetails(
   normalization: NormalizationDiagnostics,
   imageCandidateCount: number,
   approvedImageCount: number,
-  rejectedImageTitles: readonly string[],
+  rejectedImages: readonly RejectedImage[],
   retry: RetryDetails,
 ): PreviewBuildDetails {
-  const rejectedImages = Math.max(0, imageCandidateCount - approvedImageCount);
+  const rejectedImageCount = Math.max(0, imageCandidateCount - approvedImageCount);
   const imageExamples = [...normalization.images.examples];
   const imageExampleSubjects = new Set(
     imageExamples.map((example) => example.subject).filter((subject): subject is string => Boolean(subject)),
   );
-  rejectedImageTitles.forEach((subject) => {
+  rejectedImages.forEach(({ title: subject, reasons, properties }) => {
     if (imageExamples.length >= MAX_PREVIEW_OMISSION_EXAMPLES) return;
     if (imageExampleSubjects.has(subject)) return;
     imageExampleSubjects.add(subject);
-    imageExamples.push({ reason: "image-policy-or-incomplete-attribution", subject });
+    imageExamples.push({ reason: reasons.join(", "), subject, ...(properties ? { properties } : {}) });
   });
   return {
     omissions: {
@@ -104,19 +112,20 @@ function previewBuildDetails(
         normalization.links.examples,
       ),
       images: omissionBucket(
-        Math.max(normalization.images.count, rejectedImages),
+        Math.max(normalization.images.count, rejectedImageCount),
         [
           ...normalization.images.reasons,
-          ...(rejectedImages > 0 ? ["image-policy-or-incomplete-attribution"] : []),
+          ...(rejectedImageCount > 0 ? ["image-policy-or-incomplete-attribution"] : []),
         ],
         imageExamples,
       ),
       imageAttribution: omissionBucket(
-        rejectedImages,
-        rejectedImages > 0 ? ["incomplete-or-unacceptable-attribution"] : [],
-        rejectedImageTitles.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES).map((subject) => ({
-          reason: "incomplete-or-unacceptable-attribution",
+        rejectedImageCount,
+        rejectedImageCount > 0 ? ["incomplete-or-unacceptable-attribution"] : [],
+        rejectedImages.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES).map(({ title: subject, reasons, properties }) => ({
+          reason: reasons.join(", "),
           subject,
+          ...(properties ? { properties } : {}),
         })),
       ),
     },
@@ -231,35 +240,67 @@ function descriptionFileTitle(url: URL): string | undefined {
   }
 }
 
+function normalizedLicenseUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:" && url.hostname === "creativecommons.org") {
+      url.protocol = "https:";
+      return url.href;
+    }
+  } catch {
+    return value;
+  }
+  return value;
+}
+
 function safeFigure(
   metadata: WikipediaImageMetadata,
-): Omit<ArticleFigure, "type" | "alt" | "caption"> | undefined {
+): ImagePolicyResult {
   // This is the repository's image policy reducer. The gateway translates
   // Wikimedia's response into project-owned fields; this function decides
   // whether those fields are safe and complete enough to become article output.
-  // Returning undefined is intentional degradation: unsafe media disappears, but
+  // Returning rejection reasons is intentional degradation: unsafe media disappears, but
   // the surrounding article can still be playable as text.
   const source = safeUrl(metadata.sourceUrl, ["https://upload.wikimedia.org"]);
   const description = safeUrl(metadata.descriptionUrl, [
     "https://commons.wikimedia.org",
     "https://en.wikipedia.org",
   ]);
-  const license = metadata.licenseUrl ? safeUrl(metadata.licenseUrl) : undefined;
   const licenseName = metadata.licenseName?.trim();
+  const isPublicDomain = licenseName?.toLocaleLowerCase("en-US") === "public domain";
+  const suppliedLicenseUrl = normalizedLicenseUrl(metadata.licenseUrl);
+  const effectiveLicenseUrl = suppliedLicenseUrl
+    ?? (isPublicDomain ? "https://creativecommons.org/publicdomain/mark/1.0/" : undefined);
+  const license = effectiveLicenseUrl ? safeUrl(effectiveLicenseUrl) : undefined;
   const fileTitle = description ? descriptionFileTitle(description) : undefined;
   // The source check is narrower than "any upload.wikimedia.org URL": thumbnails
   // must be ordinary `/wikipedia/` media with no query/hash. That keeps redirect
   // endpoints, tracking parameters, and non-file service URLs out of the render
   // contract even when they came from upstream metadata.
-  if (
-    !source || !source.pathname.startsWith("/wikipedia/") || source.search || source.hash
-    || !description || !fileTitle || !license || !licenseName || metadata.nonFree
-    || metadata.restrictions.some((restriction) => /fair[ -]?use|non[ -]?free/i.test(restriction))
-    || !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(metadata.mimeType)
-    || !Number.isInteger(metadata.width) || metadata.width <= 0
-    || !Number.isInteger(metadata.height) || metadata.height <= 0
-    || (metadata.width === 1 && metadata.height === 1)
-  ) return undefined;
+  const reasons: string[] = [];
+  if (!source) reasons.push("invalid-or-unapproved-source-url");
+  else if (!source.pathname.startsWith("/wikipedia/") || source.search || source.hash) {
+    reasons.push("unsupported-source-url-shape");
+  }
+  if (!description) reasons.push("invalid-or-unapproved-description-url");
+  else if (!fileTitle) reasons.push("description-url-is-not-a-file-page");
+  if (!effectiveLicenseUrl) reasons.push("missing-license-url");
+  else if (!license) reasons.push("invalid-license-url");
+  if (!licenseName) reasons.push("missing-license-name");
+  if (metadata.nonFree) reasons.push("marked-non-free");
+  if (metadata.restrictions.some((restriction) => /fair[ -]?use|non[ -]?free/i.test(restriction))) {
+    reasons.push("non-free-or-fair-use-restriction");
+  }
+  if (!["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"].includes(metadata.mimeType)) {
+    reasons.push("unsupported-mime-type");
+  }
+  if (!Number.isInteger(metadata.width) || metadata.width <= 0) reasons.push("invalid-width");
+  if (!Number.isInteger(metadata.height) || metadata.height <= 0) reasons.push("invalid-height");
+  if (metadata.width === 1 && metadata.height === 1) reasons.push("tracking-pixel-dimensions");
+  if (reasons.length > 0 || !source || !description || !fileTitle || !license || !licenseName) {
+    return { reasons };
+  }
 
   // History lives on the same wiki as the approved description page: Commons
   // files should link to Commons history, while local enwiki files should link
@@ -268,7 +309,7 @@ function safeFigure(
   history.search = new URLSearchParams({ title: fileTitle, action: "history" }).toString();
   const creator = plainText(metadata.creatorHtml);
   const credit = plainText(metadata.creditHtml);
-  return {
+  return { reasons: [], figure: {
     sourceUrl: source.href,
     width: metadata.width,
     height: metadata.height,
@@ -280,7 +321,7 @@ function safeFigure(
       licenseName,
       licenseUrl: license.href,
     },
-  };
+  } };
 }
 
 function deepFreeze<T>(value: T): T {
@@ -388,6 +429,7 @@ export function createPlayableArticleRepository(
     const imageCandidates = extractCandidateImageTitles(snapshot.html);
     const normalizationDiagnostics = createNormalizationDiagnostics();
     const figures = new Map<string, Omit<ArticleFigure, "type" | "alt" | "caption">>();
+    const rejectedImages: RejectedImage[] = [];
     if (imageCandidates.length > 0) {
       const metadataResults = await withTransientRetry(
         () => gateway.fetchImageMetadata(imageCandidates, { signal }),
@@ -397,10 +439,42 @@ export function createPlayableArticleRepository(
         retryDetails,
       );
       for (const metadata of metadataResults) {
-        const figure = safeFigure(metadata);
-        if (figure && imageCandidates.includes(metadata.requestedTitle)) {
-          figures.set(metadata.requestedTitle, figure);
+        if (!imageCandidates.includes(metadata.requestedTitle)) continue;
+        const policy = safeFigure(metadata);
+        if ("figure" in policy) {
+          figures.set(metadata.requestedTitle, policy.figure);
+        } else {
+          rejectedImages.push({
+            title: metadata.requestedTitle,
+            reasons: policy.reasons,
+            properties: {
+              requestedTitle: metadata.requestedTitle,
+              sourceUrl: metadata.sourceUrl,
+              width: metadata.width,
+              height: metadata.height,
+              mimeType: metadata.mimeType,
+              descriptionUrl: metadata.descriptionUrl,
+              creatorHtml: metadata.creatorHtml,
+              creditHtml: metadata.creditHtml,
+              licenseName: metadata.licenseName,
+              licenseUrl: metadata.licenseUrl,
+              nonFree: metadata.nonFree,
+              restrictions: metadata.restrictions,
+            },
+          });
         }
+      }
+      const returnedTitles = new Set(metadataResults.map(({ requestedTitle }) => requestedTitle));
+      for (const candidate of imageCandidates) {
+        if (!returnedTitles.has(candidate)) {
+          rejectedImages.push({ title: candidate, reasons: ["metadata-not-returned"] });
+        }
+      }
+      for (const rejected of rejectedImages) {
+        logger.debug(
+          { requestedTitle: title, imageTitle: rejected.title, reasons: rejected.reasons },
+          "Playable Article image omitted",
+        );
       }
     }
     const resolvedLinks = await withTransientRetry(
@@ -427,7 +501,7 @@ export function createPlayableArticleRepository(
       normalizationDiagnostics,
       imageCandidates.length,
       figures.size,
-      imageCandidates.filter((title) => !figures.has(title)),
+      rejectedImages,
       retryDetails,
     );
     if (!document) {
