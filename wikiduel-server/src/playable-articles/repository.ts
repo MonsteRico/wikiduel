@@ -52,6 +52,7 @@ export type PlayableArticleRepositoryOptions = Readonly<{
 
 type RetryBudget = { remaining: number };
 type RetryDetails = { attempts: number };
+const MAX_PREVIEW_OMISSION_EXAMPLES = 25;
 
 function omissionBucket(
   count: number,
@@ -65,7 +66,11 @@ function omissionBucket(
     seen.add(key);
     return true;
   });
-  return { count, reasons: [...new Set(reasons)], examples: uniqueExamples };
+  return {
+    count,
+    reasons: [...new Set(reasons)],
+    examples: uniqueExamples.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES),
+  };
 }
 
 function previewBuildDetails(
@@ -81,6 +86,7 @@ function previewBuildDetails(
     imageExamples.map((example) => example.subject).filter((subject): subject is string => Boolean(subject)),
   );
   rejectedImageTitles.forEach((subject) => {
+    if (imageExamples.length >= MAX_PREVIEW_OMISSION_EXAMPLES) return;
     if (imageExampleSubjects.has(subject)) return;
     imageExampleSubjects.add(subject);
     imageExamples.push({ reason: "image-policy-or-incomplete-attribution", subject });
@@ -108,7 +114,7 @@ function previewBuildDetails(
       imageAttribution: omissionBucket(
         rejectedImages,
         rejectedImages > 0 ? ["incomplete-or-unacceptable-attribution"] : [],
-        rejectedImageTitles.map((subject) => ({
+        rejectedImageTitles.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES).map((subject) => ({
           reason: "incomplete-or-unacceptable-attribution",
           subject,
         })),
