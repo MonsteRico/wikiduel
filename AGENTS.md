@@ -61,9 +61,8 @@ requests a ready-for-review pull request.
 
 ### Efficient local workflow
 
-- Start with `git status --short --branch` and preserve unrelated working-tree changes.
-- Prefer `rg --files` and targeted `rg`/line-range reads. Avoid dumping several large files at once; truncated output usually causes slower follow-up reads.
+- Start with `rtk git status --short --branch` and preserve unrelated working-tree changes.
+- Prefer `rtk rg --files` and targeted `rtk rg`/line-range reads. Avoid dumping several large files at once; truncated output usually causes slower follow-up reads.
 - Batch related edits into one `apply_patch` call per logical slice instead of making many small patches.
 - Parallelize independent read-only inspections and focused test commands when possible.
 - During implementation, run the smallest relevant test file and typecheck. Run `npm test`, build, and lint once after the feature is stable.
-- Keep the repository in one authoritative workspace during a task. WSL is optional: it can help when the repository and `node_modules` live inside WSL's Linux filesystem, but `/mnt/d/...` may be slower and creates a separate Git/credential context. Do not switch environments mid-task without confirming the branch and working tree.
