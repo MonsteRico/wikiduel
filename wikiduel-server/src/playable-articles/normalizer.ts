@@ -12,17 +12,24 @@ import { isValidWikipediaTitle } from "./title.js";
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
 
+export type NormalizationOmissionDetail = Readonly<{
+  reason: string;
+  subject?: string;
+}>;
+
 export type NormalizationDiagnostics = {
-  structure: { count: number; reasons: Set<string> };
-  links: { count: number; reasons: Set<string> };
-  images: { count: number; reasons: Set<string> };
+  structure: { count: number; reasons: Set<string>; examples: NormalizationOmissionDetail[] };
+  links: { count: number; reasons: Set<string>; examples: NormalizationOmissionDetail[] };
+  images: { count: number; reasons: Set<string>; examples: NormalizationOmissionDetail[] };
 };
+
+const MAX_DIAGNOSTIC_EXAMPLES = 25;
 
 export function createNormalizationDiagnostics(): NormalizationDiagnostics {
   return {
-    structure: { count: 0, reasons: new Set() },
-    links: { count: 0, reasons: new Set() },
-    images: { count: 0, reasons: new Set() },
+    structure: { count: 0, reasons: new Set(), examples: [] },
+    links: { count: 0, reasons: new Set(), examples: [] },
+    images: { count: 0, reasons: new Set(), examples: [] },
   };
 }
 
@@ -30,10 +37,17 @@ function recordOmission(
   diagnostics: NormalizationDiagnostics | undefined,
   category: keyof NormalizationDiagnostics,
   reason: string,
+  subject?: string,
 ): void {
   if (!diagnostics) return;
   diagnostics[category].count += 1;
   diagnostics[category].reasons.add(reason);
+  if (diagnostics[category].examples.length >= MAX_DIAGNOSTIC_EXAMPLES) return;
+  const normalizedSubject = subject?.replace(/\s+/g, " ").trim().slice(0, 160);
+  diagnostics[category].examples.push({
+    reason,
+    ...(normalizedSubject ? { subject: normalizedSubject } : {}),
+  });
 }
 const EXCLUDED_TAGS = new Set([
   "script", "style", "template", "noscript", "iframe", "object", "embed",
@@ -87,6 +101,21 @@ function structureOmissionReason(element: Element): string {
   const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
   return EXCLUDED_CLASSES.find((excluded) => className.split(/\s+/).includes(excluded))
     ?? "unsupported-structure";
+}
+
+function plainTextFromNodes(nodes: readonly Node[]): string {
+  const parts: string[] = [];
+  const visit = (children: readonly Node[]) => {
+    for (const child of children) {
+      if (isText(child)) {
+        parts.push(child.value);
+      } else if (isElement(child) && !isExcluded(child)) {
+        visit(childrenOf(child));
+      }
+    }
+  };
+  visit(nodes);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
 }
 
 function compactInline(nodes: readonly ArticleInline[]): ArticleInline[] {
@@ -212,7 +241,7 @@ function inlineFrom(
     }
     if (!isElement(node)) continue;
     if (isExcluded(node)) {
-      recordOmission(diagnostics, "structure", structureOmissionReason(node));
+      recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
       continue;
     }
     if (skipLists && (node.tagName === "ol" || node.tagName === "ul")) continue;
@@ -227,10 +256,12 @@ function inlineFrom(
       if (destination) {
         result.push({ type: "navigation", destination, children });
       } else {
+        const label = plainTextFromNodes(childrenOf(node));
         recordOmission(
           diagnostics,
           "links",
           title ? "unresolved-or-not-playable" : "unsupported-link",
+          title ? `${title}${label ? ` (${label})` : ""}` : label,
         );
         result.push(...children);
       }
@@ -267,7 +298,7 @@ function blocksFrom(
   for (const node of nodes) {
     if (!isElement(node)) continue;
     if (isExcluded(node)) {
-      recordOmission(diagnostics, "structure", structureOmissionReason(node));
+      recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
       continue;
     }
     if (node.tagName === "figure") {
@@ -277,7 +308,7 @@ function blocksFrom(
       const title = imageTitle(node);
       const figure = title ? figures.get(title) : undefined;
       if (!figure) {
-        recordOmission(diagnostics, "images", "unapproved-or-missing-metadata");
+        recordOmission(diagnostics, "images", "unapproved-or-missing-metadata", title ?? "figure");
         continue;
       }
       const image = descendant(node, "img");
@@ -290,7 +321,7 @@ function blocksFrom(
       // Safe metadata alone is not enough for playable output: the player needs
       // some meaningful textual context for accessibility and article coherence.
       if (!alt && !hasMeaningfulInline(caption)) {
-        recordOmission(diagnostics, "images", "missing-accessible-context");
+        recordOmission(diagnostics, "images", "missing-accessible-context", title ?? "figure");
         continue;
       }
       blocks.push({ type: "figure", ...figure, alt, caption });

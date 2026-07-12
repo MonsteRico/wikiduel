@@ -12,13 +12,20 @@ export type PreviewArticleRequest = Readonly<{
   requestedTitle: string;
 }>;
 
+export type PreviewOmissionDetail = Readonly<{
+  reason: string;
+  subject?: string;
+}>;
+
 export type PreviewOmissionBucket = Readonly<{
   count: number;
   reasons: readonly string[];
+  examples: readonly PreviewOmissionDetail[];
 }>;
 
 export type PreviewDiagnostics = Readonly<{
   requestedTitle: string;
+  wikipediaUrl?: string;
   canonicalIdentity?: Readonly<{ pageId: number; title: string }>;
   revision?: Readonly<{ id: number; timestamp: string }>;
   durationMs: number;
@@ -129,7 +136,7 @@ function countBlock(block: ArticleBlock, counts: MutableCounts): void {
 }
 
 function emptyOmission(): PreviewOmissionBucket {
-  return { count: 0, reasons: [] };
+  return { count: 0, reasons: [], examples: [] };
 }
 
 function emptyCounts(): MutableCounts {
@@ -158,6 +165,7 @@ export function buildPreviewDiagnostics(
 
   return {
     requestedTitle,
+    ...(result.ok ? { wikipediaUrl: result.article.attribution.sourceUrl } : {}),
     ...(result.ok ? {
       canonicalIdentity: result.article.identity,
       revision: result.article.revision,

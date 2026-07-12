@@ -53,14 +53,39 @@ function OmissionSummary({ label, bucket }: Readonly<{
     <li>
       <span>{label}: {bucket.count}</span>
       {bucket.reasons.length > 0 ? <span> ({bucket.reasons.join(', ')})</span> : null}
+      {bucket.examples.length > 0 ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer">Examples ({bucket.examples.length})</summary>
+          <ul className="mt-1 grid gap-1 pl-5">
+            {bucket.examples.map((example, index) => (
+              <li key={`${example.reason}-${example.subject ?? index}`}>
+                {example.subject ? `${example.subject} — ` : null}{example.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </li>
   )
 }
 
 function DiagnosticsPanel({ diagnostics }: Readonly<{ diagnostics: PreviewDiagnostics }>) {
   return (
-    <section className="ds-panel p-5" aria-label="Article diagnostics">
-      <h2 className="m-0 font-display text-lg font-extrabold text-ink">Diagnostics</h2>
+    <aside className="lg:sticky lg:top-6" aria-label="Sticky article diagnostics">
+      <section className="ds-panel p-5" aria-label="Article diagnostics">
+        <h2 className="m-0 font-display text-lg font-extrabold text-ink">Diagnostics</h2>
+        {diagnostics.wikipediaUrl ? (
+          <p className="mt-2 mb-0 text-sm">
+            <a
+              className="text-host underline underline-offset-2"
+              href={diagnostics.wikipediaUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open on Wikipedia
+            </a>
+          </p>
+        ) : null}
       <dl className="mt-4 grid gap-2 text-sm text-ink-soft">
         <div><dt className="inline font-semibold text-ink">Requested title:</dt>{' '}<dd className="inline">{diagnostics.requestedTitle}</dd></div>
         <div>
@@ -97,7 +122,8 @@ function DiagnosticsPanel({ diagnostics }: Readonly<{ diagnostics: PreviewDiagno
           ? null
           : `; upstream retry timing: ${diagnostics.retry.retryAfterSeconds} seconds`}
       </p>
-    </section>
+      </section>
+    </aside>
   )
 }
 
@@ -229,7 +255,9 @@ export function LabPage() {
           ) : null}
         </section>
 
-        {article ? (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] lg:items-start">
+          <div className="grid min-w-0 gap-6">
+          {article ? (
           <ArticleDocumentRenderer
             document={article.document}
             revision={article.revision}
@@ -237,8 +265,6 @@ export function LabPage() {
             onNavigate={handleNavigation}
           />
         ) : null}
-
-        {diagnostics ? <DiagnosticsPanel diagnostics={diagnostics} /> : null}
 
         <section className="ds-panel p-5" aria-label="Navigation history">
           <h2 className="m-0 font-display text-lg font-extrabold text-ink">Navigation history</h2>
@@ -254,6 +280,9 @@ export function LabPage() {
             </ol>
           )}
         </section>
+          </div>
+          {diagnostics ? <DiagnosticsPanel diagnostics={diagnostics} /> : null}
+        </div>
       </div>
     </AppShell>
   )

@@ -72,6 +72,7 @@ test("the preview WebSocket returns a canonical article and separate safe diagno
     article: PlayableArticle;
     diagnostics: {
       requestedTitle: string;
+      wikipediaUrl: string;
       canonicalIdentity: { pageId: number; title: string };
       revision: { id: number; timestamp: string };
       durationMs: number;
@@ -93,6 +94,7 @@ test("the preview WebSocket returns a canonical article and separate safe diagno
   expect(response.article).toEqual(article);
   expect(response.diagnostics).toMatchObject({
     requestedTitle: "Alias title",
+    wikipediaUrl: article.attribution.sourceUrl,
     canonicalIdentity: article.identity,
     revision: article.revision,
     cacheOutcome: "miss",

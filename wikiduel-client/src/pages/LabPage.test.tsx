@@ -40,6 +40,7 @@ const article: PlayableArticle = {
 
 const diagnostics = {
   requestedTitle: 'Alias title',
+  wikipediaUrl: article.attribution.sourceUrl,
   canonicalIdentity: article.identity,
   revision: article.revision,
   durationMs: 23,
@@ -56,10 +57,10 @@ const diagnostics = {
     navigation: 1,
   },
   omissions: {
-    structure: { count: 1, reasons: ['table'] },
-    links: { count: 1, reasons: ['external-link'] },
-    images: { count: 0, reasons: [] },
-    imageAttribution: { count: 0, reasons: [] },
+    structure: { count: 1, reasons: ['table'], examples: [{ reason: 'table', subject: 'table' }] },
+    links: { count: 1, reasons: ['external-link'], examples: [{ reason: 'external-link', subject: 'external' }] },
+    images: { count: 0, reasons: [], examples: [] },
+    imageAttribution: { count: 0, reasons: [], examples: [] },
   },
   retry: { attempts: 0 },
 }
@@ -125,6 +126,17 @@ describe('Playable Article Lab', () => {
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('Alias title')
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('Cache: miss')
     expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent('table')
+    expect(screen.getByRole('link', { name: 'Open on Wikipedia' })).toHaveAttribute(
+      'href',
+      article.attribution.sourceUrl,
+    )
+    expect(screen.getByRole('region', { name: 'Article diagnostics' })).toHaveTextContent(
+      'table — table',
+    )
+    expect(screen.getByRole('region', { name: 'Article diagnostics' }).closest('aside')).toHaveClass(
+      'lg:sticky',
+      'lg:top-6',
+    )
   })
 
   it('follows Navigation through a new preview request and ignores stale responses', async () => {

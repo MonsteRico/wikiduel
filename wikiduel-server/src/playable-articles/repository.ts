@@ -15,6 +15,7 @@ import type {
 import type {
   PreviewBuildDetails,
   PreviewDiagnostics,
+  PreviewOmissionDetail,
   PreviewOmissionBucket,
 } from "./preview.js";
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
@@ -25,7 +26,7 @@ import {
   extractCandidateLinkTitles,
   normalizeArticleDocument,
 } from "./normalizer.js";
-import type { NormalizationDiagnostics } from "./normalizer.js";
+import type { NormalizationDiagnostics, NormalizationOmissionDetail } from "./normalizer.js";
 import { isValidWikipediaTitle } from "./title.js";
 
 export interface PlayableArticleRepository {
@@ -51,32 +52,72 @@ export type PlayableArticleRepositoryOptions = Readonly<{
 
 type RetryBudget = { remaining: number };
 type RetryDetails = { attempts: number };
+const MAX_PREVIEW_OMISSION_EXAMPLES = 25;
 
-function omissionBucket(count: number, reasons: readonly string[]): PreviewOmissionBucket {
-  return { count, reasons: [...new Set(reasons)] };
+function omissionBucket(
+  count: number,
+  reasons: readonly string[],
+  examples: readonly (PreviewOmissionDetail | NormalizationOmissionDetail)[] = [],
+): PreviewOmissionBucket {
+  const seen = new Set<string>();
+  const uniqueExamples = examples.filter((example) => {
+    const key = `${example.reason}\u0000${example.subject ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return {
+    count,
+    reasons: [...new Set(reasons)],
+    examples: uniqueExamples.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES),
+  };
 }
 
 function previewBuildDetails(
   normalization: NormalizationDiagnostics,
   imageCandidateCount: number,
   approvedImageCount: number,
+  rejectedImageTitles: readonly string[],
   retry: RetryDetails,
 ): PreviewBuildDetails {
   const rejectedImages = Math.max(0, imageCandidateCount - approvedImageCount);
+  const imageExamples = [...normalization.images.examples];
+  const imageExampleSubjects = new Set(
+    imageExamples.map((example) => example.subject).filter((subject): subject is string => Boolean(subject)),
+  );
+  rejectedImageTitles.forEach((subject) => {
+    if (imageExamples.length >= MAX_PREVIEW_OMISSION_EXAMPLES) return;
+    if (imageExampleSubjects.has(subject)) return;
+    imageExampleSubjects.add(subject);
+    imageExamples.push({ reason: "image-policy-or-incomplete-attribution", subject });
+  });
   return {
     omissions: {
-      structure: omissionBucket(normalization.structure.count, [...normalization.structure.reasons]),
-      links: omissionBucket(normalization.links.count, [...normalization.links.reasons]),
+      structure: omissionBucket(
+        normalization.structure.count,
+        [...normalization.structure.reasons],
+        normalization.structure.examples,
+      ),
+      links: omissionBucket(
+        normalization.links.count,
+        [...normalization.links.reasons],
+        normalization.links.examples,
+      ),
       images: omissionBucket(
         Math.max(normalization.images.count, rejectedImages),
         [
           ...normalization.images.reasons,
           ...(rejectedImages > 0 ? ["image-policy-or-incomplete-attribution"] : []),
         ],
+        imageExamples,
       ),
       imageAttribution: omissionBucket(
         rejectedImages,
         rejectedImages > 0 ? ["incomplete-or-unacceptable-attribution"] : [],
+        rejectedImageTitles.slice(0, MAX_PREVIEW_OMISSION_EXAMPLES).map((subject) => ({
+          reason: "incomplete-or-unacceptable-attribution",
+          subject,
+        })),
       ),
     },
     retry,
@@ -386,6 +427,7 @@ export function createPlayableArticleRepository(
       normalizationDiagnostics,
       imageCandidates.length,
       figures.size,
+      imageCandidates.filter((title) => !figures.has(title)),
       retryDetails,
     );
     if (!document) {
