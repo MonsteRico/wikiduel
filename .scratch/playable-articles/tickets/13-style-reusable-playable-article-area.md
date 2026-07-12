@@ -5,6 +5,7 @@
 Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-12 via [PR #12](https://github.com/MonsteRico/wikiduel/pull/12)
 
 ## Parent
 
