@@ -1,6 +1,7 @@
 import { createElement, type ReactNode } from 'react'
 
 import { Button } from '../../components/ui/Button'
+import { Infobox } from './Infobox'
 import type {
   ArticleAttribution,
   ArticleBlock,
@@ -63,6 +64,12 @@ function renderBlock(block: ArticleBlock, key: number, onNavigate: Navigate): Re
           {block.children.map((child, index) => renderInline(child, index, onNavigate))}
         </p>
       )
+    case 'line':
+      return (
+        <div key={key}>
+          {block.children.map((child, index) => renderInline(child, index, onNavigate))}
+        </div>
+      )
     case 'list': {
       const List = block.ordered ? 'ol' : 'ul'
       return (
@@ -113,6 +120,14 @@ function renderBlock(block: ArticleBlock, key: number, onNavigate: Navigate): Re
           </figcaption>
         </figure>
       )
+    case 'media-placeholder':
+      return (
+        <p key={key} role="note">
+          {block.kind === 'audio' ? 'Audio element omitted.' : 'Video element omitted.'}
+        </p>
+      )
+    case 'infobox':
+      return <Infobox key={key} block={block} onNavigate={onNavigate} />
   }
 }
 

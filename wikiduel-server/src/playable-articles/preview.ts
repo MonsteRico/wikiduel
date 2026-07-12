@@ -133,6 +133,18 @@ function countBlock(block: ArticleBlock, counts: MutableCounts): void {
     block.caption.forEach((child) => countInline(child, counts));
     return;
   }
+  if (block.type === "media-placeholder") return;
+  if (block.type === "infobox") {
+    block.title?.forEach((child) => countInline(child, counts));
+    block.sections.forEach((section) => {
+      section.label?.forEach((child) => countInline(child, counts));
+      section.items.forEach((item) => {
+        item.label?.forEach((child) => countInline(child, counts));
+        item.blocks.forEach((child) => countBlock(child, counts));
+      });
+    });
+    return;
+  }
   block.children.forEach((child) => countInline(child, counts));
 }
 

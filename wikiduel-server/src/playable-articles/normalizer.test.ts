@@ -8,13 +8,15 @@ import {
 } from "./normalizer.js";
 
 describe("normalizeArticleDocument", () => {
-  test("discovers figures only in supported article-body structure", () => {
+  test("discovers figures in article prose and supported Infoboxes while excluding other structures", () => {
     const figure = (title: string) => `
       <figure typeof="mw:File/Thumb"><a href="/wiki/File:${title}"><img alt="${title}"></a></figure>
     `;
     const html = `
       ${figure("Article.jpg")}
       <table class="infobox"><tr><td>${figure("Infobox.jpg")}</td></tr></table>
+      <figure class="static-map" typeof="mw:File/Thumb"><a href="/wiki/File:Static_map.jpg"><img alt="Static map"></a></figure>
+      <div class="mw-kartographer"><figure typeof="mw:File/Thumb"><a href="/wiki/File:Interactive_map.jpg"><img alt="Interactive map"></a></figure></div>
       <table><tr><td>${figure("Table.jpg")}</td></tr></table>
       <div class="gallery">${figure("Gallery.jpg")}</div>
       <div class="navbox">${figure("Navbox.jpg")}</div>
@@ -24,7 +26,165 @@ describe("normalizeArticleDocument", () => {
       <div class="mw-kartographer">${figure("Map.jpg")}</div>
     `;
 
-    expect(extractCandidateImageTitles(html)).toEqual(["File:Article.jpg"]);
+    expect(extractCandidateImageTitles(html)).toEqual([
+      "File:Article.jpg",
+      "File:Infobox.jpg",
+      "File:Static map.jpg",
+    ]);
+  });
+
+  test("retains ordered Infobox sections, facts, lists, links, figures, and media placeholders", () => {
+    const figures = new Map([[
+      "File:Ada portrait.jpg",
+      {
+        sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/a/ada.jpg",
+        width: 320,
+        height: 400,
+        attribution: {
+          descriptionUrl: "https://commons.wikimedia.org/wiki/File:Ada_portrait.jpg",
+          historyUrl: "https://commons.wikimedia.org/w/index.php?title=File%3AAda_portrait.jpg&action=history",
+          licenseName: "Public domain",
+          licenseUrl: "https://creativecommons.org/publicdomain/mark/1.0/",
+        },
+      },
+    ]]);
+    const destinations = new Map([
+      ["Ada Lovelace", { pageId: 1, title: "Ada Lovelace" }],
+      ["London", { pageId: 2, title: "London" }],
+      ["Analytical Engine", { pageId: 3, title: "Analytical Engine" }],
+    ]);
+    const html = `
+      <table class="infobox biography vcard">
+        <tr><th class="infobox-above" colspan="2"><a href="/wiki/Ada_Lovelace">Ada Lovelace</a></th></tr>
+        <tr><th class="infobox-label">Born</th><td>10 December<br><a href="/wiki/London">London</a></td></tr>
+        <tr><th class="infobox-header" colspan="2">Known for</th></tr>
+        <tr><td colspan="2"><p>Computing pioneer</p><ul><li><a href="/wiki/Analytical_Engine">Analytical Engine</a></li></ul></td></tr>
+        <tr><td colspan="2"><figure typeof="mw:File/Thumb"><a href="/wiki/File:Ada_portrait.jpg"><img alt="Portrait of Ada Lovelace"></a><figcaption>Portrait</figcaption></figure></td></tr>
+        <tr><td colspan="2"><audio src="secret.mp3"></audio><video src="secret.mp4"></video></td></tr>
+      </table>
+      <p>Article body.</p>
+    `;
+
+    expect(normalizeArticleDocument("Ada Lovelace", html, destinations, figures)).toEqual({
+      title: "Ada Lovelace",
+      tableOfContents: [],
+      blocks: [
+        {
+          type: "infobox",
+          title: [{
+            type: "navigation",
+            destination: { pageId: 1, title: "Ada Lovelace" },
+            children: [{ type: "text", value: "Ada Lovelace" }],
+          }],
+          sections: [
+            {
+              items: [{
+                label: [{ type: "text", value: "Born" }],
+                blocks: [
+                  { type: "line", children: [{ type: "text", value: "10 December" }] },
+                  {
+                    type: "line",
+                    children: [
+                      { type: "navigation", destination: { pageId: 2, title: "London" }, children: [{ type: "text", value: "London" }] },
+                    ],
+                  },
+                ],
+              }],
+            },
+            {
+              label: [{ type: "text", value: "Known for" }],
+              items: [{
+                blocks: [
+                  { type: "paragraph", children: [{ type: "text", value: "Computing pioneer" }] },
+                  {
+                    type: "list",
+                    ordered: false,
+                    items: [{
+                      children: [{
+                        type: "navigation",
+                        destination: { pageId: 3, title: "Analytical Engine" },
+                        children: [{ type: "text", value: "Analytical Engine" }],
+                      }],
+                      blocks: [],
+                    }],
+                  },
+                ],
+              }, {
+                blocks: [{
+                  type: "figure",
+                  sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/a/ada.jpg",
+                  width: 320,
+                  height: 400,
+                  alt: "Portrait of Ada Lovelace",
+                  caption: [{ type: "text", value: "Portrait" }],
+                  attribution: figures.get("File:Ada portrait.jpg")?.attribution,
+                }],
+              }, {
+                blocks: [
+                  { type: "media-placeholder", kind: "audio" },
+                  { type: "media-placeholder", kind: "video" },
+                ],
+              }],
+            },
+          ],
+        },
+        { type: "paragraph", children: [{ type: "text", value: "Article body." }] },
+      ],
+    });
+  });
+
+  test("does not let Infobox-only content satisfy the meaningful article-body requirement", () => {
+    expect(normalizeArticleDocument("Infobox only", `
+      <table class="infobox"><tr><th class="infobox-above">A fact card</th></tr></table>
+    `)).toBeNull();
+  });
+
+  test("keeps supported Infobox siblings when an item contains hostile or unsupported descendants", () => {
+    const diagnostics = createNormalizationDiagnostics();
+    const result = normalizeArticleDocument("Place", `
+      <table class="infobox">
+        <tr><th class="infobox-label">Location</th><td>
+          <span>Readable before</span>
+          <table><tr><td>secret table</td></tr></table>
+          <a href="/wiki/Unknown">Readable destination label</a>
+        </td></tr>
+        <tr><th class="infobox-label">Map</th><td>
+          <div class="mw-kartographer"><script>steal()</script></div>
+          <p>Coordinates remain readable.</p>
+        </td></tr>
+        <tr><td><script>drop me</script><object data="run"></object></td></tr>
+      </table>
+      <p>Article body.</p>
+    `, new Map(), new Map(), diagnostics);
+
+    expect(result).toMatchObject({
+      blocks: [
+        {
+          type: "infobox",
+          sections: [{
+            items: [
+              {
+                label: [{ type: "text", value: "Location" }],
+                blocks: [
+                  { type: "line", children: [{ type: "text", value: " Readable before " }] },
+                  { type: "line", children: [{ type: "text", value: " Readable destination label " }] },
+                ],
+              },
+              {
+                label: [{ type: "text", value: "Map" }],
+                blocks: [{ type: "paragraph", children: [{ type: "text", value: "Coordinates remain readable." }] }],
+              },
+            ],
+          }],
+        },
+        { type: "paragraph" },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toMatch(/secret table|steal|drop me|run/);
+    expect(diagnostics.structure.reasons).toEqual(
+      new Set(["table", "interactive-map", "script", "object"]),
+    );
+    expect(diagnostics.links.reasons).toEqual(new Set(["unresolved-or-not-playable"]));
   });
 
   test("discovers ordinary framed, thumbnail, and frameless file figures", () => {

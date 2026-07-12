@@ -5,6 +5,10 @@ import type {
   ArticleDocument,
   ArticleFigure,
   ArticleInline,
+  ArticleInfobox,
+  ArticleInfoboxItem,
+  ArticleInfoboxSection,
+  ArticleList,
   ArticleTableOfContentsEntry,
   NavigationDestination,
 } from "./model.js";
@@ -62,6 +66,9 @@ const EXCLUDED_CLASSES = [
 const TOC_CLASSES = ["toc", "mw-toc", "vector-toc", "sidebar-toc"];
 const TOC_IDS = new Set(["toc", "mw-panel-toc"]);
 const NON_ARTICLE_NAMESPACES = new Set(["category", "file", "help", "special", "talk"]);
+const INFOBOX_TITLE_CLASSES = ["infobox-above", "infobox-title", "infobox-subtitle"];
+const INFOBOX_SECTION_CLASSES = ["infobox-header", "infobox-subheader"];
+const INFOBOX_BLOCK_TAGS = new Set(["div", "section", "dl", "dt", "dd", "center"]);
 
 function isElement(node: Node): node is Element {
   return "tagName" in node;
@@ -79,6 +86,26 @@ function attribute(element: Element, name: string): string | undefined {
   return element.attrs.find((candidate) => candidate.name === name)?.value;
 }
 
+function classesOf(element: Element): ReadonlySet<string> {
+  return new Set((attribute(element, "class") ?? "").split(/\s+/).filter(Boolean));
+}
+
+function hasClass(element: Element, className: string): boolean {
+  return classesOf(element).has(className);
+}
+
+function isInfobox(element: Element): boolean {
+  return hasClass(element, "infobox");
+}
+
+function isInteractiveMap(element: Element): boolean {
+  return ["map", "mapframe", "maplink"].includes(element.tagName)
+    || hasClass(element, "mw-kartographer")
+    || hasClass(element, "mw-kartographer-map")
+    || hasClass(element, "mapframe")
+    || hasClass(element, "maplink");
+}
+
 function descendant(element: Element, tagName: string): Element | undefined {
   // Parsoid may wrap the actual <img> in links or spans inside a figure. The
   // normalizer still needs the image alt text, so this searches structurally
@@ -94,18 +121,19 @@ function descendant(element: Element, tagName: string): Element | undefined {
 
 function isExcluded(element: Element): boolean {
   if (EXCLUDED_TAGS.has(element.tagName)) return true;
+  if (isInteractiveMap(element)) return true;
   if (tableOfContentsReason(element)) return true;
-  const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
-  const classes = new Set(className.split(/\s+/));
+  const classes = classesOf(element);
   return EXCLUDED_CLASSES.some((excluded) => classes.has(excluded));
 }
 
 function structureOmissionReason(element: Element): string {
   if (EXCLUDED_TAGS.has(element.tagName)) return element.tagName;
+  if (isInteractiveMap(element)) return "interactive-map";
   const tocReason = tableOfContentsReason(element);
   if (tocReason) return tocReason;
-  const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
-  return EXCLUDED_CLASSES.find((excluded) => className.split(/\s+/).includes(excluded))
+  const classes = classesOf(element);
+  return EXCLUDED_CLASSES.find((excluded) => classes.has(excluded))
     ?? "unsupported-structure";
 }
 
@@ -304,7 +332,7 @@ function listFrom(
   element: Element,
   destinations: ReadonlyMap<string, NavigationDestination>,
   diagnostics?: NormalizationDiagnostics,
-): ArticleBlock {
+): ArticleList {
   const items = childrenOf(element)
     .filter((child): child is Element => isElement(child) && child.tagName === "li")
     .map((item) => ({
@@ -316,6 +344,236 @@ function listFrom(
   return { type: "list", ordered: element.tagName === "ol", items };
 }
 
+function figureFrom(
+  element: Element,
+  destinations: ReadonlyMap<string, NavigationDestination>,
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
+  diagnostics?: NormalizationDiagnostics,
+): ArticleFigure | undefined {
+  const title = imageTitle(element);
+  const figure = title ? figures.get(title) : undefined;
+  if (!figure) {
+    recordOmission(diagnostics, "images", "unapproved-or-missing-metadata", title ?? "figure");
+    return undefined;
+  }
+  const image = descendant(element, "img");
+  const captionElement = childrenOf(element)
+    .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
+  const caption = captionElement
+    ? inlineFrom(childrenOf(captionElement), false, destinations, diagnostics)
+    : [];
+  const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
+  // Safe metadata alone is not enough for playable output: the player needs
+  // some meaningful textual context for accessibility and article coherence.
+  if (!alt && !hasMeaningfulInline(caption)) {
+    recordOmission(diagnostics, "images", "missing-accessible-context", title ?? "figure");
+    return undefined;
+  }
+  return { type: "figure", ...figure, alt, caption };
+}
+
+function hasDescendantTag(element: Element, tags: ReadonlySet<string>): boolean {
+  return childrenOf(element).some((child) => isElement(child)
+    && (tags.has(child.tagName) || hasDescendantTag(child, tags)));
+}
+
+function infoboxRows(element: Element): Element[] {
+  const rows: Element[] = [];
+  const visit = (nodes: readonly Node[]) => {
+    for (const node of nodes) {
+      if (!isElement(node)) continue;
+      if (node.tagName === "tr") {
+        rows.push(node);
+        continue;
+      }
+      // Nested tables are generic data-table content, not a second source of
+      // Infobox rows. They are omitted by the content normalizer below.
+      if (node.tagName === "table") continue;
+      visit(childrenOf(node));
+    }
+  };
+  visit(childrenOf(element));
+  return rows;
+}
+
+function infoboxCells(row: Element): Element[] {
+  return childrenOf(row)
+    .filter((child): child is Element => isElement(child) && (child.tagName === "th" || child.tagName === "td"));
+}
+
+function hasColspan(element: Element): boolean {
+  const value = Number(attribute(element, "colspan"));
+  return Number.isInteger(value) && value > 1;
+}
+
+function meaningfulLabel(element: Element, destinations: ReadonlyMap<string, NavigationDestination>, diagnostics?: NormalizationDiagnostics): ArticleInline[] {
+  return inlineFrom(childrenOf(element), false, destinations, diagnostics);
+}
+
+function infoboxContentFrom(
+  nodes: readonly Node[],
+  destinations: ReadonlyMap<string, NavigationDestination>,
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
+  diagnostics?: NormalizationDiagnostics,
+): ArticleBlock[] {
+  const blocks: ArticleBlock[] = [];
+  let lineNodes: Node[] = [];
+
+  const flushLine = () => {
+    const children = inlineFrom(lineNodes, false, destinations, diagnostics);
+    lineNodes = [];
+    if (hasMeaningfulInline(children)) blocks.push({ type: "line", children });
+  };
+
+  for (const node of nodes) {
+    if (isText(node)) {
+      lineNodes.push(node);
+      continue;
+    }
+    if (!isElement(node)) continue;
+
+    if (node.tagName === "br") {
+      flushLine();
+      continue;
+    }
+    if (node.tagName === "audio" || node.tagName === "video") {
+      flushLine();
+      blocks.push({ type: "media-placeholder", kind: node.tagName });
+      continue;
+    }
+    if (isExcluded(node)) {
+      flushLine();
+      recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
+      continue;
+    }
+    if (node.tagName === "figure") {
+      flushLine();
+      const figure = figureFrom(node, destinations, figures, diagnostics);
+      if (figure) blocks.push(figure);
+      continue;
+    }
+    if (node.tagName === "p" && !hasDescendantTag(node, new Set(["audio", "video", "figure"]))) {
+      flushLine();
+      const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
+      if (hasMeaningfulInline(children)) blocks.push({ type: "paragraph", children });
+      continue;
+    }
+    if (node.tagName === "ol" || node.tagName === "ul") {
+      flushLine();
+      const list = listFrom(node, destinations, diagnostics);
+      if (list.items.length > 0) blocks.push(list);
+      continue;
+    }
+    if (node.tagName === "img") {
+      flushLine();
+      recordOmission(diagnostics, "images", "unsupported-image", "img");
+      continue;
+    }
+    if (INFOBOX_BLOCK_TAGS.has(node.tagName) || hasDescendantTag(node, new Set(["audio", "video", "figure"]))) {
+      flushLine();
+      blocks.push(...infoboxContentFrom(childrenOf(node), destinations, figures, diagnostics));
+      continue;
+    }
+    lineNodes.push(node);
+  }
+  flushLine();
+  return blocks;
+}
+
+function infoboxItemFrom(
+  cells: readonly Element[],
+  destinations: ReadonlyMap<string, NavigationDestination>,
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
+  diagnostics?: NormalizationDiagnostics,
+): ArticleInfoboxItem | undefined {
+  const headerIndex = cells.findIndex((cell) => cell.tagName === "th");
+  const labelCell = headerIndex >= 0
+    && (cells.length > 1 || hasClass(cells[headerIndex]!, "infobox-label"))
+    ? cells[headerIndex]
+    : undefined;
+  const label = labelCell ? meaningfulLabel(labelCell, destinations, diagnostics) : undefined;
+  const valueCells = labelCell ? cells.filter((_, index) => index !== headerIndex) : cells;
+  const blocks = infoboxContentFrom(
+    valueCells.flatMap((cell) => childrenOf(cell)),
+    destinations,
+    figures,
+    diagnostics,
+  );
+  if ((!label || !hasMeaningfulInline(label)) && blocks.length === 0) return undefined;
+  return {
+    ...(label && hasMeaningfulInline(label) ? { label } : {}),
+    blocks,
+  };
+}
+
+function infoboxFrom(
+  element: Element,
+  destinations: ReadonlyMap<string, NavigationDestination>,
+  figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
+  diagnostics?: NormalizationDiagnostics,
+): ArticleInfobox | undefined {
+  let title: ArticleInline[] | undefined;
+  const caption = childrenOf(element)
+    .find((child): child is Element => isElement(child) && child.tagName === "caption");
+  if (caption) {
+    const captionInlines = meaningfulLabel(caption, destinations, diagnostics);
+    if (hasMeaningfulInline(captionInlines)) title = captionInlines;
+  }
+
+  const sections: ArticleInfoboxSection[] = [];
+  let current: { label?: readonly ArticleInline[]; items: ArticleInfoboxItem[] } | undefined;
+  const ensureSection = () => {
+    if (!current) {
+      current = { items: [] };
+      sections.push(current);
+    }
+    return current;
+  };
+
+  infoboxRows(element).forEach((row, rowIndex) => {
+    const cells = infoboxCells(row);
+    if (cells.length === 0) return;
+    const onlyCell = cells.length === 1 ? cells[0] : undefined;
+    const titleRow = onlyCell !== undefined
+      && (hasClass(onlyCell, INFOBOX_TITLE_CLASSES[0]!)
+        || hasClass(onlyCell, INFOBOX_TITLE_CLASSES[1]!)
+        || hasClass(onlyCell, INFOBOX_TITLE_CLASSES[2]!)
+        || (rowIndex === 0
+          && onlyCell.tagName === "th"
+          && hasColspan(onlyCell)
+          && !INFOBOX_SECTION_CLASSES.some((className) => hasClass(onlyCell, className))));
+    if (titleRow) {
+      if (!title) {
+        const titleInlines = meaningfulLabel(onlyCell!, destinations, diagnostics);
+        if (hasMeaningfulInline(titleInlines)) title = titleInlines;
+      }
+      return;
+    }
+    const sectionRow = onlyCell !== undefined
+      && (INFOBOX_SECTION_CLASSES.some((className) => hasClass(onlyCell, className))
+        || (onlyCell.tagName === "th" && hasColspan(onlyCell)));
+    if (sectionRow) {
+      const label = meaningfulLabel(onlyCell!, destinations, diagnostics);
+      if (hasMeaningfulInline(label)) {
+        current = { label, items: [] };
+        sections.push(current);
+      }
+      return;
+    }
+    const item = infoboxItemFrom(cells, destinations, figures, diagnostics);
+    if (item) ensureSection().items.push(item);
+  });
+
+  const retainedSections = sections.filter((section) => section.items.length > 0
+    || (section.label !== undefined && hasMeaningfulInline(section.label)));
+  if ((!title || !hasMeaningfulInline(title)) && retainedSections.length === 0) return undefined;
+  return {
+    type: "infobox",
+    ...(title && hasMeaningfulInline(title) ? { title } : {}),
+    sections: retainedSections,
+  };
+}
+
 function blocksFrom(
   nodes: readonly Node[],
   destinations: ReadonlyMap<string, NavigationDestination>,
@@ -325,34 +583,19 @@ function blocksFrom(
   const blocks: ArticleBlock[] = [];
   for (const node of nodes) {
     if (!isElement(node)) continue;
+    if (isInfobox(node)) {
+      const infobox = infoboxFrom(node, destinations, figures, diagnostics);
+      if (infobox) blocks.push(infobox);
+      else recordOmission(diagnostics, "structure", "empty-infobox", "infobox");
+      continue;
+    }
     if (isExcluded(node)) {
       recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
       continue;
     }
     if (node.tagName === "figure") {
-      // Normalization performs the final join between source-position markup
-      // and repository-approved image metadata. If the repository did not
-      // approve the file title, the original figure leaves no placeholder.
-      const title = imageTitle(node);
-      const figure = title ? figures.get(title) : undefined;
-      if (!figure) {
-        recordOmission(diagnostics, "images", "unapproved-or-missing-metadata", title ?? "figure");
-        continue;
-      }
-      const image = descendant(node, "img");
-      const captionElement = childrenOf(node)
-        .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
-      const caption = captionElement
-        ? inlineFrom(childrenOf(captionElement), false, destinations, diagnostics)
-        : [];
-      const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
-      // Safe metadata alone is not enough for playable output: the player needs
-      // some meaningful textual context for accessibility and article coherence.
-      if (!alt && !hasMeaningfulInline(caption)) {
-        recordOmission(diagnostics, "images", "missing-accessible-context", title ?? "figure");
-        continue;
-      }
-      blocks.push({ type: "figure", ...figure, alt, caption });
+      const figure = figureFrom(node, destinations, figures, diagnostics);
+      if (figure) blocks.push(figure);
     } else if (/^h[2-6]$/.test(node.tagName)) {
       const level = Number(node.tagName[1]) as 2 | 3 | 4 | 5 | 6;
       const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
@@ -437,9 +680,32 @@ function addHeadingTargets(
 export function extractCandidateLinkTitles(untrustedHtml: string): readonly string[] {
   const fragment = parseFragment(untrustedHtml);
   const titles = new Set<string>();
+  const visitInfobox = (nodes: readonly Node[]) => {
+    for (const node of nodes) {
+      if (!isElement(node)) continue;
+      if (isExcluded(node)) continue;
+      if (node.tagName === "figure") {
+        const caption = childrenOf(node)
+          .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
+        if (caption) visitInfobox(childrenOf(caption));
+        continue;
+      }
+      if (isInfobox(node)) continue;
+      if (node.tagName === "a") {
+        const title = linkTitle(node);
+        if (title) titles.add(title);
+      }
+      visitInfobox(childrenOf(node));
+    }
+  };
   const visit = (nodes: readonly Node[]) => {
     for (const node of nodes) {
-      if (!isElement(node) || isExcluded(node)) continue;
+      if (!isElement(node)) continue;
+      if (isInfobox(node)) {
+        visitInfobox(childrenOf(node));
+        continue;
+      }
+      if (isExcluded(node)) continue;
       if (node.tagName === "figure") {
         // Figure captions use the same Navigation Node contract as prose, but
         // links elsewhere inside a figure usually point at file/download chrome.
@@ -466,9 +732,27 @@ export function extractCandidateImageTitles(untrustedHtml: string): readonly str
   // then asks Wikimedia for attribution metadata and decides which are safe.
   const fragment = parseFragment(untrustedHtml);
   const titles = new Set<string>();
+  const visitInfobox = (nodes: readonly Node[]) => {
+    for (const node of nodes) {
+      if (!isElement(node)) continue;
+      if (isExcluded(node)) continue;
+      if (node.tagName === "figure") {
+        const title = imageTitle(node);
+        if (title) titles.add(title);
+        continue;
+      }
+      if (isInfobox(node)) continue;
+      visitInfobox(childrenOf(node));
+    }
+  };
   const visit = (nodes: readonly Node[]) => {
     for (const node of nodes) {
-      if (!isElement(node) || isExcluded(node)) continue;
+      if (!isElement(node)) continue;
+      if (isInfobox(node)) {
+        visitInfobox(childrenOf(node));
+        continue;
+      }
+      if (isExcluded(node)) continue;
       if (node.tagName === "figure") {
         const title = imageTitle(node);
         if (title) titles.add(title);
@@ -491,6 +775,7 @@ export function normalizeArticleDocument(
   const fragment = parseFragment(untrustedHtml);
   const normalizedBlocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures, diagnostics));
   const { blocks, tableOfContents } = addHeadingTargets(normalizedBlocks);
-  const hasMeaningfulText = JSON.stringify(blocks).replace(/[\s\W]/g, "").length > 0;
-  return hasMeaningfulText ? { title, tableOfContents, blocks } : null;
+  const bodyBlocks = blocks.filter((block) => block.type !== "infobox");
+  const hasMeaningfulBody = JSON.stringify(bodyBlocks).replace(/[\s\W]/g, "").length > 0;
+  return hasMeaningfulBody ? { title, tableOfContents, blocks } : null;
 }

@@ -95,7 +95,7 @@ describe("PlayableArticleRepository", () => {
           },
           imageAttribution: {
             count: 1,
-            examples: [{ reason: "incomplete-or-unacceptable-attribution", subject: "File:Rejected.jpg" }],
+            examples: [{ reason: "metadata-not-returned", subject: "File:Rejected.jpg" }],
           },
         },
       },
@@ -406,6 +406,59 @@ describe("PlayableArticleRepository", () => {
             children: [{ type: "emphasis", children: [{ type: "text", value: "Ada" }] }],
           },
         ] },
+      ] } },
+    });
+  });
+
+  test("uses the shared link and attributed-image pipelines for Infobox content", async () => {
+    const resolveLinks = vi.fn().mockResolvedValue([{
+      requestedTitle: "London",
+      exists: true,
+      pageId: 2,
+      namespace: 0,
+      title: "London",
+      disambiguation: false,
+    }]);
+    const fetchImageMetadata = vi.fn().mockResolvedValue([safeImageMetadata]);
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `
+          <table class="infobox">
+            <tr><th class="infobox-above">Ada Lovelace</th></tr>
+            <tr><th>Born</th><td><a href="/wiki/London">London</a></td></tr>
+            <tr><td><figure typeof="mw:File/Thumb">
+              <a href="/wiki/File:Ada_portrait.jpg"><img alt="Portrait of Ada Lovelace"></a>
+              <figcaption>Portrait</figcaption>
+            </figure></td></tr>
+            <tr><td><figure class="mw-kartographer" typeof="mw:File/Thumb">
+              <a href="/wiki/File:Interactive_map.jpg"><img alt="Map"></a>
+            </figure></td></tr>
+          </table>
+          <p>Article body.</p>
+        `,
+      }),
+      resolveLinks,
+      fetchImageMetadata,
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(resolveLinks).toHaveBeenCalledWith(["London"], expect.anything());
+    expect(fetchImageMetadata).toHaveBeenCalledWith(["File:Ada portrait.jpg"], expect.anything());
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [
+        {
+          type: "infobox",
+          sections: [{
+            items: [
+              { blocks: [{ type: "line", children: [{ type: "navigation", destination: { pageId: 2, title: "London" } }] }] },
+              { blocks: [{ type: "figure", alt: "Portrait of Ada Lovelace" }] },
+            ],
+          }],
+        },
+        { type: "paragraph" },
       ] } },
     });
   });
