@@ -2,9 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import { createLivePlayableArticleRepository } from "./index.js";
 
-const live = process.env.WIKIMEDIA_LIVE_SMOKE === "1" && process.env.WIKIMEDIA_USER_AGENT
-  ? describe
-  : describe.skip;
+const liveEnabled = process.env.WIKIMEDIA_LIVE_SMOKE === "1" && Boolean(process.env.WIKIMEDIA_USER_AGENT);
+const live = liveEnabled ? describe : describe.skip;
+const reportedStrangeTitle = process.env.WIKIMEDIA_LIVE_SMOKE_REPORTED_TITLE?.trim();
+const reportedStrange = liveEnabled && reportedStrangeTitle ? describe : describe.skip;
 
 live("live English Wikipedia smoke", () => {
   test("loads an ordinary article with revision attribution", async () => {
@@ -54,4 +55,27 @@ live("live English Wikipedia smoke", () => {
       failure: { code: "article-not-playable", reason: "disambiguation" },
     });
   }, 20_000);
+});
+
+reportedStrange("reported-strange live article", () => {
+  test("returns a typed result that can be inspected in the Lab", async () => {
+    const repository = createLivePlayableArticleRepository(process.env);
+    const result = await repository.getByTitle(reportedStrangeTitle!);
+    if (result.ok) {
+      expect(result.article.identity.pageId).toBeGreaterThan(0);
+      expect(result.article.revision.id).toBeGreaterThan(0);
+      expect(result.article.document.blocks.length).toBeGreaterThan(0);
+      expect(JSON.stringify(result.article)).not.toContain("<html");
+    } else {
+      expect([
+        "invalid-title",
+        "article-not-found",
+        "article-not-playable",
+        "upstream-rate-limited",
+        "upstream-unavailable",
+        "article-normalization-failed",
+        "article-attribution-incomplete",
+      ]).toContain(result.failure.code);
+    }
+  }, 30_000);
 });

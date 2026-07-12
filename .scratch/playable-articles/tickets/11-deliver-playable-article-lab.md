@@ -2,7 +2,7 @@
 
 # Deliver the Playable Article Lab
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
 
@@ -17,15 +17,15 @@ Deliver the development-only Playable Article Lab as the end-to-end acceptance s
 
 ## Acceptance criteria
 
-- [ ] A developer can enter a live title, receive it through the preview WebSocket request/response contract, and view the canonical Playable Article through the production renderer.
-- [ ] Selecting a prose or caption Navigation Node requests and renders its canonical destination through the same preview flow.
-- [ ] Request IDs suppress stale responses; loading, retry timing, retryable failures, and terminal failures are clear without discarding the last valid article unexpectedly.
-- [ ] A separate diagnostic panel shows requested/canonical identity, revision, total duration, cache outcome, emitted node counts, omitted structure/link/image counts and reasons, image-attribution omission reasons, and session Navigation history.
-- [ ] Diagnostics never enter the production Playable Article contract or expose raw HTML, stack traces, or creator-supplied HTML.
-- [ ] The Lab route and server preview command are absent or rejected in production builds.
-- [ ] WebSocket integration tests cover success, typed failures, malformed messages, request correlation, repeated requests, Navigation, production gating, and non-regression of Lobby messages.
-- [ ] Client tests cover form submission, loading, success, failures, stale-response suppression, Navigation, diagnostics, and production gating.
-- [ ] Minimal opt-in live smoke checks and documented manual scenarios verify ordinary, redirected, media-rich, disambiguation, and reported-strange articles without becoming deterministic CI dependencies.
+- [x] A developer can enter a live title, receive it through the preview WebSocket request/response contract, and view the canonical Playable Article through the production renderer.
+- [x] Selecting a prose or caption Navigation Node requests and renders its canonical destination through the same preview flow.
+- [x] Request IDs suppress stale responses; loading, retry timing, retryable failures, and terminal failures are clear without discarding the last valid article unexpectedly.
+- [x] A separate diagnostic panel shows requested/canonical identity, revision, total duration, cache outcome, emitted node counts, omitted structure/link/image counts and reasons, image-attribution omission reasons, and session Navigation history.
+- [x] Diagnostics never enter the production Playable Article contract or expose raw HTML, stack traces, or creator-supplied HTML.
+- [x] The Lab route and server preview command are absent or rejected in production builds.
+- [x] WebSocket integration tests cover success, typed failures, malformed messages, request correlation, repeated requests, Navigation, production gating, and non-regression of Lobby messages.
+- [x] Client tests cover form submission, loading, success, failures, stale-response suppression, Navigation, diagnostics, and production gating.
+- [x] Minimal opt-in live smoke checks and documented manual scenarios verify ordinary, redirected, media-rich, disambiguation, and reported-strange articles without becoming deterministic CI dependencies.
 
 ## Blocked by
 
@@ -34,3 +34,13 @@ Deliver the development-only Playable Article Lab as the end-to-end acceptance s
 - [`playable-articles/08`](./08-preserve-safe-attributed-figures.md)
 - [`playable-articles/09`](./09-add-repository-caching-and-resilience.md)
 - [`playable-articles/10`](./10-render-typed-article-documents.md)
+
+## Implementation note
+
+Added the development-only `/lab` client route and shared `preview-article`
+WebSocket contract, including canonical Navigation, typed failure handling,
+request correlation, safe diagnostics, repository cache/omission telemetry, and
+opt-in live/manual verification scenarios. Production client builds omit the Lab
+route and production servers reject preview commands.
+
+Completed: 2026-07-10 04:03 PM via [PR #10](https://github.com/MonsteRico/wikiduel/pull/10)

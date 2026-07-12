@@ -1,4 +1,12 @@
 import type { Lobby } from '../features/lobby/types'
+import type {
+  PreviewArticleRequest,
+  PreviewArticleResultMessage,
+  PreviewErrorMessage,
+} from '../../../wikiduel-server/src/playable-articles/preview.js'
+
+type TimestampedPreviewArticleResult = PreviewArticleResultMessage & { sentAt: string }
+type TimestampedPreviewError = PreviewErrorMessage & { sentAt: string }
 
 export type ClientMessage =
   | { type: 'ping' }
@@ -7,6 +15,7 @@ export type ClientMessage =
   | { type: 'set-ready'; ready: boolean }
   | { type: 'start-game' }
   | { type: 'leave-lobby' }
+  | PreviewArticleRequest
 
 export type ServerMessage =
   | { type: 'welcome'; message: string; sentAt: string }
@@ -15,3 +24,5 @@ export type ServerMessage =
   | { type: 'lobby-error'; message: string; sentAt: string }
   | { type: 'lobby-closed'; message: string; sentAt: string }
   | { type: 'game-started'; sentAt: string }
+  | TimestampedPreviewArticleResult
+  | TimestampedPreviewError

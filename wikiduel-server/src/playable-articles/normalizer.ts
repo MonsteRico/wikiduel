@@ -11,6 +11,30 @@ import { isValidWikipediaTitle } from "./title.js";
 
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
+
+export type NormalizationDiagnostics = {
+  structure: { count: number; reasons: Set<string> };
+  links: { count: number; reasons: Set<string> };
+  images: { count: number; reasons: Set<string> };
+};
+
+export function createNormalizationDiagnostics(): NormalizationDiagnostics {
+  return {
+    structure: { count: 0, reasons: new Set() },
+    links: { count: 0, reasons: new Set() },
+    images: { count: 0, reasons: new Set() },
+  };
+}
+
+function recordOmission(
+  diagnostics: NormalizationDiagnostics | undefined,
+  category: keyof NormalizationDiagnostics,
+  reason: string,
+): void {
+  if (!diagnostics) return;
+  diagnostics[category].count += 1;
+  diagnostics[category].reasons.add(reason);
+}
 const EXCLUDED_TAGS = new Set([
   "script", "style", "template", "noscript", "iframe", "object", "embed",
   "table", "audio", "video", "svg", "math", "form", "input", "button",
@@ -56,6 +80,13 @@ function isExcluded(element: Element): boolean {
   const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
   const classes = new Set(className.split(/\s+/));
   return EXCLUDED_CLASSES.some((excluded) => classes.has(excluded));
+}
+
+function structureOmissionReason(element: Element): string {
+  if (EXCLUDED_TAGS.has(element.tagName)) return element.tagName;
+  const className = element.attrs.find((attribute) => attribute.name === "class")?.value ?? "";
+  return EXCLUDED_CLASSES.find((excluded) => className.split(/\s+/).includes(excluded))
+    ?? "unsupported-structure";
 }
 
 function compactInline(nodes: readonly ArticleInline[]): ArticleInline[] {
@@ -171,6 +202,7 @@ function inlineFrom(
   nodes: readonly Node[],
   skipLists = false,
   destinations: ReadonlyMap<string, NavigationDestination> = new Map(),
+  diagnostics?: NormalizationDiagnostics,
 ): ArticleInline[] {
   const result: ArticleInline[] = [];
   for (const node of nodes) {
@@ -178,9 +210,13 @@ function inlineFrom(
       result.push({ type: "text", value: node.value.replace(/\s+/g, " ") });
       continue;
     }
-    if (!isElement(node) || isExcluded(node)) continue;
+    if (!isElement(node)) continue;
+    if (isExcluded(node)) {
+      recordOmission(diagnostics, "structure", structureOmissionReason(node));
+      continue;
+    }
     if (skipLists && (node.tagName === "ol" || node.tagName === "ul")) continue;
-    const children = inlineFrom(childrenOf(node), skipLists, destinations);
+    const children = inlineFrom(childrenOf(node), skipLists, destinations, diagnostics);
     if (node.tagName === "strong" || node.tagName === "b") {
       result.push({ type: "strong", children });
     } else if (node.tagName === "em" || node.tagName === "i") {
@@ -191,6 +227,11 @@ function inlineFrom(
       if (destination) {
         result.push({ type: "navigation", destination, children });
       } else {
+        recordOmission(
+          diagnostics,
+          "links",
+          title ? "unresolved-or-not-playable" : "unsupported-link",
+        );
         result.push(...children);
       }
     } else {
@@ -203,14 +244,15 @@ function inlineFrom(
 function listFrom(
   element: Element,
   destinations: ReadonlyMap<string, NavigationDestination>,
+  diagnostics?: NormalizationDiagnostics,
 ): ArticleBlock {
   const items = childrenOf(element)
     .filter((child): child is Element => isElement(child) && child.tagName === "li")
     .map((item) => ({
-      children: inlineFrom(childrenOf(item), true, destinations),
+      children: inlineFrom(childrenOf(item), true, destinations, diagnostics),
       blocks: childrenOf(item)
         .filter((child): child is Element => isElement(child) && (child.tagName === "ol" || child.tagName === "ul"))
-        .map((child) => listFrom(child, destinations)),
+        .map((child) => listFrom(child, destinations, diagnostics)),
     }));
   return { type: "list", ordered: element.tagName === "ol", items };
 }
@@ -219,44 +261,55 @@ function blocksFrom(
   nodes: readonly Node[],
   destinations: ReadonlyMap<string, NavigationDestination>,
   figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">>,
+  diagnostics?: NormalizationDiagnostics,
 ): ArticleBlock[] {
   const blocks: ArticleBlock[] = [];
   for (const node of nodes) {
-    if (!isElement(node) || isExcluded(node)) continue;
+    if (!isElement(node)) continue;
+    if (isExcluded(node)) {
+      recordOmission(diagnostics, "structure", structureOmissionReason(node));
+      continue;
+    }
     if (node.tagName === "figure") {
       // Normalization performs the final join between source-position markup
       // and repository-approved image metadata. If the repository did not
       // approve the file title, the original figure leaves no placeholder.
       const title = imageTitle(node);
       const figure = title ? figures.get(title) : undefined;
-      if (!figure) continue;
+      if (!figure) {
+        recordOmission(diagnostics, "images", "unapproved-or-missing-metadata");
+        continue;
+      }
       const image = descendant(node, "img");
       const captionElement = childrenOf(node)
         .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
       const caption = captionElement
-        ? inlineFrom(childrenOf(captionElement), false, destinations)
+        ? inlineFrom(childrenOf(captionElement), false, destinations, diagnostics)
         : [];
       const alt = image ? (attribute(image, "alt") ?? "").trim() : "";
       // Safe metadata alone is not enough for playable output: the player needs
       // some meaningful textual context for accessibility and article coherence.
-      if (!alt && !hasMeaningfulInline(caption)) continue;
+      if (!alt && !hasMeaningfulInline(caption)) {
+        recordOmission(diagnostics, "images", "missing-accessible-context");
+        continue;
+      }
       blocks.push({ type: "figure", ...figure, alt, caption });
     } else if (/^h[2-6]$/.test(node.tagName)) {
       const level = Number(node.tagName[1]) as 2 | 3 | 4 | 5 | 6;
-      const children = inlineFrom(childrenOf(node), false, destinations);
+      const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
       if (children.some((child) => child.type !== "text" || child.value.trim())) {
         blocks.push({ type: "heading", level, children });
       }
     } else if (node.tagName === "p") {
-      const children = inlineFrom(childrenOf(node), false, destinations);
+      const children = inlineFrom(childrenOf(node), false, destinations, diagnostics);
       if (children.some((child) => child.type !== "text" || child.value.trim())) {
         blocks.push({ type: "paragraph", children });
       }
     } else if (node.tagName === "ol" || node.tagName === "ul") {
-      const list = listFrom(node, destinations);
+      const list = listFrom(node, destinations, diagnostics);
       if (list.type === "list" && list.items.length > 0) blocks.push(list);
     } else if (node.tagName !== "h1") {
-      blocks.push(...blocksFrom(childrenOf(node), destinations, figures));
+      blocks.push(...blocksFrom(childrenOf(node), destinations, figures, diagnostics));
     }
   }
   return blocks;
@@ -329,9 +382,10 @@ export function normalizeArticleDocument(
   untrustedHtml: string,
   destinations: ReadonlyMap<string, NavigationDestination> = new Map(),
   figures: ReadonlyMap<string, Omit<ArticleFigure, "type" | "alt" | "caption">> = new Map(),
+  diagnostics?: NormalizationDiagnostics,
 ): ArticleDocument | null {
   const fragment = parseFragment(untrustedHtml);
-  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures));
+  const blocks = normalizeHeadingHierarchy(blocksFrom(fragment.childNodes, destinations, figures, diagnostics));
   const hasMeaningfulText = JSON.stringify(blocks).replace(/[\s\W]/g, "").length > 0;
   return hasMeaningfulText ? { title, blocks } : null;
 }

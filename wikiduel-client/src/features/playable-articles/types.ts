@@ -8,6 +8,8 @@ export type {
   ArticleInline,
   ImageAttribution,
   NavigationDestination,
+  PlayableArticle,
+  PlayableArticleFailure,
 } from '../../../../wikiduel-server/src/playable-articles/model.js'
 
 export type ArticleRevision = PlayableArticle['revision']
