@@ -28,6 +28,12 @@ Reusable primitives live in `src/components/ui`:
 
 Feature components should compose these primitives. Add a variant to a primitive when the same visual pattern appears twice; do not copy long utility strings between screens.
 
+## Playable Article area
+
+`PlayableArticleArea` is the shared visual boundary for rendering a Playable Article inside the Lab and future Duel screen. It owns the Duel-like article frame, compact current-article header, light reading canvas, responsive figure treatment, typography, and attribution presentation. It composes the semantic `ArticleDocumentRenderer`; it must not own Lab diagnostics, WebSocket transport, authoritative Duel state, Navigation validation, or Duel-specific controls.
+
+The surrounding feature supplies the current `PlayableArticle` and handles `onNavigate`. During a Duel, HUD, target, timer, path, and leave controls should live outside this boundary so the same article presentation can be reused without changing Article Document semantics.
+
 ## Composition rules
 
 - Keep the interface compact and readable at 1024px and wider; mobile support should collapse into one deliberate vertical flow.

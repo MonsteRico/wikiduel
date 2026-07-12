@@ -20,6 +20,10 @@
   --color-danger: #ff787b;
   --color-wiki: #f7f7f5;
   --color-wiki-ink: #202122;
+  --color-wiki-raised: #ffffff;
+  --color-wiki-line: #d8d2c5;
+  --color-wiki-line-strong: #d4d0c6;
+  --color-wiki-link: #3366cc;
   --font-display: "Arial Narrow", "Roboto Condensed", "Aptos Narrow", sans-serif;
   --font-sans: Inter, "Avenir Next", Avenir, "Segoe UI", sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;
@@ -111,6 +115,100 @@ input {
   .ds-focus:focus-visible {
     outline: 2px solid var(--color-host);
     outline-offset: 3px;
+  }
+
+  .wd-article-canvas {
+    max-height: min(72vh, 860px);
+    overflow: auto;
+    background: var(--color-wiki);
+    color: var(--color-wiki-ink);
+    padding: clamp(1rem, 3vw, 2.4rem);
+    padding-block: 1.75rem;
+  }
+
+  .wd-article-canvas article {
+    max-width: 82ch;
+    margin-inline: auto;
+    font-family: var(--font-serif);
+    font-size: 1.05rem;
+    line-height: 1.76;
+  }
+
+  .wd-article-canvas a,
+  .wd-article-canvas button {
+    color: var(--color-wiki-link);
+  }
+
+  .wd-article-canvas h1 {
+    margin-block: 0 1.5rem;
+    padding-block-end: 1rem;
+    border-bottom: 1px solid var(--color-wiki-line);
+    font-family: var(--font-serif);
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 400;
+  }
+
+  .wd-article-canvas h2 {
+    margin-block-start: 2.5rem;
+    padding-block-end: 0.5rem;
+    border-bottom: 1px solid var(--color-wiki-line);
+    font-family: var(--font-serif);
+  }
+
+  .wd-article-canvas p {
+    margin-block: 1.25rem;
+  }
+
+  .wd-article-canvas ul,
+  .wd-article-canvas ol {
+    padding-inline-start: 1.75rem;
+  }
+
+  .wd-article-canvas li {
+    margin-block: 0.5rem;
+  }
+
+  .wd-article-canvas figure {
+    float: right;
+    clear: right;
+    max-width: min(320px, 45%);
+    margin-block: 0.5rem;
+    margin-inline: 1.5rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--color-wiki-line-strong);
+    border-radius: var(--radius-control);
+    background: var(--color-wiki-raised);
+  }
+
+  .wd-article-canvas img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .wd-article-canvas figcaption {
+    margin-block-start: 0.75rem;
+    padding-block-start: 0.75rem;
+    border-top: 1px solid var(--color-wiki-line);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  .wd-article-canvas footer {
+    clear: both;
+    margin-block-start: 2.5rem;
+    padding-block-start: 1rem;
+    border-top: 1px solid var(--color-wiki-line);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+  }
+}
+
+@media (width <= 760px) {
+  .wd-article-canvas figure {
+    float: none;
+    max-width: 100%;
+    margin-inline: 0;
   }
 }
 
