@@ -200,6 +200,126 @@ input {
         background: var(--color-wiki-raised);
     }
 
+    .wd-article-canvas .wd-infobox {
+        float: right;
+        clear: right;
+        width: 100%;
+        max-width: min(360px, 45%);
+        min-width: 0;
+        margin-block: 0.5rem 1.25rem;
+        margin-inline: 1.5rem 0;
+        padding: 0.75rem;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--color-wiki-line-strong);
+        border-radius: var(--radius-control);
+        background: var(--color-wiki-raised);
+        font-family: var(--font-sans);
+        font-size: 0.9rem;
+        line-height: 1.45;
+    }
+
+    .wd-infobox-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding-block-end: 0.65rem;
+        border-block-end: 1px solid var(--color-wiki-line);
+    }
+
+    .wd-infobox-title {
+        min-width: 0;
+        font-family: var(--font-serif);
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+
+    .wd-infobox-toggle {
+        flex: 0 0 auto;
+        padding: 0.2rem 0.4rem;
+        border: 1px solid var(--color-wiki-line-strong);
+        border-radius: 3px;
+        background: var(--color-wiki-raised);
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+
+    .wd-infobox-toggle:focus-visible {
+        outline: 2px solid var(--color-wiki-link);
+        outline-offset: 2px;
+    }
+
+    .wd-infobox-content {
+        padding-block-start: 0.25rem;
+    }
+
+    .wd-infobox-section + .wd-infobox-section {
+        margin-block-start: 0.75rem;
+        padding-block-start: 0.65rem;
+        border-block-start: 1px solid var(--color-wiki-line);
+    }
+
+    .wd-infobox-section-label {
+        margin-block: 0.35rem 0.25rem;
+        font-weight: 700;
+    }
+
+    .wd-infobox dl {
+        margin: 0;
+    }
+
+    .wd-infobox-item {
+        display: grid;
+        grid-template-columns: minmax(6rem, 38%) minmax(0, 1fr);
+        gap: 0.5rem;
+        padding-block: 0.35rem;
+    }
+
+    .wd-infobox-item dt {
+        font-weight: 700;
+    }
+
+    .wd-infobox-item dd {
+        min-width: 0;
+        margin: 0;
+    }
+
+    .wd-infobox-item dd > p:first-child,
+    .wd-infobox-item dd > ul:first-child,
+    .wd-infobox-item dd > ol:first-child {
+        margin-block-start: 0;
+    }
+
+    .wd-infobox-item dd > p:last-child,
+    .wd-infobox-item dd > ul:last-child,
+    .wd-infobox-item dd > ol:last-child {
+        margin-block-end: 0;
+    }
+
+    .wd-infobox .wd-infobox-line + .wd-infobox-line {
+        margin-block-start: 0.2rem;
+    }
+
+    .wd-infobox .wd-infobox-media {
+        margin-block: 0.4rem;
+        color: var(--color-wiki-ink);
+        font-style: italic;
+    }
+
+    .wd-article-canvas .wd-infobox figure {
+        float: none;
+        clear: none;
+        max-width: 100%;
+        margin: 0.35rem 0;
+        padding: 0.4rem;
+    }
+
+    .wd-infobox img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+    }
+
     .wd-article-canvas img {
         max-width: 100%;
         height: auto;
@@ -226,6 +346,12 @@ input {
 
 @media (width <= 760px) {
     .wd-article-canvas figure {
+        float: none;
+        max-width: 100%;
+        margin-inline: 0;
+    }
+
+    .wd-article-canvas .wd-infobox {
         float: none;
         max-width: 100%;
         margin-inline: 0;

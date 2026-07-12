@@ -109,6 +109,47 @@ describe('ArticleDocumentRenderer', () => {
     expect(screen.getByText('First program').tagName).toBe('EM')
   })
 
+  it('dispatches a typed Infobox block to the production Infobox component', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    const document: ArticleDocument = {
+      title: 'Ada Lovelace',
+      tableOfContents: [],
+      blocks: [{
+        type: 'infobox',
+        title: [{ type: 'text', value: 'Summary' }],
+        sections: [{
+          items: [{
+            label: [{ type: 'text', value: 'Known for' }],
+            blocks: [{
+              type: 'line',
+              children: [{
+                type: 'navigation',
+                destination: { pageId: 7, title: 'Analytical Engine' },
+                children: [{ type: 'text', value: 'Analytical Engine' }],
+              }],
+            }],
+          }],
+        }],
+      }],
+    }
+
+    render(
+      <ArticleDocumentRenderer
+        document={document}
+        revision={revision}
+        attribution={attribution}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    const infobox = screen.getByRole('complementary', { name: 'Infobox' })
+    expect(within(infobox).getByText('Summary')).toBeVisible()
+    expect(within(infobox).queryByRole('heading')).toBeNull()
+    await user.click(within(infobox).getByRole('button', { name: 'Analytical Engine' }))
+    expect(onNavigate).toHaveBeenCalledWith({ pageId: 7, title: 'Analytical Engine' })
+  })
+
   it('activates a prose Navigation Node with its canonical destination from the keyboard', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()

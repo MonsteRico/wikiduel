@@ -29,6 +29,38 @@ export type ArticleFigure = Readonly<{
   attribution: ImageAttribution;
 }>;
 
+export type ArticleMediaPlaceholder = Readonly<{
+  type: "media-placeholder";
+  kind: "audio" | "video";
+}>;
+
+export type ArticleListItem = Readonly<{
+  children: readonly ArticleInline[];
+  blocks: readonly ArticleBlock[];
+}>;
+
+export type ArticleList = Readonly<{
+  type: "list";
+  ordered: boolean;
+  items: readonly ArticleListItem[];
+}>;
+
+export type ArticleInfoboxItem = Readonly<{
+  label?: readonly ArticleInline[];
+  blocks: readonly ArticleBlock[];
+}>;
+
+export type ArticleInfoboxSection = Readonly<{
+  label?: readonly ArticleInline[];
+  items: readonly ArticleInfoboxItem[];
+}>;
+
+export type ArticleInfobox = Readonly<{
+  type: "infobox";
+  title?: readonly ArticleInline[];
+  sections: readonly ArticleInfoboxSection[];
+}>;
+
 export type ArticleBlock =
   | Readonly<{
       type: "heading";
@@ -37,15 +69,11 @@ export type ArticleBlock =
       children: readonly ArticleInline[];
     }>
   | Readonly<{ type: "paragraph"; children: readonly ArticleInline[] }>
-  | Readonly<{
-      type: "list";
-      ordered: boolean;
-      items: readonly Readonly<{
-        children: readonly ArticleInline[];
-        blocks: readonly ArticleBlock[];
-      }>[];
-    }>
-  | ArticleFigure;
+  | Readonly<{ type: "line"; children: readonly ArticleInline[] }>
+  | ArticleList
+  | ArticleFigure
+  | ArticleMediaPlaceholder
+  | ArticleInfobox;
 
 export type ArticleTableOfContentsEntry = Readonly<{
   targetId: string;
