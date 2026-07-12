@@ -556,6 +556,38 @@ describe("PlayableArticleRepository", () => {
     });
   });
 
+  test("keeps image/tiff MIME metadata", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        ...safeImageMetadata,
+        mimeType: "image/tiff",
+        licenseName: "CC0",
+        licenseUrl: "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{
+        type: "figure",
+        attribution: {
+          licenseName: "CC0",
+          licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        },
+      }] } },
+    });
+  });
+
+
   test("keeps CC BY-SA 3.0 media with Wikimedia's HTTP license URL", async () => {
     const repository = createPlayableArticleRepository({
       fetchPage: async () => ({

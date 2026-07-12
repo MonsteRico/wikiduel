@@ -292,7 +292,7 @@ function safeFigure(
   if (metadata.restrictions.some((restriction) => /fair[ -]?use|non[ -]?free/i.test(restriction))) {
     reasons.push("non-free-or-fair-use-restriction");
   }
-  if (!["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"].includes(metadata.mimeType)) {
+  if (!["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/tiff"].includes(metadata.mimeType)) {
     reasons.push("unsupported-mime-type");
   }
   if (!Number.isInteger(metadata.width) || metadata.width <= 0) reasons.push("invalid-width");
