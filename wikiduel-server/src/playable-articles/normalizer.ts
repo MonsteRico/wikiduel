@@ -441,6 +441,11 @@ function infoboxContentFrom(
       blocks.push({ type: "media-placeholder", kind: node.tagName });
       continue;
     }
+    if (isExcluded(node)) {
+      flushLine();
+      recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
+      continue;
+    }
     if (node.tagName === "figure") {
       flushLine();
       const figure = figureFrom(node, destinations, figures, diagnostics);
@@ -457,11 +462,6 @@ function infoboxContentFrom(
       flushLine();
       const list = listFrom(node, destinations, diagnostics);
       if (list.items.length > 0) blocks.push(list);
-      continue;
-    }
-    if (isExcluded(node)) {
-      flushLine();
-      recordOmission(diagnostics, "structure", structureOmissionReason(node), node.tagName);
       continue;
     }
     if (node.tagName === "img") {
@@ -683,13 +683,14 @@ export function extractCandidateLinkTitles(untrustedHtml: string): readonly stri
   const visitInfobox = (nodes: readonly Node[]) => {
     for (const node of nodes) {
       if (!isElement(node)) continue;
+      if (isExcluded(node)) continue;
       if (node.tagName === "figure") {
         const caption = childrenOf(node)
           .find((child): child is Element => isElement(child) && child.tagName === "figcaption");
         if (caption) visitInfobox(childrenOf(caption));
         continue;
       }
-      if (isExcluded(node) || isInfobox(node)) continue;
+      if (isInfobox(node)) continue;
       if (node.tagName === "a") {
         const title = linkTitle(node);
         if (title) titles.add(title);
@@ -734,12 +735,13 @@ export function extractCandidateImageTitles(untrustedHtml: string): readonly str
   const visitInfobox = (nodes: readonly Node[]) => {
     for (const node of nodes) {
       if (!isElement(node)) continue;
+      if (isExcluded(node)) continue;
       if (node.tagName === "figure") {
         const title = imageTitle(node);
         if (title) titles.add(title);
         continue;
       }
-      if (isExcluded(node) || isInfobox(node)) continue;
+      if (isInfobox(node)) continue;
       visitInfobox(childrenOf(node));
     }
   };

@@ -431,9 +431,9 @@ describe("PlayableArticleRepository", () => {
               <a href="/wiki/File:Ada_portrait.jpg"><img alt="Portrait of Ada Lovelace"></a>
               <figcaption>Portrait</figcaption>
             </figure></td></tr>
-            <tr><td><div class="mw-kartographer"><figure typeof="mw:File/Thumb">
+            <tr><td><figure class="mw-kartographer" typeof="mw:File/Thumb">
               <a href="/wiki/File:Interactive_map.jpg"><img alt="Map"></a>
-            </figure></div></td></tr>
+            </figure></td></tr>
           </table>
           <p>Article body.</p>
         `,

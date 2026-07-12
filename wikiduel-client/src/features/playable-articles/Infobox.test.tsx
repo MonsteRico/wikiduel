@@ -89,7 +89,9 @@ describe('Infobox', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(content).toBeVisible()
 
-    await user.click(toggle)
+    await user.tab()
+    expect(toggle).toHaveFocus()
+    await user.keyboard('{Enter}')
 
     expect(within(infobox).getByRole('button', { name: 'Expand infobox' })).toHaveAttribute(
       'aria-expanded',
@@ -97,5 +99,22 @@ describe('Infobox', () => {
     )
     expect(content).not.toBeVisible()
     expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('uses the article canvas and Infobox presentation hooks for wide and narrow layouts', () => {
+    const { container } = render(
+      <div className="wd-article-canvas">
+        <article>
+          <Infobox block={block} onNavigate={vi.fn()} />
+          <p>Introductory prose.</p>
+        </article>
+      </div>,
+    )
+
+    const canvas = container.querySelector('.wd-article-canvas')
+    const infobox = within(canvas as HTMLElement).getByRole('complementary', { name: 'Infobox' })
+    expect(canvas).toContainElement(infobox)
+    expect(infobox).toHaveClass('wd-infobox')
+    expect(infobox.closest('.wd-article-canvas')).toBe(canvas)
   })
 })
