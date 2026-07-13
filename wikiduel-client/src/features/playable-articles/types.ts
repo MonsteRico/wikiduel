@@ -1,4 +1,4 @@
-import type { PlayableArticle } from '../../../../wikiduel-server/src/playable-articles/model.js'
+import type { PlayableArticle } from '@wikiduel/contracts'
 
 export type {
   ArticleAttribution,
@@ -17,6 +17,6 @@ export type {
   NavigationDestination,
   PlayableArticle,
   PlayableArticleFailure,
-} from '../../../../wikiduel-server/src/playable-articles/model.js'
+} from '@wikiduel/contracts'
 
 export type ArticleRevision = PlayableArticle['revision']

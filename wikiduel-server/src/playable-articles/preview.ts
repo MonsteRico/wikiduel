@@ -1,97 +1,38 @@
 import type {
   ArticleBlock,
   ArticleInline,
-  PlayableArticle,
-  PlayableArticleFailure,
-  PlayableArticleResult,
-} from "./model.js";
+  PreviewArticleRequest,
+  PreviewArticleResultMessage,
+  PreviewDiagnostics,
+  PreviewErrorMessage,
+  PreviewOmissionBucket,
+} from "@wikiduel/contracts";
 
-export type PreviewArticleRequest = Readonly<{
-  type: "preview-article";
-  requestId: string;
-  requestedTitle: string;
-}>;
+import type { PlayableArticleResult } from "./model.js";
 
-export type PreviewOmissionDetail = Readonly<{
-  reason: string;
-  subject?: string;
-  properties?: Readonly<Record<string, unknown>>;
-}>;
-
-export type PreviewOmissionBucket = Readonly<{
-  count: number;
-  reasons: readonly string[];
-  examples: readonly PreviewOmissionDetail[];
-}>;
-
-export type PreviewDiagnostics = Readonly<{
-  requestedTitle: string;
-  wikipediaUrl?: string;
-  canonicalIdentity?: Readonly<{ pageId: number; title: string }>;
-  revision?: Readonly<{ id: number; timestamp: string }>;
-  durationMs: number;
-  cacheOutcome: "hit" | "miss" | "in-flight" | "not-cached";
-  emittedNodeCounts: Readonly<{
-    headings: number;
-    paragraphs: number;
-    lists: number;
-    listItems: number;
-    figures: number;
-    text: number;
-    strong: number;
-    emphasis: number;
-    navigation: number;
-  }>;
-  omissions: Readonly<{
-    structure: PreviewOmissionBucket;
-    links: PreviewOmissionBucket;
-    images: PreviewOmissionBucket;
-    imageAttribution: PreviewOmissionBucket;
-  }>;
-  retry: Readonly<{
-    attempts: number;
-    retryAfterSeconds?: number;
-  }>;
-}>;
+export type {
+  PreviewArticleRequest,
+  PreviewArticleResultMessage,
+  PreviewDiagnostics,
+  PreviewErrorMessage,
+  PreviewMessage,
+  PreviewOmissionBucket,
+  PreviewOmissionDetail,
+} from "@wikiduel/contracts";
 
 export type PreviewBuildDetails = Readonly<{
   omissions?: PreviewDiagnostics["omissions"];
   retry?: PreviewDiagnostics["retry"];
 }>;
 
-export type PreviewArticleResultMessage = Readonly<{
-  type: "preview-article-result";
-  requestId: string;
-  requestedTitle: string;
-  ok: true;
-  article: PlayableArticle;
-  diagnostics: PreviewDiagnostics;
-}> | Readonly<{
-  type: "preview-article-result";
-  requestId: string;
-  requestedTitle: string;
-  ok: false;
-  failure: PlayableArticleFailure;
-  diagnostics: PreviewDiagnostics;
-}>;
+type PreviewArticleResultPayload =
+  PreviewArticleResultMessage extends infer Message
+    ? Message extends { sentAt: string }
+      ? Omit<Message, "sentAt">
+      : never
+    : never;
 
-export type PreviewErrorMessage = Readonly<{
-  type: "preview-error";
-  requestId?: string;
-  requestedTitle?: string;
-  failure: Readonly<{ code: "malformed-message" | "preview-unavailable" }>;
-}>;
-
-export type PreviewMessage = PreviewArticleResultMessage | PreviewErrorMessage;
-
-export function isPreviewRequest(value: unknown): value is PreviewArticleRequest {
-  if (typeof value !== "object" || value === null) return false;
-  const message = value as Record<string, unknown>;
-  return message.type === "preview-article"
-    && typeof message.requestId === "string"
-    && message.requestId.length > 0
-    && typeof message.requestedTitle === "string";
-}
+type PreviewErrorPayload = Omit<PreviewErrorMessage, "sentAt">;
 
 type MutableCounts = {
   headings: number;
@@ -207,7 +148,7 @@ export function previewArticleResult(
   request: PreviewArticleRequest,
   result: PlayableArticleResult,
   diagnostics: PreviewDiagnostics,
-): PreviewArticleResultMessage {
+): PreviewArticleResultPayload {
   return result.ok
     ? {
       type: "preview-article-result",
@@ -230,7 +171,7 @@ export function previewArticleResult(
 export function previewError(
   request: Partial<PreviewArticleRequest>,
   code: "malformed-message" | "preview-unavailable",
-): PreviewErrorMessage {
+): PreviewErrorPayload {
   return {
     type: "preview-error",
     ...(request.requestId ? { requestId: request.requestId } : {}),

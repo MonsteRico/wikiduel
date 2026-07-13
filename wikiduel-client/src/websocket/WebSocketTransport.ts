@@ -11,6 +11,9 @@ type StatusListener = (status: ConnectionStatus) => void
 type FailureListener = (failure: WebSocketFailure) => void
 type MessageEnvelope = { type: string }
 type MessageListener<Message> = (message: Message) => void
+type MessageDecoder<Message> = (value: unknown) =>
+  | Readonly<{ ok: true; message: Message }>
+  | Readonly<{ ok: false }>
 
 export class WebSocketTransport<
   OutboundMessage extends object = object,
@@ -20,6 +23,7 @@ export class WebSocketTransport<
   private readonly failureListeners = new Set<FailureListener>()
   private readonly messageListeners = new Map<string, Set<MessageListener<InboundMessage>>>()
   private readonly statusListeners = new Set<StatusListener>()
+  private readonly decodeMessage: MessageDecoder<InboundMessage> | undefined
   private socket: WebSocketConnection | null = null
   private status: ConnectionStatus = 'disconnected'
   private readonly url: string
@@ -27,9 +31,11 @@ export class WebSocketTransport<
   constructor(
     url: string,
     createWebSocket: WebSocketFactory = (socketUrl) => new WebSocket(socketUrl),
+    decodeMessage?: MessageDecoder<InboundMessage>,
   ) {
     this.url = url
     this.createWebSocket = createWebSocket
+    this.decodeMessage = decodeMessage
   }
 
   connect() {
@@ -122,6 +128,15 @@ export class WebSocketTransport<
     } catch {
       this.reportFailure('unreadable-message')
       return
+    }
+
+    if (this.decodeMessage) {
+      const decoded = this.decodeMessage(message)
+      if (!decoded.ok) {
+        this.reportFailure('unreadable-message')
+        return
+      }
+      message = decoded.message
     }
 
     if (!this.isMessageEnvelope(message)) {

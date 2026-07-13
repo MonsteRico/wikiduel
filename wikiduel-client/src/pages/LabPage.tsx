@@ -11,7 +11,7 @@ import type {
 import type {
   PreviewDiagnostics,
   PreviewOmissionBucket,
-} from '../../../wikiduel-server/src/playable-articles/preview.js'
+} from '@wikiduel/contracts'
 import { useWebSocket } from '../websocket/webSocketContext'
 
 type LabFailure = PlayableArticleFailure | Readonly<{
