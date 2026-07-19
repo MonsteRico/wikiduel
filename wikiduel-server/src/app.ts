@@ -3,14 +3,13 @@ import { randomInt } from "node:crypto";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { decodeClientMessage } from "@wikiduel/contracts";
+import { decodeClientMessage, type PreviewArticleRequest } from "@wikiduel/contracts";
 
 import type { PlayableArticleRepository } from "./playable-articles/repository.js";
 import {
   buildPreviewDiagnostics,
   previewArticleResult,
   previewError,
-  type PreviewArticleRequest,
 } from "./playable-articles/preview.js";
 
 export type BuildAppOptions = Readonly<{
