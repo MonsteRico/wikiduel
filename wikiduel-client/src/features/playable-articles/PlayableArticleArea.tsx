@@ -1,6 +1,6 @@
+import type { NavigationDestination, PlayableArticle } from '@wikiduel/contracts'
 import { Panel } from '../../components/ui/Panel'
 import { ArticleDocumentRenderer } from './ArticleDocumentRenderer'
-import type { NavigationDestination, PlayableArticle } from './types'
 
 type PlayableArticleAreaProps = Readonly<{
   article: PlayableArticle

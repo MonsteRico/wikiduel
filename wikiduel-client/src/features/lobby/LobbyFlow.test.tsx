@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from '../../App'
 import { ControllableWebSocket, sockets } from '../../test/ControllableWebSocket'
-import type { Lobby } from './types'
+import type { Lobby } from '@wikiduel/contracts'
 function hostLobby(clientId: string): Lobby {
   return {
     code: '7G8KZ',

@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PlayableArticleArea } from './PlayableArticleArea'
-import type { PlayableArticle } from './types'
+import type { PlayableArticle } from '@wikiduel/contracts'
+
 
 const article: PlayableArticle = {
   identity: { pageId: 42, title: 'Canonical title' },

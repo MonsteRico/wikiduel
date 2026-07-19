@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Infobox } from './Infobox'
-import type { ArticleInfobox } from './types'
+import type { ArticleInfobox } from '@wikiduel/contracts'
+
 
 afterEach(cleanup)
 

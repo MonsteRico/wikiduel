@@ -1,7 +1,7 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
-import { decodeServerMessage } from '@wikiduel/contracts'
+import { decodeServerMessage, type ClientMessage, type ServerMessage } from '@wikiduel/contracts'
 
-import type { ClientMessage, ServerMessage } from './messages'
+
 import { WebSocketContext } from './webSocketContext'
 import { WebSocketTransport } from './WebSocketTransport'
 

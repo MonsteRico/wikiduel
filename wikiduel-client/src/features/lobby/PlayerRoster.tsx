@@ -1,8 +1,8 @@
+import type { Lobby, LobbyMember } from '@wikiduel/contracts'
 import { Button } from '../../components/ui/Button'
 import { ArrowRightIcon } from '../../components/ui/Icons'
 import { PlayerAvatar } from '../../components/ui/PlayerAvatar'
 import { StatusIndicator } from '../../components/ui/StatusIndicator'
-import type { Lobby, LobbyMember } from './types'
 
 type PlayerRosterProps = {
   lobby: Lobby | null

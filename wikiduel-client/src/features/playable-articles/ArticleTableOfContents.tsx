@@ -1,4 +1,4 @@
-import type { ArticleTableOfContentsEntry } from './types'
+import type { ArticleTableOfContentsEntry } from "@wikiduel/contracts"
 
 type ArticleTableOfContentsProps = Readonly<{
   entries: readonly ArticleTableOfContentsEntry[]

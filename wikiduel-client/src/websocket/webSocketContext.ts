@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react'
 
-import type { ClientMessage, ServerMessage } from './messages'
+
 import type { WebSocketTransport } from './WebSocketTransport'
+import type { ClientMessage, ServerMessage } from '@wikiduel/contracts'
 
 export type ApplicationWebSocket = WebSocketTransport<ClientMessage, ServerMessage>
 

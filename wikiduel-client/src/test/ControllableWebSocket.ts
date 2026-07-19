@@ -1,4 +1,5 @@
-import type { ServerMessage } from '../websocket/messages'
+import type { ServerMessage } from "@wikiduel/contracts"
+
 
 type WithoutTimestamp<Message> = Message extends unknown ? Omit<Message, 'sentAt'> : never
 
