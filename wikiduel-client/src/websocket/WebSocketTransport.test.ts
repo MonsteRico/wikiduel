@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { decodeServerMessage, type ClientMessage, type ServerMessage } from '@wikiduel/contracts'
 
 import { WebSocketTransport, type WebSocketConnection } from './WebSocketTransport'
 
@@ -121,6 +122,35 @@ describe('WebSocketTransport', () => {
 
     expect(failures).toEqual(['unreadable-message'])
     expect(received).toEqual(['Still connected'])
+  })
+
+  it('rejects malformed server messages before dispatching later valid messages', () => {
+    const socket = new ControllableWebSocket()
+    const webSocket = new WebSocketTransport<ClientMessage, ServerMessage>(
+      'ws://example.test/ws',
+      () => socket,
+      decodeServerMessage,
+    )
+    const failures: string[] = []
+    const received: string[] = []
+    webSocket.subscribeFailure((failure) => failures.push(failure))
+    webSocket.subscribe('pong', (message) => received.push(message.message))
+    webSocket.connect()
+
+    socket.receive({
+      type: 'pong',
+      message: 'Unchecked',
+      sentAt: '2026-07-13T12:00:00Z',
+      unexpected: true,
+    })
+    socket.receive({
+      type: 'pong',
+      message: 'Validated',
+      sentAt: '2026-07-13T12:00:01Z',
+    })
+
+    expect(failures).toEqual(['unreadable-message'])
+    expect(received).toEqual(['Validated'])
   })
 
   it('reports a stable disconnected outcome when the connection fails', () => {

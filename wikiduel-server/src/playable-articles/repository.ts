@@ -4,20 +4,6 @@ import {
   type WikipediaImageMetadata,
   type WikipediaPageSnapshot,
 } from "./gateway.js";
-import type {
-  ArticleAttribution,
-  ArticleFigure,
-  ArticleNotPlayableReason,
-  NavigationDestination,
-  PlayableArticle,
-  PlayableArticleResult,
-} from "./model.js";
-import type {
-  PreviewBuildDetails,
-  PreviewDiagnostics,
-  PreviewOmissionDetail,
-  PreviewOmissionBucket,
-} from "./preview.js";
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 
 import {
@@ -28,7 +14,8 @@ import {
 } from "./normalizer.js";
 import type { NormalizationDiagnostics, NormalizationOmissionDetail } from "./normalizer.js";
 import { isValidWikipediaTitle } from "./title.js";
-
+import type { PlayableArticleResult, PreviewBuildDetails } from "./preview.js";
+import type { ArticleAttribution, ArticleFigure, ArticleNotPlayableReason, NavigationDestination, PlayableArticle, PreviewDiagnostics, PreviewOmissionBucket, PreviewOmissionDetail } from "@wikiduel/contracts";
 export interface PlayableArticleRepository {
   getByTitle(requestedTitle: string): Promise<PlayableArticleResult>;
   getByTitleWithDiagnostics?(requestedTitle: string): Promise<PlayableArticlePreviewLookup>;

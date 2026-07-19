@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ArticleDocumentRenderer } from './ArticleDocumentRenderer'
-import type { ArticleDocument } from './types'
+import type { ArticleDocument } from '@wikiduel/contracts'
 
 afterEach(cleanup)
 

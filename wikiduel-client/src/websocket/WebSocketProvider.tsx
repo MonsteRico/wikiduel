@@ -1,6 +1,7 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
+import { decodeServerMessage, type ClientMessage, type ServerMessage } from '@wikiduel/contracts'
 
-import type { ClientMessage, ServerMessage } from './messages'
+
 import { WebSocketContext } from './webSocketContext'
 import { WebSocketTransport } from './WebSocketTransport'
 
@@ -10,7 +11,11 @@ const websocketUrl =
 
 export function WebSocketProvider({ children }: PropsWithChildren) {
   const [webSocket] = useState(
-    () => new WebSocketTransport<ClientMessage, ServerMessage>(websocketUrl),
+    () => new WebSocketTransport<ClientMessage, ServerMessage>(
+      websocketUrl,
+      undefined,
+      decodeServerMessage,
+    ),
   )
 
   useEffect(() => {

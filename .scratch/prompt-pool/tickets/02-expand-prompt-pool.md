@@ -16,7 +16,7 @@ Expand the manually tested prompt pool from ten to between 25 and 50 enabled pro
 
 ## Blocked by
 
-- [`prompt-pool/01`](./01-curate-first-ten-prompts.md)
+- [`prompt-pool/01`](./01-author-the-initial-ten-prompts.md)
 - Feedback from the first small-group test.
 
 ## Out of scope

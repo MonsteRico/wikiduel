@@ -24,9 +24,21 @@ _Avoid_: Owner, admin
 Termination of a Duel caused by explicit departure, connection loss, or an exhausted optional reconnect window rather than HP loss. It disbands the Lobby without entering the normal post-Duel result flow.
 _Avoid_: Abandonment, technical loss, victory
 
+**Interruption**:
+Termination of a Duel because the system cannot continue it, such as an exhausted Round-preparation deadline or server restart. It disbands the Lobby without assigning a winner or entering the normal post-Duel result flow.
+_Avoid_: Forfeit, draw, technical loss
+
 **Round**:
 One race in a Duel where both players navigate from the same start article toward the same target article. A Target Arrival ends it immediately; the Time Limit can instead end it as a no-damage draw.
 _Avoid_: Race, level
+
+**Round Outcome**:
+The immutable authoritative record created when a Round ends. It captures the end reason, winner or draw, both frozen paths, click counts and active times, the Damage Rule breakdown, and resulting HP.
+_Avoid_: Round result, score
+
+**Post-Round**:
+The synchronized Duel phase in which both players inspect the Round Outcome and, after a non-final Round, indicate readiness for the next Round.
+_Avoid_: Results screen, intermission
 
 **Target Arrival**:
 A player's valid navigation to the round's target article.
@@ -57,9 +69,13 @@ A development-only surface for requesting, rendering, navigating, and manually i
 _Avoid_: Test page, article browser, debug page
 
 **Time Limit**:
-The fixed five-minute cap on every MVP Round. Reaching it produces a draw with no damage rather than selecting a winner by partial progress.
-_Avoid_: Soft cap, Lobby timer, configurable timer
+An MVP-optional fixed five-minute cap on an active Round. When enabled, reaching it creates a no-damage Round Outcome rather than selecting a winner by partial progress.
+_Avoid_: Soft cap, Lobby timer, per-player timer
+
+**Prompt**:
+An ordered pair of canonical Playable Articles defining the shared start and target for one Round. Reversing the pair creates a different Prompt; editorial curation determines whether a structurally valid Prompt is suitable for a playtest.
+_Avoid_: Challenge, matchup, route
 
 **Damage Rule**:
-A globally deployed policy that converts round results and relevant round context into HP loss for the losing player. All duels use the rule shipped in the running code until a future release replaces it.
+A globally deployed policy that converts a Round Outcome's relevant Round context into HP loss for the losing player. All Duels use the rule shipped in the running code until a future release replaces it.
 _Avoid_: Damage formula, scoring formula

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useWebSocket } from '../../websocket/webSocketContext'
 import type { ConnectionStatus } from '../../websocket/WebSocketTransport'
-import type { Lobby } from './types'
+import type { Lobby } from '@wikiduel/contracts'
 
 const clientId = crypto.randomUUID()
 

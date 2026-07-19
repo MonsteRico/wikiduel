@@ -2,14 +2,9 @@ import { createElement, type ReactNode } from 'react'
 
 import { Button } from '../../components/ui/Button'
 import { Infobox } from './Infobox'
-import type {
-  ArticleAttribution,
-  ArticleBlock,
-  ArticleDocument,
-  ArticleInline,
-  ArticleRevision,
-  NavigationDestination,
-} from './types'
+import type { ArticleAttribution, ArticleBlock, ArticleDocument, ArticleInline, NavigationDestination, PlayableArticle } from '@wikiduel/contracts'
+
+export type ArticleRevision = PlayableArticle["revision"];
 
 type ArticleDocumentRendererProps = Readonly<{
   document: ArticleDocument

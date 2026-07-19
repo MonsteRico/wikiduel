@@ -22,16 +22,18 @@ Planning stubs begin at `needs-triage`. Before assigning one to an implementatio
 - [`playable-articles/09`](../playable-articles/tickets/09-add-repository-caching-and-resilience.md) — bound, coalesce, and cache complete article retrieval
 - [`playable-articles/10`](../playable-articles/tickets/10-render-typed-article-documents.md) — render the production Article Document contract
 - [`playable-articles/11`](../playable-articles/tickets/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end article acceptance surface
-- [`prompt-pool/01`](../prompt-pool/tickets/01-curate-first-ten-prompts.md) — supply the first-test prompt pool
-- [`round-start/01`](../round-start/tickets/01-enter-the-first-round.md) — extend the implemented Lobby into a live Duel
-- [`round-start/02`](../round-start/tickets/02-synchronize-round-preparation.md) — prepare both clients and begin with a shared countdown
-- [`navigation/01`](../navigation/tickets/01-navigate-and-track-the-player-path.md) — enforce forward-only article Navigation
-- [`opponent-status/01`](../opponent-status/tickets/01-show-live-opponent-status.md) — show only HP, clicks, and connection state during a Round
-- [`round-time-limit/01`](../round-time-limit/tickets/01-enforce-the-round-time-limit.md) — end stuck Rounds as no-damage draws
-- [`damage/01`](../damage/tickets/01-apply-hp-and-damage.md) — turn Round efficiency into Duel progress
-- [`round-results/01`](../round-results/tickets/01-compare-paths-after-each-round.md) — deliver the core route-discussion moment
-- [`duel-rematch/01`](../duel-rematch/tickets/01-complete-and-rematch-a-duel.md) — finish the HP loop and start another Duel
-- [`forfeit-flow/01`](../forfeit-flow/tickets/01-leave-and-forfeit-a-duel.md) — confirm departure and disband cleanly
+- [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the Zod-validated client/server contract seam; recommended next task
+- [`duel-lifecycle/01`](../duel-lifecycle/tickets/01-establish-the-prompt-catalog.md) — provide the Prompt format, fixtures, selection, and Lobby history
+- [`duel-lifecycle/02`](../duel-lifecycle/tickets/02-enter-the-first-duel.md) — enter the minimal authoritative Duel core
+- [`duel-lifecycle/03`](../duel-lifecycle/tickets/03-prepare-and-start-every-round.md) — prepare and start first, later, and Rematch Rounds fairly
+- [`duel-lifecycle/04`](../duel-lifecycle/tickets/04-apply-the-damage-rule.md) — isolate and verify the locked Damage Rule
+- [`duel-lifecycle/05`](../duel-lifecycle/tickets/05-create-authoritative-round-outcomes.md) — freeze Rounds and apply authoritative damage
+- [`duel-lifecycle/06`](../duel-lifecycle/tickets/06-navigate-and-show-the-active-round.md) — deliver Navigation, Target Arrival, the HUD, and private projections
+- [`duel-lifecycle/07`](../duel-lifecycle/tickets/07-reveal-post-round-and-continue.md) — reveal routes and continue through later Rounds
+- [`duel-lifecycle/08`](../duel-lifecycle/tickets/08-complete-the-duel-and-show-post-duel.md) — complete normal Duels and show Post-Duel
+- [`duel-lifecycle/09`](../duel-lifecycle/tickets/09-rematch-or-return-to-the-lobby.md) — finish the repeat-play loop
+- [`duel-lifecycle/10`](../duel-lifecycle/tickets/10-confirm-leave-duel-and-forfeit.md) — confirm departure and terminate by Forfeit cleanly
+- [`prompt-pool/01`](../prompt-pool/tickets/01-author-the-initial-ten-prompts.md) — human-authored production Prompt seed required for manual play and deployment
 - [`browser-support/01`](../browser-support/tickets/01-verify-firefox.md) — support the primary test browser
 - [`deployment/01`](../deployment/tickets/01-deploy-the-first-test-build.md) — make the MVP reachable through Dokploy
 
@@ -47,13 +49,14 @@ Additional required implementation tickets can be added within the relevant feat
 - [`how-to-play/01`](../how-to-play/tickets/01-how-to-play-guide.md) — explain the Duel inside the product
 - [`player-display-names/01`](../player-display-names/tickets/01-player-display-names.md) — lightweight names without accounts
 - [`prompt-pool/02`](../prompt-pool/tickets/02-expand-prompt-pool.md) — broaden the larger-test pool to 25–50 prompts
-- [`post-duel-summary/01`](../post-duel-summary/tickets/01-enrich-the-post-duel-summary.md) — add best-path and fastest-arrival highlights
-- [`opponent-status/02`](../opponent-status/tickets/02-opponent-activity-pulse.md) — add a subtle non-strategic activity signal
-- [`forfeit-flow/02`](../forfeit-flow/tickets/02-show-a-forfeit-summary.md) — explain a forfeited Duel as a result
+- [`duel-lifecycle/11`](../duel-lifecycle/tickets/11-add-the-fixed-time-limit.md) — add an optional fixed five-minute Time Limit
+- [`duel-lifecycle/12`](../duel-lifecycle/tickets/12-show-opponent-activity.md) — add a subtle non-strategic activity signal
+- [`duel-lifecycle/14`](../duel-lifecycle/tickets/14-show-a-forfeit-summary.md) — explain a forfeited Duel without treating it as normal completion
+- [`duel-lifecycle/15`](../duel-lifecycle/tickets/15-enrich-the-post-duel-summary.md) — add best-path and fastest-arrival highlights
 - [`accessibility/01`](../accessibility/tickets/01-accessibility-fundamentals-pass.md) — harden interaction for a broader audience
 - [`browser-support/02`](../browser-support/tickets/02-verify-safari.md) — verify Safari behavior
 - [`test-automation/02`](../test-automation/tickets/02-expand-automated-test-coverage.md) — add broader end-to-end and accessibility checks
-- [`damage/02`](../damage/tickets/02-evaluate-and-tune-damage.md) — revisit balance after first-test evidence
+- [`duel-lifecycle/13`](../duel-lifecycle/tickets/13-evaluate-and-tune-the-damage-rule.md) — revisit balance after first-test evidence
 
 - [`playable-articles/02`](../playable-articles/tickets/02-render-infoboxes.md): preserve useful infobox media, facts, and Navigation Nodes
 
@@ -68,7 +71,8 @@ Additional required implementation tickets can be added within the relevant feat
 - [`playtest-data/03`](../playtest-data/tickets/03-automate-data-retention.md)
 - [`playtest-data/04`](../playtest-data/tickets/04-playtest-dashboard-and-admin-tools.md)
 - [`architecture-scaling/01`](../architecture-scaling/tickets/01-scale-and-evolve-the-architecture.md) — Future Epic for evidence-led stack and scaling work
-- [`round-time-limit/02`](../round-time-limit/tickets/02-configurable-round-time-limits.md)
+- [`duel-lifecycle/16`](../duel-lifecycle/tickets/16-add-configurable-time-limits.md)
+- [`prompt-pool/03`](../prompt-pool/tickets/03-generate-prompt-candidates.md)
 - [`match-history/01`](../match-history/tickets/01-match-history.md)
 - [`route-replay/01`](../route-replay/tickets/01-route-replay.md)
 - [`shareable-results/01`](../shareable-results/tickets/01-shareable-results.md)

@@ -223,6 +223,13 @@ test("Lobby commands reject malformed messages, missing Lobbies, and additional 
   unpairedSocket.send("not-json");
   await expect(malformedErrorPromise).resolves.toMatchObject({ message: "Invalid message" });
 
+  const malformedObjectErrorPromise = nextMessage<LobbyErrorMessage>(
+    unpairedSocket,
+    "lobby-error",
+  );
+  unpairedSocket.send(JSON.stringify({ type: "ping", unexpected: true }));
+  await expect(malformedObjectErrorPromise).resolves.toMatchObject({ message: "Invalid message" });
+
   const missingLobbyErrorPromise = nextMessage<LobbyErrorMessage>(unpairedSocket, "lobby-error");
   unpairedSocket.send(JSON.stringify({
     type: "join-lobby",

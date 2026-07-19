@@ -7,7 +7,7 @@ import { WebSocketProvider } from '../websocket/WebSocketProvider'
 import { ControllableWebSocket, sockets } from '../test/ControllableWebSocket'
 import { LabPage } from './LabPage'
 import { isPlayableArticleLabEnabled } from './labAvailability'
-import type { PlayableArticle } from '../features/playable-articles/types'
+import type { PlayableArticle } from '@wikiduel/contracts'
 
 const article: PlayableArticle = {
   identity: { pageId: 42, title: 'Canonical title' },

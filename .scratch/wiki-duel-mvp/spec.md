@@ -4,6 +4,7 @@ Status: Scope-refined
 Date: 2026-07-03
 Historical source design: [`MVP-old.md`](../../MVP-old.md)
 Visual direction: [`aiUIMockups.png`](../../aiUIMockups.png)
+Focused Duel plan: [Duel Lifecycle spec](../duel-lifecycle/spec.md)
 
 ## Product Objective
 
@@ -79,10 +80,11 @@ damage = clamp(damage, 15, 60)
 
 ### Time Limit
 
-- Every required-MVP Round has one fixed five-minute Time Limit. It is not a Lobby setting.
-- When the Time Limit expires before a Target Arrival, the Round is a draw, deals no damage, and freezes both paths.
+- Required-MVP Rounds have no Time Limit. The active Duel HUD shows elapsed stopwatch time derived from the authoritative Round start.
+- Repeated unfinished Rounds may continue indefinitely when both players keep choosing to continue; either player may use the confirmed Leave Duel flow.
+- A fixed five-minute Time Limit is MVP optional. When implemented, it replaces the stopwatch with remaining time and creates a no-damage draw if it expires before Target Arrival.
 - The official timer excludes pre-Round countdowns. The MVP-optional reconnect feature owns any later pause behavior.
-- Configurable durations and disabling the limit are Future work.
+- Configurable durations are Future work that depends on the fixed Time Limit and evidence that one duration is insufficient.
 
 ### Navigation
 
@@ -179,7 +181,8 @@ Use the mockup's general composition and visual language, corrected for this spe
 
 ### Duel
 
-- Current Round number, target, both HP values, your display-only click count/path, opponent click count/connection status, and Time Limit countdown
+- Current Round number, target, both HP values, your display-only click count/path, opponent click count/connection status, and active Round clock
+- The required clock shows elapsed stopwatch time; the MVP-optional fixed Time Limit replaces it with remaining time.
 - Never show the opponent's current article, live path, estimated distance, or a path-view action during a Round. These are intentionally hidden, not planned Future features.
 - A subtle opponent-Navigation pulse is MVP optional.
 - One-line rules reminder below the HUD
@@ -206,7 +209,7 @@ wikiduel-client   Vite + React + TypeScript + React Router + Tailwind CSS
 wikiduel-server   Node.js + TypeScript + Fastify + @fastify/websocket
 ```
 
-- Keep the existing two-package repository layout; npm workspaces are not required.
+- Keep the existing client and server application packages. Add only the neutral shared-contracts workspace required by [ADR 0003](../../docs/adr/0003-share-client-server-contracts-through-zod-schemas.md).
 - Keep the existing semantic Tailwind tokens and custom reusable UI primitives documented in the client design system.
 - Keep React context and local state until demonstrated complexity justifies another client-state library.
 - Use the existing native WebSocket protocol; Socket.IO is not an MVP migration target.
@@ -218,7 +221,7 @@ wikiduel-server   Node.js + TypeScript + Fastify + @fastify/websocket
 
 - Keep lobby and Duel transitions in a transport-independent server core.
 - Fastify WebSocket handlers receive commands, obtain external article data, invoke authoritative transitions, and project player-specific updates.
-- WebSocket messages have explicit TypeScript contracts on both sides. A shared contracts package is not required for MVP.
+- Serialized Playable Article and realtime messages use the neutral shared-contracts module. Private strict Zod 4 schemas infer exported types and stable direction-specific decoders; runtime shape validation remains separate from server state and authorization rules.
 - Realtime commands own Lobby creation/join, readiness, start, Navigation, round readiness, rematch, and live updates; do not add duplicate HTTP mutation paths without a concrete need.
 - A full reconnect snapshot belongs to the separately tracked MVP-optional reconnect feature.
 
@@ -281,7 +284,7 @@ Round records include prompt, winner/draw, paths, clicks, active duration, pause
 
 ## Test Strategy
 
-- Add focused tests for risky authoritative rules: core transitions, Damage Rule boundaries, timeout draws, serialized Navigation, readiness, forfeits, and prompt selection.
+- Add focused tests for risky authoritative rules: core transitions, Damage Rule boundaries, serialized Navigation, readiness, forfeits, preparation Interruption, and Prompt selection. Timeout-draw coverage lands with the MVP-optional Time Limit.
 - Integration-test Fastify WebSocket behavior, player-specific projections, in-memory cache behavior, and sanitization using the existing server test tooling. Persistence and migration tests land with optional durable storage.
 - Broader two-browser end-to-end and automated accessibility coverage is MVP optional before a larger-group test. Required slices may still add narrow regression tests for risky authoritative rules.
 - Live Wikipedia smoke tests are separate, minimal, and never required for deterministic CI.
@@ -300,21 +303,23 @@ The current private Lobby is the implemented baseline. Remaining work is split i
 8. [`playable-articles/09`](../playable-articles/tickets/09-add-repository-caching-and-resilience.md) — make article retrieval bounded, coalesced, and process-cached.
 9. [`playable-articles/10`](../playable-articles/tickets/10-render-typed-article-documents.md) — render typed Article Documents through production React components.
 10. [`playable-articles/11`](../playable-articles/tickets/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end acceptance surface.
-11. [`prompt-pool/01`](../prompt-pool/tickets/01-curate-first-ten-prompts.md) — provide first-test content.
-12. [`round-start/01`](../round-start/tickets/01-enter-the-first-round.md) — cross the existing `game-started` seam into gameplay.
-13. [`round-start/02`](../round-start/tickets/02-synchronize-round-preparation.md) — give both players a fair shared start.
-14. [`navigation/01`](../navigation/tickets/01-navigate-and-track-the-player-path.md) — complete the authoritative racing interaction.
-15. [`opponent-status/01`](../opponent-status/tickets/01-show-live-opponent-status.md) — add only the permitted live tension signals.
-16. [`round-time-limit/01`](../round-time-limit/tickets/01-enforce-the-round-time-limit.md) — guarantee a Round terminal condition.
-17. [`damage/01`](../damage/tickets/01-apply-hp-and-damage.md) — connect Round performance to the Duel.
-18. [`round-results/01`](../round-results/tickets/01-compare-paths-after-each-round.md) — deliver the core route reveal.
-19. [`duel-rematch/01`](../duel-rematch/tickets/01-complete-and-rematch-a-duel.md) — complete the hypothesis-testing loop.
-20. [`forfeit-flow/01`](../forfeit-flow/tickets/01-leave-and-forfeit-a-duel.md) — make all required exits terminal and clear.
-21. [`browser-support/01`](../browser-support/tickets/01-verify-firefox.md) — verify the primary test browser.
-22. [`deployment/01`](../deployment/tickets/01-deploy-the-first-test-build.md) — make the build available to testers.
+11. [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the Zod-validated client/server contract seam; this is the next task.
+12. [`duel-lifecycle/01`](../duel-lifecycle/tickets/01-establish-the-prompt-catalog.md) — establish the Prompt format, validation, fixtures, selection, and Lobby history.
+13. [`duel-lifecycle/02`](../duel-lifecycle/tickets/02-enter-the-first-duel.md) — cross the implemented Lobby seam into the minimal authoritative Duel core.
+14. [`duel-lifecycle/03`](../duel-lifecycle/tickets/03-prepare-and-start-every-round.md) — reuse fair preparation, acknowledgement, countdown, and stopwatch behavior.
+15. [`duel-lifecycle/04`](../duel-lifecycle/tickets/04-apply-the-damage-rule.md) — isolate and verify the locked Damage Rule.
+16. [`duel-lifecycle/05`](../duel-lifecycle/tickets/05-create-authoritative-round-outcomes.md) — freeze a Round and apply damage through one transition.
+17. [`duel-lifecycle/06`](../duel-lifecycle/tickets/06-navigate-and-show-the-active-round.md) — deliver Navigation, Target Arrival, active HUD, and private projections.
+18. [`duel-lifecycle/07`](../duel-lifecycle/tickets/07-reveal-post-round-and-continue.md) — reveal routes and loop through later Rounds.
+19. [`duel-lifecycle/08`](../duel-lifecycle/tickets/08-complete-the-duel-and-show-post-duel.md) — preserve the final comparison and show normal completion.
+20. [`duel-lifecycle/09`](../duel-lifecycle/tickets/09-rematch-or-return-to-the-lobby.md) — complete the repeat-play loop.
+21. [`duel-lifecycle/10`](../duel-lifecycle/tickets/10-confirm-leave-duel-and-forfeit.md) — complete explicit departure and terminal Forfeit UX.
+22. [`prompt-pool/01`](../prompt-pool/tickets/01-author-the-initial-ten-prompts.md) — human-authored production Prompt seed; blocks manual play and deployment, not agent implementation.
+23. [`browser-support/01`](../browser-support/tickets/01-verify-firefox.md) — verify the primary test browser.
+24. [`deployment/01`](../deployment/tickets/01-deploy-the-first-test-build.md) — make the build available to testers.
 
 Some tickets can overlap after their blockers land; dependency fields in the ticket files are authoritative. MVP-optional and Future work are indexed separately in [`BACKLOG.md`](./BACKLOG.md).
 
 ## MVP Completion Criteria
 
-The MVP is ready for its first small-group test when two remote desktop Firefox/Chromium browsers can access the Dokploy deployment, create/join a private Lobby, complete and rematch a full HP Duel over ten curated live English-Wikipedia prompts, compare paths, and produce useful structured diagnostic logs. Durable analytics, feedback collection, a short reconnect window, and a larger prompt pool improve a later larger-group test but do not block this milestone.
+The MVP is ready for its first small-group test when two remote desktop Firefox/Chromium browsers can access the Dokploy deployment, create/join a private Lobby, complete and rematch a full HP Duel over ten maintainer-authored live English-Wikipedia Prompts, compare paths, and produce useful structured diagnostic logs. A Time Limit, durable analytics, feedback collection, a short reconnect window, and a larger Prompt pool improve a later larger-group test but do not block this milestone.

@@ -1,13 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 
 import { Button } from '../../components/ui/Button'
-import type {
-  ArticleBlock,
-  ArticleFigure,
-  ArticleInfobox as ArticleInfoboxBlock,
-  ArticleInline,
-  NavigationDestination,
-} from './types'
+import type { ArticleInline, NavigationDestination, ArticleInfobox as ArticleInfoboxBlock, ArticleFigure, ArticleBlock } from '@wikiduel/contracts'
 
 type InfoboxProps = Readonly<{
   block: ArticleInfoboxBlock

@@ -3,15 +3,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AppShell } from '../components/ui/AppShell'
 import { ArticleTableOfContents } from '../features/playable-articles/ArticleTableOfContents'
 import { PlayableArticleArea } from '../features/playable-articles/PlayableArticleArea'
+
 import type {
   NavigationDestination,
   PlayableArticle,
   PlayableArticleFailure,
-} from '../features/playable-articles/types'
-import type {
   PreviewDiagnostics,
   PreviewOmissionBucket,
-} from '../../../wikiduel-server/src/playable-articles/preview.js'
+} from '@wikiduel/contracts'
 import { useWebSocket } from '../websocket/webSocketContext'
 
 type LabFailure = PlayableArticleFailure | Readonly<{

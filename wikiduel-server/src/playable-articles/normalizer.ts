@@ -1,18 +1,8 @@
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
 
-import type {
-  ArticleBlock,
-  ArticleDocument,
-  ArticleFigure,
-  ArticleInline,
-  ArticleInfobox,
-  ArticleInfoboxItem,
-  ArticleInfoboxSection,
-  ArticleList,
-  ArticleTableOfContentsEntry,
-  NavigationDestination,
-} from "./model.js";
+
 import { isValidWikipediaTitle } from "./title.js";
+import type { ArticleBlock, ArticleDocument, ArticleFigure, ArticleInfobox, ArticleInfoboxItem, ArticleInfoboxSection, ArticleInline, ArticleList, ArticleTableOfContentsEntry, NavigationDestination } from "@wikiduel/contracts";
 
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];

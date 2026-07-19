@@ -1,16 +1,9 @@
 import type { RawData, WebSocket } from "ws";
 import { expect, test } from "vitest";
-
-import type {
-  PlayableArticle,
-  PlayableArticleFailure,
-  PlayableArticleRepository,
-} from "./playable-articles/index.js";
 import { buildApp } from "./app.js";
-import type {
-  PreviewArticleResultMessage,
-  PreviewErrorMessage,
-} from "./playable-articles/preview.js";
+import type { PlayableArticle, PlayableArticleFailure, PreviewArticleResultMessage, PreviewErrorMessage } from "@wikiduel/contracts";
+import type { PlayableArticleRepository } from "./playable-articles/repository.js";
+
 
 const article: PlayableArticle = {
   identity: { pageId: 42, title: "Canonical title" },
