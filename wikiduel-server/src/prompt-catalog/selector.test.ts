@@ -1,34 +1,78 @@
 import { describe, expect, test } from "vitest";
 
 import { deterministicPromptCatalog } from "./fixtures.js";
-import { createLobbyPromptSelector } from "./selector.js";
+import {
+  EMPTY_LOBBY_PROMPT_HISTORY,
+  selectLobbyPrompt,
+  type LobbyPromptHistory,
+} from "./selector.js";
 
-describe("LobbyPromptSelector", () => {
-  test("exhausts enabled Prompts across Rounds and Rematches before reshuffling", () => {
-    const randomValues = [0.999, 0.999, 0, 0];
-    const selector = createLobbyPromptSelector(deterministicPromptCatalog, {
-      random: () => randomValues.shift() ?? 0.999,
+describe("selectLobbyPrompt", () => {
+  test("advances explicit Lobby history and excludes disabled Prompts", () => {
+    expect(EMPTY_LOBBY_PROMPT_HISTORY).toEqual({ usedPromptIds: [] });
+
+    const selection = selectLobbyPrompt(
+      deterministicPromptCatalog,
+      EMPTY_LOBBY_PROMPT_HISTORY,
+      { random: () => 0.999 },
+    );
+
+    expect(selection).toMatchObject({
+      prompt: { id: "fixture-third", enabled: true },
+      history: { usedPromptIds: ["fixture-third"] },
+      reshuffled: false,
     });
-
-    expect([
-      selector.selectNext().id,
-      selector.selectNext().id,
-      selector.selectNext().id,
-      selector.selectNext().id,
-    ]).toEqual(["fixture-first", "fixture-second", "fixture-third", "fixture-second"]);
   });
 
-  test("gives each new Lobby the full enabled catalog", () => {
-    const firstLobby = createLobbyPromptSelector(deterministicPromptCatalog, {
-      random: () => 0.999,
-    });
-    firstLobby.selectNext();
-    firstLobby.selectNext();
+  test("exhausts enabled Prompts before a new cycle resets history", () => {
+    let history: LobbyPromptHistory = EMPTY_LOBBY_PROMPT_HISTORY;
 
-    const newLobby = createLobbyPromptSelector(deterministicPromptCatalog, {
-      random: () => 0.999,
-    });
+    const first = selectLobbyPrompt(deterministicPromptCatalog, history, { random: () => 0 });
+    history = first.history;
+    const second = selectLobbyPrompt(deterministicPromptCatalog, history, { random: () => 0 });
+    history = second.history;
+    const third = selectLobbyPrompt(deterministicPromptCatalog, history, { random: () => 0 });
+    history = third.history;
+    const nextCycle = selectLobbyPrompt(deterministicPromptCatalog, history, { random: () => 0 });
 
-    expect(newLobby.selectNext().id).toBe("fixture-first");
+    expect([first.prompt.id, second.prompt.id, third.prompt.id]).toEqual([
+      "fixture-first",
+      "fixture-second",
+      "fixture-third",
+    ]);
+    expect(third.history.usedPromptIds).toEqual([
+      "fixture-first",
+      "fixture-second",
+      "fixture-third",
+    ]);
+    expect(nextCycle).toMatchObject({
+      prompt: { id: "fixture-first" },
+      history: { usedPromptIds: ["fixture-first"] },
+      reshuffled: true,
+    });
+  });
+
+  test("normalizes unknown, duplicated, and no-longer-enabled history IDs", () => {
+    const selection = selectLobbyPrompt(
+      deterministicPromptCatalog,
+      {
+        usedPromptIds: [
+          "unknown",
+          "fixture-first",
+          "fixture-first",
+          "fixture-disabled",
+          "fixture-second",
+        ],
+      },
+      { random: () => 0 },
+    );
+
+    expect(selection).toMatchObject({
+      prompt: { id: "fixture-third" },
+      history: {
+        usedPromptIds: ["fixture-first", "fixture-second", "fixture-third"],
+      },
+      reshuffled: false,
+    });
   });
 });

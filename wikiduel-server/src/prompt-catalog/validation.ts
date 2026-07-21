@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
 import {
   loadPromptCatalog,
   type PromptCatalogLoadResult,
+  type PromptEndpointResolver,
 } from "./catalog.js";
 
 function displayPath(path: string | URL): string {
@@ -13,7 +13,7 @@ function displayPath(path: string | URL): string {
 
 export async function validatePromptCatalogFile(
   path: string | URL,
-  articles: Pick<PlayableArticleRepository, "getByTitle">,
+  resolver: PromptEndpointResolver,
 ): Promise<PromptCatalogLoadResult> {
   let source: string;
   try {
@@ -45,5 +45,5 @@ export async function validatePromptCatalogFile(
     };
   }
 
-  return loadPromptCatalog(input, articles);
+  return loadPromptCatalog(input, resolver);
 }

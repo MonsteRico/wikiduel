@@ -1,32 +1,18 @@
-import type { PlayableArticle } from "@wikiduel/contracts";
 import { describe, expect, test } from "vitest";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
-import { loadPromptCatalog } from "./catalog.js";
+import {
+  loadPromptCatalog,
+  type PromptEndpointResolver,
+} from "./catalog.js";
 
-function playableArticle(pageId: number, title: string): PlayableArticle {
-  return {
-    identity: { pageId, title },
-    revision: { id: 1, timestamp: "2026-07-20T12:00:00Z" },
-    attribution: {
-      sourceUrl: `https://en.wikipedia.org/wiki/${title}`,
-      historyUrl: `https://en.wikipedia.org/w/index.php?title=${title}&action=history`,
-      licenseName: "Creative Commons Attribution-ShareAlike 4.0 International",
-      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
-      modificationNotice: "Wiki Duel simplified and modified this Wikipedia article.",
-    },
-    document: { title, tableOfContents: [], blocks: [] },
-  };
-}
-
-function repositoryWith(
+function resolverWith(
   identities: Readonly<Record<string, Readonly<{ pageId: number; title: string }>>>,
-): PlayableArticleRepository {
+): PromptEndpointResolver {
   return {
     getByTitle: async (requestedTitle) => {
       const identity = identities[requestedTitle];
       return identity
-        ? { ok: true, article: playableArticle(identity.pageId, identity.title) }
+        ? { ok: true, article: { identity } }
         : { ok: false, failure: { code: "article-not-found" } };
     },
   };
@@ -47,7 +33,7 @@ describe("loadPromptCatalog", () => {
           },
         ],
       },
-      repositoryWith({
+      resolverWith({
         "Analytical Engine": { pageId: 1210, title: "Analytical engine" },
         "Computer science": { pageId: 5323, title: "Computer science" },
       }),
@@ -85,7 +71,7 @@ describe("loadPromptCatalog", () => {
           null,
         ],
       },
-      repositoryWith({}),
+      resolverWith({}),
     );
 
     expect(result.ok).toBe(false);
@@ -104,7 +90,7 @@ describe("loadPromptCatalog", () => {
 
   test("rejects duplicate stable Prompt IDs before endpoint lookup", async () => {
     let lookupCount = 0;
-    const repository: PlayableArticleRepository = {
+    const resolver: PromptEndpointResolver = {
       getByTitle: async () => {
         lookupCount += 1;
         return { ok: false, failure: { code: "article-not-found" } };
@@ -119,7 +105,7 @@ describe("loadPromptCatalog", () => {
           { id: "same-id", start: "Three", target: "Four", enabled: false },
         ],
       },
-      repository,
+      resolver,
     );
 
     expect(result).toMatchObject({
@@ -134,7 +120,7 @@ describe("loadPromptCatalog", () => {
   });
 
   test("reports each endpoint that does not resolve to a Playable Article", async () => {
-    const repository: PlayableArticleRepository = {
+    const resolver: PromptEndpointResolver = {
       getByTitle: async (requestedTitle) => requestedTitle === "Missing"
         ? { ok: false, failure: { code: "article-not-found" } }
         : {
@@ -150,7 +136,7 @@ describe("loadPromptCatalog", () => {
           { id: "bad-endpoints", start: "Missing", target: "Ambiguous", enabled: true },
         ],
       },
-      repository,
+      resolver,
     );
 
     expect(result.ok).toBe(false);
@@ -183,7 +169,7 @@ describe("loadPromptCatalog", () => {
           },
         ],
       },
-      repositoryWith({
+      resolverWith({
         USA: { pageId: 3434750, title: "United States" },
         "United States of America": { pageId: 3434750, title: "United States" },
       }),
@@ -209,7 +195,7 @@ describe("loadPromptCatalog", () => {
           { id: "reverse", start: "B", target: "A", enabled: true },
         ],
       },
-      repositoryWith({
+      resolverWith({
         A: { pageId: 1, title: "Article A" },
         "Alias A": { pageId: 1, title: "Article A" },
         B: { pageId: 2, title: "Article B" },
@@ -235,7 +221,7 @@ describe("loadPromptCatalog", () => {
           { id: "disabled", start: "A", target: "B", enabled: false },
         ],
       },
-      repositoryWith({
+      resolverWith({
         A: { pageId: 1, title: "Article A" },
         B: { pageId: 2, title: "Article B" },
       }),

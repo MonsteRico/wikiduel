@@ -1,13 +1,13 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
 import { createLivePlayableArticleRepository } from "../playable-articles/index.js";
+import type { PromptEndpointResolver } from "./catalog.js";
 import { validatePromptCatalogFile } from "./validation.js";
 
 export type PromptCatalogValidationCommandOptions = Readonly<{
   seedPath: string | URL;
-  articles: Pick<PlayableArticleRepository, "getByTitle">;
+  resolver: PromptEndpointResolver;
   writeOutput: (line: string) => void;
   writeError: (line: string) => void;
 }>;
@@ -15,7 +15,7 @@ export type PromptCatalogValidationCommandOptions = Readonly<{
 export async function runPromptCatalogValidation(
   options: PromptCatalogValidationCommandOptions,
 ): Promise<0 | 1> {
-  const result = await validatePromptCatalogFile(options.seedPath, options.articles);
+  const result = await validatePromptCatalogFile(options.seedPath, options.resolver);
   if (!result.ok) {
     result.diagnostics.forEach((item) => {
       options.writeError(`${item.code} at ${item.path}: ${item.message}`);
@@ -42,11 +42,11 @@ if (isMain) {
     process.exitCode = 2;
   } else {
     try {
-      const articles = createLivePlayableArticleRepository(process.env);
+      const resolver: PromptEndpointResolver = createLivePlayableArticleRepository(process.env);
       const resolvedSeedPath = resolve(process.env.INIT_CWD ?? process.cwd(), seedPath);
       process.exitCode = await runPromptCatalogValidation({
         seedPath: resolvedSeedPath,
-        articles,
+        resolver,
         writeOutput: (line) => process.stdout.write(`${line}\n`),
         writeError: (line) => process.stderr.write(`${line}\n`),
       });

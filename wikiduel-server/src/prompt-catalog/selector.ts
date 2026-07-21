@@ -1,49 +1,55 @@
 import type { Prompt, PromptCatalog } from "./catalog.js";
 
-export type LobbyPromptSelector = Readonly<{
-  selectNext(): Prompt;
+export type LobbyPromptHistory = Readonly<{
+  usedPromptIds: readonly string[];
 }>;
 
-export type LobbyPromptSelectorOptions = Readonly<{
+export type PromptSelection = Readonly<{
+  prompt: Prompt;
+  history: LobbyPromptHistory;
+  reshuffled: boolean;
+}>;
+
+export type PromptSelectionOptions = Readonly<{
   random?: () => number;
 }>;
 
-function shuffled(
-  prompts: readonly Prompt[],
-  random: () => number,
-): Prompt[] {
-  const result = [...prompts];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    const current = result[index];
-    const swap = result[swapIndex];
-    if (current === undefined || swap === undefined) continue;
-    result[index] = swap;
-    result[swapIndex] = current;
-  }
-  return result;
-}
+export const EMPTY_LOBBY_PROMPT_HISTORY: LobbyPromptHistory = Object.freeze({
+  usedPromptIds: Object.freeze([]),
+});
 
-export function createLobbyPromptSelector(
+export function selectLobbyPrompt(
   catalog: PromptCatalog,
-  options: LobbyPromptSelectorOptions = {},
-): LobbyPromptSelector {
+  history: LobbyPromptHistory,
+  options: PromptSelectionOptions = {},
+): PromptSelection {
   const enabledPrompts = catalog.prompts.filter((prompt) => prompt.enabled);
   if (enabledPrompts.length === 0) {
-    throw new Error("Cannot create a Lobby Prompt selector without an enabled Prompt.");
+    throw new Error("Cannot select a Lobby Prompt without an enabled Prompt.");
   }
 
-  const random = options.random ?? Math.random;
-  let available: Prompt[] = [];
-
-  return Object.freeze({
-    selectNext(): Prompt {
-      if (available.length === 0) available = shuffled(enabledPrompts, random);
-      const prompt = available.shift();
-      if (prompt === undefined) {
-        throw new Error("Enabled Prompt shuffle unexpectedly produced no Prompt.");
-      }
-      return prompt;
-    },
+  const enabledIds = new Set(enabledPrompts.map((prompt) => prompt.id));
+  const seenIds = new Set<string>();
+  const normalizedUsedPromptIds = history.usedPromptIds.filter((id) => {
+    if (!enabledIds.has(id) || seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
   });
+  const unusedPrompts = enabledPrompts.filter((prompt) => !seenIds.has(prompt.id));
+  const reshuffled = unusedPrompts.length === 0 && normalizedUsedPromptIds.length > 0;
+  const availablePrompts = reshuffled ? enabledPrompts : unusedPrompts;
+  const random = options.random ?? Math.random;
+  const selectedIndex = Math.floor(random() * availablePrompts.length);
+  const prompt = availablePrompts[selectedIndex];
+  if (prompt === undefined) {
+    throw new Error("Prompt randomness must return a value from 0 (inclusive) to 1 (exclusive).");
+  }
+
+  const usedPromptIds = Object.freeze(
+    reshuffled
+      ? [prompt.id]
+      : [...normalizedUsedPromptIds, prompt.id],
+  );
+  const updatedHistory = Object.freeze({ usedPromptIds });
+  return Object.freeze({ prompt, history: updatedHistory, reshuffled });
 }

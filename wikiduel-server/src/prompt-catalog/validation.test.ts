@@ -1,20 +1,20 @@
-import type { PlayableArticle } from "@wikiduel/contracts";
+import type { NavigationDestination } from "@wikiduel/contracts";
 import { describe, expect, test } from "vitest";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
+import type { PromptEndpointResolver } from "./catalog.js";
 import { validatePromptCatalogFile } from "./validation.js";
 
-const identities: Readonly<Record<string, PlayableArticle["identity"]>> = {
+const identities: Readonly<Record<string, NavigationDestination>> = {
   "Fixture Start": { pageId: 201, title: "Canonical Fixture Start" },
   "Fixture Target": { pageId: 202, title: "Canonical Fixture Target" },
 };
 
-const repository: PlayableArticleRepository = {
+const resolver: PromptEndpointResolver = {
   getByTitle: async (requestedTitle) => {
     const identity = identities[requestedTitle];
     return identity === undefined
       ? { ok: false, failure: { code: "article-not-found" } }
-      : { ok: true, article: { identity } as PlayableArticle };
+      : { ok: true, article: { identity } };
   },
 };
 
@@ -22,7 +22,7 @@ describe("validatePromptCatalogFile", () => {
   test("loads and validates a seed file through the Prompt Catalog seam", async () => {
     const result = await validatePromptCatalogFile(
       new URL("./test-data/valid-seed.json", import.meta.url),
-      repository,
+      resolver,
     );
 
     expect(result).toMatchObject({
@@ -40,7 +40,7 @@ describe("validatePromptCatalogFile", () => {
   test("reports invalid JSON without attempting endpoint validation", async () => {
     const result = await validatePromptCatalogFile(
       new URL("./test-data/invalid-json.json", import.meta.url),
-      repository,
+      resolver,
     );
 
     expect(result).toMatchObject({

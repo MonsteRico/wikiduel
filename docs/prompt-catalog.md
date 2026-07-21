@@ -70,9 +70,16 @@ editorial suitability. Those remain explicit maintainer responsibilities.
 
 ## Server integration
 
-Import `loadPromptCatalog`, `createLobbyPromptSelector`, and their types from
-`wikiduel-server/src/prompt-catalog/index.ts`. Create one selector per Lobby and
-retain it across all Rounds and Rematch Duels. The selector uses every enabled
-Prompt once before reshuffling. Creating a new selector gives a new Lobby the
-full enabled catalog. Tests can inject a `random` function to make the order
-deterministic.
+Import `loadPromptCatalog`, `selectLobbyPrompt`, and their types from
+`wikiduel-server/src/prompt-catalog/index.ts`. The loader accepts the catalog's
+small `PromptEndpointResolver`; the live `PlayableArticleRepository` satisfies
+that interface structurally without exposing Wikipedia adapter details.
+
+Authoritative Lobby state owns a `LobbyPromptHistory`. A new Lobby begins with
+`EMPTY_LOBBY_PROMPT_HISTORY`. Pass that history to `selectLobbyPrompt`, then
+store the returned `PromptSelection.history` for the next Round or Rematch
+Duel. `PromptSelection.reshuffled` is true when the prior enabled catalog was
+exhausted and the returned Prompt began a new cycle. Supplied history is safely
+normalized against the current enabled catalog, so stale, disabled, or repeated
+IDs do not block selection. Tests can inject a `random` function to make each
+selection deterministic.

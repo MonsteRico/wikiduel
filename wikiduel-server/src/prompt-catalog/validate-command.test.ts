@@ -1,17 +1,16 @@
-import type { PlayableArticle } from "@wikiduel/contracts";
 import { describe, expect, test } from "vitest";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
+import type { PromptEndpointResolver } from "./catalog.js";
 import { runPromptCatalogValidation } from "./validate-command.js";
 
-const repository: PlayableArticleRepository = {
+const resolver: PromptEndpointResolver = {
   getByTitle: async (requestedTitle) => ({
     ok: true,
     article: {
       identity: requestedTitle === "Fixture Start"
         ? { pageId: 201, title: "Canonical Fixture Start" }
         : { pageId: 202, title: "Canonical Fixture Target" },
-    } as PlayableArticle,
+    },
   }),
 };
 
@@ -22,13 +21,13 @@ describe("runPromptCatalogValidation", () => {
 
     const success = await runPromptCatalogValidation({
       seedPath: new URL("./test-data/valid-seed.json", import.meta.url),
-      articles: repository,
+      resolver,
       writeOutput: (line) => standardOutput.push(line),
       writeError: (line) => errorOutput.push(line),
     });
     const failure = await runPromptCatalogValidation({
       seedPath: new URL("./test-data/invalid-json.json", import.meta.url),
-      articles: repository,
+      resolver,
       writeOutput: (line) => standardOutput.push(line),
       writeError: (line) => errorOutput.push(line),
     });

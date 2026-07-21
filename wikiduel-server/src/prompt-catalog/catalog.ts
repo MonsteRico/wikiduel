@@ -3,9 +3,18 @@ import type {
   PlayableArticleFailure,
 } from "@wikiduel/contracts";
 
-import type { PlayableArticleRepository } from "../playable-articles/repository.js";
-
 export type PromptMetadata = Readonly<Record<string, string>>;
+
+export type PromptEndpointResolution =
+  | Readonly<{
+      ok: true;
+      article: Readonly<{ identity: NavigationDestination }>;
+    }>
+  | Readonly<{ ok: false; failure: PlayableArticleFailure }>;
+
+export interface PromptEndpointResolver {
+  getByTitle(requestedTitle: string): Promise<PromptEndpointResolution>;
+}
 
 export type Prompt = Readonly<{
   id: string;
@@ -19,8 +28,22 @@ export type PromptCatalog = Readonly<{
   prompts: readonly Prompt[];
 }>;
 
+export type PromptCatalogDiagnosticCode =
+  | "invalid-document"
+  | "unsupported-version"
+  | "unknown-field"
+  | "invalid-field"
+  | "invalid-record"
+  | "duplicate-id"
+  | "endpoint-not-playable"
+  | "identical-endpoints"
+  | "duplicate-ordered-pair"
+  | "no-enabled-prompts"
+  | "seed-file-unreadable"
+  | "invalid-json";
+
 export type PromptCatalogDiagnostic = Readonly<{
-  code: string;
+  code: PromptCatalogDiagnosticCode;
   path: string;
   message: string;
 }>;
@@ -50,7 +73,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function diagnostic(
-  code: string,
+  code: PromptCatalogDiagnosticCode,
   path: string,
   message: string,
 ): PromptCatalogDiagnostic {
@@ -203,15 +226,15 @@ function parseSeed(input: unknown):
 
 export async function loadPromptCatalog(
   input: unknown,
-  articles: Pick<PlayableArticleRepository, "getByTitle">,
+  resolver: PromptEndpointResolver,
 ): Promise<PromptCatalogLoadResult> {
   const parsed = parseSeed(input);
   if (!parsed.ok) return parsed;
   const { seed } = parsed;
   const resolutions = await Promise.all(seed.prompts.map(async (record, index) => {
     const [startResult, targetResult] = await Promise.all([
-      articles.getByTitle(record.start),
-      articles.getByTitle(record.target),
+      resolver.getByTitle(record.start),
+      resolver.getByTitle(record.target),
     ]);
 
     const diagnostics: PromptCatalogDiagnostic[] = [];
