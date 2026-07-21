@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces",
     "check": "npm run typecheck && npm run lint",
     "lint": "npm run lint --workspaces",
+    "prompts:validate": "npm run prompts:validate --workspace=wikiduel-server --",
     "test": "vitest run --reporter=verbose",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
