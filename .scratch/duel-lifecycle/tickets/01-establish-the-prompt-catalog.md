@@ -1,8 +1,9 @@
 # Establish the Prompt Catalog
 
-Status: ready-for-agent
+Status: completed
 Scope: MVP required
 Category: enhancement
+Completed: 2026-07-20 08:16 PM
 
 ## Parent
 
@@ -14,14 +15,14 @@ Provide the server-side Prompt Catalog needed to run Duels without coupling impl
 
 ## Acceptance criteria
 
-- [ ] The Prompt format includes stable ID, canonical start and target identity, enabled state, and optional maintainer metadata without requiring route, par, or difficulty data.
-- [ ] Loading rejects malformed records, duplicate IDs, duplicate ordered pairs, identical or canonically collapsed endpoints, and an unusable enabled catalog with clear diagnostics.
-- [ ] Endpoint validation uses the Playable Article interface without leaking Wikipedia adapter details into the Prompt Catalog.
-- [ ] Tests and later Duel work can inject deterministic Prompts without loading the production seed.
-- [ ] Selection returns one enabled Prompt unused by the Lobby when one exists.
-- [ ] A Lobby retains used-Prompt history across Rounds and Rematch Duels, exhausts the enabled catalog before repeating, then reshuffles.
-- [ ] A new Lobby begins with the full enabled catalog available.
-- [ ] The maintainer-facing seed format and validation command are documented sufficiently to complete `prompt-pool/01`.
+- [x] The Prompt format includes stable ID, canonical start and target identity, enabled state, and optional maintainer metadata without requiring route, par, or difficulty data.
+- [x] Loading rejects malformed records, duplicate IDs, duplicate ordered pairs, identical or canonically collapsed endpoints, and an unusable enabled catalog with clear diagnostics.
+- [x] Endpoint validation uses the Playable Article interface without leaking Wikipedia adapter details into the Prompt Catalog.
+- [x] Tests and later Duel work can inject deterministic Prompts without loading the production seed.
+- [x] Selection returns one enabled Prompt unused by the Lobby when one exists.
+- [x] A Lobby retains used-Prompt history across Rounds and Rematch Duels, exhausts the enabled catalog before repeating, then reshuffles.
+- [x] A new Lobby begins with the full enabled catalog available.
+- [x] The maintainer-facing seed format and validation command are documented sufficiently to complete `prompt-pool/01`.
 
 ## Blocked by
 
@@ -37,3 +38,4 @@ Provide the server-side Prompt Catalog needed to run Duels without coupling impl
 ## Comments
 
 - 2026-07-12: The production seed is a separate ready-for-human checkpoint; this ticket uses deterministic fixtures.
+- 2026-07-20: Implemented the versioned loader, Playable Article endpoint validation, deterministic fixtures, Lobby-scoped selector, validation command, and maintainer guide. Full tests, build, lint, and two-axis review passed.
