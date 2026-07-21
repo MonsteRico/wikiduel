@@ -137,6 +137,12 @@ describe("decodeServerMessage", () => {
       sentAt,
     },
     {
+      type: "command-rejected",
+      command: "leave-lobby",
+      reason: "invalid-state",
+      sentAt,
+    },
+    {
       type: "duel-forfeited",
       duelId: "duel-1",
       winnerId: "player-1",

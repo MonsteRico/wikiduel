@@ -49,7 +49,7 @@ export function DuelPage() {
               <div className="mx-auto mb-5 grid size-14 place-items-center rounded-full border border-line bg-surface-raised font-display text-xl font-black text-warning" aria-hidden="true">
                 ?
               </div>
-              <h2 className="m-0 font-display text-xl font-extrabold text-ink">Route covered</h2>
+              <h2 className="m-0 font-display text-xl font-extrabold text-ink">Prompt covered</h2>
               <p className="mt-2 mb-0 text-sm leading-6 text-ink-soft">
                 The start and target stay concealed while both players prepare for the Round.
               </p>

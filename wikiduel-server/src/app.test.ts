@@ -36,7 +36,7 @@ type DuelStateMessage = {
 
 type CommandRejectedMessage = {
   type: "command-rejected";
-  command: "start-duel" | "set-ready";
+  command: "start-duel" | "set-ready" | "leave-lobby";
   reason: StartDuelRejectionReason;
 };
 
@@ -221,6 +221,16 @@ test("a ready Host starts one player-private Duel and disconnect forfeits it onc
     reason: "invalid-state",
   });
 
+  const invalidLeaveRejection = nextMessage<CommandRejectedMessage>(
+    hostSocket,
+    "command-rejected",
+  );
+  hostSocket.send(JSON.stringify({ type: "leave-lobby" }));
+  await expect(invalidLeaveRejection).resolves.toMatchObject({
+    command: "leave-lobby",
+    reason: "invalid-state",
+  });
+
   const forfeits: DuelForfeitedMessage[] = [];
   hostSocket.on("message", (data) => {
     const message = JSON.parse(data.toString()) as ServerMessage;
@@ -324,7 +334,7 @@ test("Lobby commands reject malformed messages, missing Lobbies, and additional 
 });
 
 test("only a Host can start after both Player Sessions are ready", async () => {
-  const app = await buildApp({ promptCatalog: deterministicPromptCatalog });
+  const app = await buildApp();
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");

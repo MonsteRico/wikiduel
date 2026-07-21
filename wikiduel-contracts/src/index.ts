@@ -342,7 +342,13 @@ const ServerMessageSchema = z.union([
   }),
   z.strictObject({
     type: z.literal("command-rejected"),
-    command: z.enum(["create-lobby", "join-lobby", "set-ready", "start-duel"]),
+    command: z.enum([
+      "create-lobby",
+      "join-lobby",
+      "set-ready",
+      "start-duel",
+      "leave-lobby",
+    ]),
     reason: StartDuelRejectionReasonSchema,
     ...TimestampSchema,
   }),

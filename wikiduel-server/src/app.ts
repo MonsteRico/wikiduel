@@ -3,7 +3,11 @@ import { randomInt } from "node:crypto";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { decodeClientMessage, type PreviewArticleRequest } from "@wikiduel/contracts";
+import {
+  decodeClientMessage,
+  type PreviewArticleRequest,
+  type ServerMessage,
+} from "@wikiduel/contracts";
 
 import { createDuelCore } from "./duel-core/duelCore.js";
 import type { PlayableArticleRepository } from "./playable-articles/repository.js";
@@ -13,6 +17,7 @@ import {
   previewError,
 } from "./playable-articles/preview.js";
 import type { PromptCatalog } from "./prompt-catalog/catalog.js";
+import { deterministicPromptCatalog } from "./prompt-catalog/fixtures.js";
 
 export type BuildAppOptions = Readonly<{
   repository?: PlayableArticleRepository;
@@ -53,6 +58,16 @@ function serializeMessage(message: object): string {
     ...message,
     sentAt: new Date().toISOString(),
   });
+}
+
+type CommandRejectionMessage = Extract<ServerMessage, { type: "command-rejected" }>;
+
+function sendCommandRejection(
+  socket: WebSocket,
+  command: CommandRejectionMessage["command"],
+  reason: CommandRejectionMessage["reason"],
+): void {
+  socket.send(serializeMessage({ type: "command-rejected", command, reason }));
 }
 
 function generateLobbyCode(lobbies: Map<string, LobbyRecord>): string {
@@ -106,9 +121,11 @@ function isPreviewMessage(value: unknown): boolean {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
   const lobbies = new Map<string, LobbyRecord>();
-  const duelCore = options.promptCatalog
+  const promptCatalog = options.promptCatalog
+    ?? (options.production ? undefined : deterministicPromptCatalog);
+  const duelCore = promptCatalog
     ? createDuelCore({
-        promptCatalog: options.promptCatalog,
+        promptCatalog,
         random: options.promptRandom,
         createDuelId: options.createDuelId,
       })
@@ -256,11 +273,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
         if (message.type === "create-lobby") {
           if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "create-lobby",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "create-lobby", "invalid-state");
             return;
           }
           const code = generateLobbyCode(lobbies);
@@ -272,11 +285,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
         if (message.type === "join-lobby") {
           if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "join-lobby",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "join-lobby", "invalid-state");
             return;
           }
           const code = message.lobbyCode.trim().toUpperCase();
@@ -300,11 +309,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           if (!session.lobbyCode || !session.memberId) return;
 
           if (duelCore?.hasActiveDuel(session.lobbyCode)) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "set-ready",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "set-ready", "invalid-state");
             return;
           }
 
@@ -319,30 +324,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
         if (message.type === "start-duel") {
           if (!session.lobbyCode || !session.memberId) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "start-duel",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "start-duel", "invalid-state");
             return;
           }
 
           const lobby = lobbies.get(session.lobbyCode);
           if (!lobby) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "start-duel",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "start-duel", "invalid-state");
             return;
           }
 
           if (!duelCore) {
-            socket.send(serializeMessage({
-              type: "command-rejected",
-              command: "start-duel",
-              reason: "invalid-state",
-            }));
+            sendCommandRejection(socket, "start-duel", "invalid-state");
             return;
           }
 
@@ -352,7 +345,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             players: Array.from(lobby.members.values(), ({ socket: _socket, ...player }) => player),
           });
           if (!result.ok) {
-            socket.send(serializeMessage({ type: "command-rejected", ...result.rejection }));
+            sendCommandRejection(
+              socket,
+              result.rejection.command,
+              result.rejection.reason,
+            );
             return;
           }
 
@@ -369,6 +366,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
 
         if (message.type === "leave-lobby") {
+          if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
+            sendCommandRejection(socket, "leave-lobby", "invalid-state");
+            return;
+          }
           leaveCurrentLobby();
         }
       } catch {
