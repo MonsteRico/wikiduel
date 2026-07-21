@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "id": "fixture-file-prompt",
+      "start": "Fixture Start",
+      "target": "Fixture Target",
+      "enabled": true,
+      "metadata": {
+        "purpose": "validation-command-test"
+      }
+    }
+  ]
+}

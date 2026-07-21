@@ -22,6 +22,8 @@ The WebSocket endpoint is available at `ws://localhost:3000/ws`.
 - `npm start` runs the compiled server.
 - `npm test` runs the server tests.
 - `npm run typecheck` checks TypeScript without emitting files.
+- `npm run prompts:validate -- <seed-file>` validates a Prompt seed; see the
+  [Prompt Catalog guide](../docs/prompt-catalog.md).
 # Wiki Duel server
 
 ## Environment

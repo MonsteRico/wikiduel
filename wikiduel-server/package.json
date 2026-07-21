@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "npm run typecheck && npm run lint",
     "lint": "oxlint",
+    "prompts:validate": "tsx --env-file-if-exists=.env src/prompt-catalog/validate-command.ts",
     "start": "node --env-file=.env dist/server.js",
     "test": "vitest run --reporter=verbose",
     "typecheck": "tsc -p tsconfig.json --noEmit"
