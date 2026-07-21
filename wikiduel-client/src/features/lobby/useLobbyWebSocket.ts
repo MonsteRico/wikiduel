@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useWebSocket } from '../../websocket/webSocketContext'
 import type { ConnectionStatus } from '../../websocket/WebSocketTransport'
-import type { Lobby } from '@wikiduel/contracts'
+import type { Lobby, PreparingDuelProjection } from '@wikiduel/contracts'
 
 const clientId = crypto.randomUUID()
 
@@ -10,8 +10,12 @@ export function useLobbyWebSocket() {
   const webSocket = useWebSocket()
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [lobby, setLobby] = useState<Lobby | null>(null)
+  const [duel, setDuel] = useState<PreparingDuelProjection | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Readonly<{
+    title: 'Lobby closed' | 'Forfeit'
+    message: string
+  }> | null>(null)
 
   useEffect(() => webSocket.subscribeStatus(setStatus), [webSocket])
 
@@ -25,8 +29,22 @@ export function useLobbyWebSocket() {
     })
     const unsubscribeLobbyClosed = webSocket.subscribe('lobby-closed', (message) => {
       setLobby(null)
+      setDuel(null)
       setError(null)
-      setNotice(message.message)
+      setNotice({ title: 'Lobby closed', message: message.message })
+    })
+    const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
+      setDuel(message.duel)
+      setError(null)
+    })
+    const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
+      setError(`The ${message.command} command was rejected: ${message.reason}.`)
+    })
+    const unsubscribeDuelForfeited = webSocket.subscribe('duel-forfeited', (message) => {
+      setLobby(null)
+      setDuel(null)
+      setError(null)
+      setNotice({ title: 'Forfeit', message: message.message })
     })
     const unsubscribeFailure = webSocket.subscribeFailure((failure) => {
       if (failure === 'unreadable-message') setError('The server sent an unreadable message')
@@ -36,6 +54,9 @@ export function useLobbyWebSocket() {
       unsubscribeLobbyState()
       unsubscribeLobbyError()
       unsubscribeLobbyClosed()
+      unsubscribeDuelState()
+      unsubscribeCommandRejected()
+      unsubscribeDuelForfeited()
       unsubscribeFailure()
     }
   }, [webSocket])
@@ -62,8 +83,8 @@ export function useLobbyWebSocket() {
     webSocket.send({ type: 'set-ready', ready })
   }, [webSocket])
 
-  const startGame = useCallback(() => {
-    webSocket.send({ type: 'start-game' })
+  const startDuel = useCallback(() => {
+    webSocket.send({ type: 'start-duel' })
   }, [webSocket])
 
   const clearNotice = useCallback(() => setNotice(null), [])
@@ -71,6 +92,7 @@ export function useLobbyWebSocket() {
   return {
     status,
     lobby,
+    duel,
     error,
     notice,
     clientId,
@@ -78,7 +100,7 @@ export function useLobbyWebSocket() {
     joinLobby,
     leaveLobby,
     setReady,
-    startGame,
+    startDuel,
     clearNotice,
   }
 }

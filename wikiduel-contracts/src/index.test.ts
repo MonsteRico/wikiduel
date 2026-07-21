@@ -55,7 +55,7 @@ describe("decodeClientMessage", () => {
     { type: "create-lobby", clientId: "player-1" },
     { type: "join-lobby", clientId: "player-2", lobbyCode: "ABCDE" },
     { type: "set-ready", ready: true },
-    { type: "start-game" },
+    { type: "start-duel" },
     { type: "leave-lobby" },
     {
       type: "preview-article",
@@ -70,6 +70,7 @@ describe("decodeClientMessage", () => {
     { type: "unknown-message" },
     { type: "create-lobby" },
     { type: "set-ready", ready: "yes" },
+    { type: "start-duel", unexpected: true },
     { type: "ping", unexpected: true },
   ])("rejects a malformed client message", (message) => {
     expect(decodeClientMessage(message)).toEqual({
@@ -99,7 +100,50 @@ describe("decodeServerMessage", () => {
     },
     { type: "lobby-error", message: "Lobby not found", sentAt },
     { type: "lobby-closed", message: "The other player left.", sentAt },
-    { type: "game-started", sentAt },
+    {
+      type: "duel-state",
+      duel: {
+        id: "duel-1",
+        phase: "preparing",
+        round: {
+          number: 1,
+          prompt: {
+            id: "prompt-1",
+            start: { pageId: 1, title: "Start" },
+            target: { pageId: 2, title: "Target" },
+          },
+        },
+        self: {
+          id: "player-1",
+          name: "host",
+          role: "host",
+          hp: 100,
+          path: [{ pageId: 1, title: "Start" }],
+          clicks: 0,
+        },
+        opponent: {
+          id: "player-2",
+          name: "Opponent",
+          role: "opponent",
+          hp: 100,
+        },
+      },
+      sentAt,
+    },
+    {
+      type: "command-rejected",
+      command: "start-duel",
+      reason: "players-not-ready",
+      sentAt,
+    },
+    {
+      type: "duel-forfeited",
+      duelId: "duel-1",
+      winnerId: "player-1",
+      reason: "player-disconnected",
+      message: "Your opponent disconnected. The duel ended by Forfeit.",
+      sentAt,
+    },
     {
       type: "preview-article-result",
       requestId: "request-1",
@@ -144,6 +188,37 @@ describe("decodeServerMessage", () => {
           connected: true,
           ready: false,
         }],
+      },
+      sentAt,
+    },
+    {
+      type: "duel-state",
+      duel: {
+        id: "duel-1",
+        phase: "preparing",
+        round: {
+          number: 1,
+          prompt: {
+            id: "prompt-1",
+            start: { pageId: 1, title: "Start" },
+            target: { pageId: 2, title: "Target" },
+          },
+        },
+        self: {
+          id: "player-1",
+          name: "host",
+          role: "host",
+          hp: 100,
+          path: [{ pageId: 1, title: "Start" }],
+          clicks: 0,
+        },
+        opponent: {
+          id: "player-2",
+          name: "Opponent",
+          role: "opponent",
+          hp: 100,
+          path: [{ pageId: 1, title: "Start" }],
+        },
       },
       sentAt,
     },

@@ -1,7 +1,9 @@
 import type { RawData, WebSocket } from "ws";
 import { expect, test } from "vitest";
+import type { PreparingDuelProjection, StartDuelRejectionReason } from "@wikiduel/contracts";
 
 import { buildApp } from "./app.js";
+import { deterministicPromptCatalog } from "./prompt-catalog/fixtures.js";
 
 type LobbyStateMessage = {
   type: "lobby-state";
@@ -27,6 +29,25 @@ type LobbyErrorMessage = {
   message: string;
 };
 
+type DuelStateMessage = {
+  type: "duel-state";
+  duel: PreparingDuelProjection;
+};
+
+type CommandRejectedMessage = {
+  type: "command-rejected";
+  command: "start-duel" | "set-ready";
+  reason: StartDuelRejectionReason;
+};
+
+type DuelForfeitedMessage = {
+  type: "duel-forfeited";
+  duelId: string;
+  winnerId: string;
+  reason: "player-disconnected";
+  message: string;
+};
+
 type ServerMessage = {
   type: string;
 };
@@ -43,25 +64,6 @@ function nextMessage<T>(socket: WebSocket, type: string): Promise<T> {
     };
 
     socket.on("message", onMessage);
-  });
-}
-
-function rejectMessageUntil<T>(socket: WebSocket, type: string, boundary: Promise<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const onMessage = (data: RawData) => {
-      const message = JSON.parse(data.toString()) as ServerMessage;
-
-      if (message.type === type) {
-        socket.off("message", onMessage);
-        reject(new Error(`Unexpected ${type} message`));
-      }
-    };
-    socket.on("message", onMessage);
-
-    boundary.then((result) => {
-      socket.off("message", onMessage);
-      resolve(result);
-    }, reject);
   });
 }
 
@@ -126,8 +128,12 @@ test("responses permit only the approved Wikimedia image origin", async () => {
   await app.close();
 });
 
-test("a two-player lobby supports readiness, starting, and closure", async () => {
-  const app = await buildApp();
+test("a ready Host starts one player-private Duel and disconnect forfeits it once", async () => {
+  const app = await buildApp({
+    promptCatalog: deterministicPromptCatalog,
+    createDuelId: () => "duel-1",
+    promptRandom: () => 0,
+  });
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");
@@ -172,16 +178,74 @@ test("a two-player lobby supports readiness, starting, and closure", async () =>
   const [readyLobby] = await Promise.all([hostSeesBothReady, opponentReadyUpdate]);
   expect(readyLobby.lobby.members.every((member) => member.ready)).toBe(true);
 
-  const hostGameStarted = nextMessage(hostSocket, "game-started");
-  const opponentGameStarted = nextMessage(opponentSocket, "game-started");
-  hostSocket.send(JSON.stringify({ type: "start-game" }));
-  await Promise.all([hostGameStarted, opponentGameStarted]);
+  const hostDuelStatePromise = nextMessage<DuelStateMessage>(hostSocket, "duel-state");
+  const opponentDuelStatePromise = nextMessage<DuelStateMessage>(opponentSocket, "duel-state");
+  const repeatedStartRejection = nextMessage<CommandRejectedMessage>(
+    hostSocket,
+    "command-rejected",
+  );
+  hostSocket.send(JSON.stringify({ type: "start-duel" }));
+  hostSocket.send(JSON.stringify({ type: "start-duel" }));
+  const [hostDuelState, opponentDuelState] = await Promise.all([
+    hostDuelStatePromise,
+    opponentDuelStatePromise,
+  ]);
+  await expect(repeatedStartRejection).resolves.toMatchObject({
+    command: "start-duel",
+    reason: "invalid-state",
+  });
 
-  const lobbyClosedPromise = nextMessage<LobbyClosedMessage>(hostSocket, "lobby-closed");
+  expect(hostDuelState.duel).toMatchObject({
+    id: "duel-1",
+    phase: "preparing",
+    round: { number: 1, prompt: { id: "fixture-first" } },
+    self: { id: "host-id", hp: 100, clicks: 0 },
+    opponent: { id: "opponent-id", hp: 100 },
+  });
+  expect(hostDuelState.duel.self.path).toEqual([
+    { pageId: 1001, title: "Fixture Start One" },
+  ]);
+  expect(hostDuelState.duel.opponent).not.toHaveProperty("path");
+  expect(hostDuelState.duel.opponent).not.toHaveProperty("clicks");
+  expect(opponentDuelState.duel.self.id).toBe("opponent-id");
+  expect(opponentDuelState.duel.opponent.id).toBe("host-id");
+  expect(opponentDuelState.duel.opponent).not.toHaveProperty("path");
+
+  const invalidStateRejection = nextMessage<CommandRejectedMessage>(
+    hostSocket,
+    "command-rejected",
+  );
+  hostSocket.send(JSON.stringify({ type: "set-ready", ready: false }));
+  await expect(invalidStateRejection).resolves.toMatchObject({
+    command: "set-ready",
+    reason: "invalid-state",
+  });
+
+  const forfeits: DuelForfeitedMessage[] = [];
+  hostSocket.on("message", (data) => {
+    const message = JSON.parse(data.toString()) as ServerMessage;
+    if (message.type === "duel-forfeited") forfeits.push(message as DuelForfeitedMessage);
+  });
+  const forfeitedPromise = nextMessage<DuelForfeitedMessage>(hostSocket, "duel-forfeited");
   opponentSocket.terminate();
-  const lobbyClosed = await lobbyClosedPromise;
-  expect(lobbyClosed.message).toBe("The other player left. The lobby has been closed.");
+  await expect(forfeitedPromise).resolves.toMatchObject({
+    duelId: "duel-1",
+    winnerId: "host-id",
+    reason: "player-disconnected",
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(forfeits).toHaveLength(1);
 
+  const replacementSocket = await app.injectWS("/ws");
+  const missingLobby = nextMessage<LobbyErrorMessage>(replacementSocket, "lobby-error");
+  replacementSocket.send(JSON.stringify({
+    type: "join-lobby",
+    clientId: "replacement-id",
+    lobbyCode: createdLobby.lobby.code,
+  }));
+  await expect(missingLobby).resolves.toMatchObject({ message: "Lobby not found" });
+
+  replacementSocket.terminate();
   hostSocket.terminate();
   await app.close();
 });
@@ -260,7 +324,7 @@ test("Lobby commands reject malformed messages, missing Lobbies, and additional 
 });
 
 test("only a Host can start after both Player Sessions are ready", async () => {
-  const app = await buildApp();
+  const app = await buildApp({ promptCatalog: deterministicPromptCatalog });
   await app.ready();
 
   const hostSocket = await app.injectWS("/ws");
@@ -268,30 +332,27 @@ test("only a Host can start after both Player Sessions are ready", async () => {
   const opponentSocket = await app.injectWS("/ws");
   await joinLobby(hostSocket, opponentSocket, createdLobby.lobby.code);
 
-  const hostReadyStatePromise = nextLobbyUpdate(hostSocket, opponentSocket);
-  hostSocket.send(JSON.stringify({ type: "start-game" }));
-  hostSocket.send(JSON.stringify({ type: "set-ready", ready: true }));
-  const hostReadyState = await Promise.all([
-    rejectMessageUntil(hostSocket, "game-started", hostReadyStatePromise),
-    rejectMessageUntil(opponentSocket, "game-started", hostReadyStatePromise),
-  ]).then(([state]) => state);
+  const malformedStartError = nextMessage<LobbyErrorMessage>(hostSocket, "lobby-error");
+  hostSocket.send(JSON.stringify({ type: "start-duel", unexpected: true }));
+  await expect(malformedStartError).resolves.toMatchObject({ message: "Invalid message" });
+
+  const notReadyRejection = nextMessage<CommandRejectedMessage>(hostSocket, "command-rejected");
+  hostSocket.send(JSON.stringify({ type: "start-duel" }));
+  await expect(notReadyRejection).resolves.toMatchObject({ reason: "players-not-ready" });
+
+  const hostReadyState = await setReady(hostSocket, opponentSocket, true);
   expect(hostReadyState.lobby.members.find(({ role }) => role === "host")?.ready).toBe(true);
   const bothReadyState = await setReady(opponentSocket, hostSocket, true);
   expect(bothReadyState.lobby.members.find(({ role }) => role === "opponent")?.ready).toBe(true);
 
-  const opponentNotReadyStatePromise = nextLobbyUpdate(opponentSocket, hostSocket);
-  opponentSocket.send(JSON.stringify({ type: "start-game" }));
-  opponentSocket.send(JSON.stringify({ type: "set-ready", ready: false }));
-  await Promise.all([
-    rejectMessageUntil(hostSocket, "game-started", opponentNotReadyStatePromise),
-    rejectMessageUntil(opponentSocket, "game-started", opponentNotReadyStatePromise),
-  ]);
-  await setReady(opponentSocket, hostSocket, true);
+  const notHostRejection = nextMessage<CommandRejectedMessage>(opponentSocket, "command-rejected");
+  opponentSocket.send(JSON.stringify({ type: "start-duel" }));
+  await expect(notHostRejection).resolves.toMatchObject({ reason: "not-host" });
 
-  const hostGameStarted = nextMessage(hostSocket, "game-started");
-  const opponentGameStarted = nextMessage(opponentSocket, "game-started");
-  hostSocket.send(JSON.stringify({ type: "start-game" }));
-  await Promise.all([hostGameStarted, opponentGameStarted]);
+  const hostDuelState = nextMessage(hostSocket, "duel-state");
+  const opponentDuelState = nextMessage(opponentSocket, "duel-state");
+  hostSocket.send(JSON.stringify({ type: "start-duel" }));
+  await Promise.all([hostDuelState, opponentDuelState]);
 
   opponentSocket.terminate();
   hostSocket.terminate();

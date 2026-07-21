@@ -129,7 +129,58 @@ describe('Lobby client', () => {
     expect(screen.getByText('Both players are ready.')).toBeInTheDocument()
     expect(startButton).toBeEnabled()
     await user.click(startButton)
-    expect(sentMessages(socket)).toContainEqual({ type: 'start-game' })
+    expect(sentMessages(socket)).toContainEqual({ type: 'start-duel' })
+
+    act(() => socket.receive({
+      type: 'duel-state',
+      duel: {
+        id: 'duel-1',
+        phase: 'preparing',
+        round: {
+          number: 1,
+          prompt: {
+            id: 'fixture-first',
+            start: { pageId: 1001, title: 'Fixture Start One' },
+            target: { pageId: 1002, title: 'Fixture Target One' },
+          },
+        },
+        self: {
+          id: clientId,
+          name: 'host',
+          role: 'host',
+          hp: 100,
+          path: [{ pageId: 1001, title: 'Fixture Start One' }],
+          clicks: 0,
+        },
+        opponent: {
+          id: 'opponent-id',
+          name: 'Opponent',
+          role: 'opponent',
+          hp: 100,
+        },
+      },
+    }))
+
+    expect(await screen.findByRole('heading', { name: 'Preparing the duel' })).toBeInTheDocument()
+    expect(screen.getByText('Round 1')).toBeInTheDocument()
+    expect(screen.getAllByText('100 HP')).toHaveLength(2)
+    expect(screen.getByText('0 clicks')).toBeInTheDocument()
+    expect(screen.queryByText('Fixture Start One')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fixture Target One')).not.toBeInTheDocument()
+
+    act(() => socket.receive({
+      type: 'duel-forfeited',
+      duelId: 'duel-1',
+      winnerId: clientId,
+      reason: 'player-disconnected',
+      message: 'Your opponent disconnected. The Duel ended by Forfeit.',
+    }))
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Your opponent disconnected. The Duel ended by Forfeit.',
+      )
+    })
+    expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeInTheDocument()
   })
 
   it('shows opponent projections without Host controls', () => {

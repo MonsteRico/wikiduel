@@ -4,6 +4,7 @@ import { LobbyProvider } from './features/lobby/LobbyProvider'
 import { HomePage } from './pages/HomePage'
 import { LabPage } from './pages/LabPage'
 import { LobbyPage } from './pages/LobbyPage'
+import { DuelPage } from './pages/DuelPage'
 import { isPlayableArticleLabEnabled } from './pages/labAvailability'
 import { WebSocketProvider } from './websocket/WebSocketProvider'
 
@@ -18,6 +19,7 @@ function App() {
         <Routes>
           <Route index element={<HomePage />} />
           <Route path="lobby/:lobbyCode" element={<LobbyPage />} />
+          <Route path="duel/:duelId" element={<DuelPage />} />
           {labRoute}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
