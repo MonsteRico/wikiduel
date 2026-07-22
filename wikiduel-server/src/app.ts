@@ -3,18 +3,28 @@ import { randomInt } from "node:crypto";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { decodeClientMessage, type PreviewArticleRequest } from "@wikiduel/contracts";
+import {
+  decodeClientMessage,
+  type PreviewArticleRequest,
+  type ServerMessage,
+} from "@wikiduel/contracts";
 
+import { createDuelCore } from "./duel-core/duelCore.js";
 import type { PlayableArticleRepository } from "./playable-articles/repository.js";
 import {
   buildPreviewDiagnostics,
   previewArticleResult,
   previewError,
 } from "./playable-articles/preview.js";
+import type { PromptCatalog } from "./prompt-catalog/catalog.js";
+import { deterministicPromptCatalog } from "./prompt-catalog/fixtures.js";
 
 export type BuildAppOptions = Readonly<{
   repository?: PlayableArticleRepository;
   production?: boolean;
+  promptCatalog?: PromptCatalog;
+  promptRandom?: () => number;
+  createDuelId?: () => string;
 }>;
 
 
@@ -48,6 +58,16 @@ function serializeMessage(message: object): string {
     ...message,
     sentAt: new Date().toISOString(),
   });
+}
+
+type CommandRejectionMessage = Extract<ServerMessage, { type: "command-rejected" }>;
+
+function sendCommandRejection(
+  socket: WebSocket,
+  command: CommandRejectionMessage["command"],
+  reason: CommandRejectionMessage["reason"],
+): void {
+  socket.send(serializeMessage({ type: "command-rejected", command, reason }));
 }
 
 function generateLobbyCode(lobbies: Map<string, LobbyRecord>): string {
@@ -101,6 +121,15 @@ function isPreviewMessage(value: unknown): boolean {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
   const lobbies = new Map<string, LobbyRecord>();
+  const promptCatalog = options.promptCatalog
+    ?? (options.production ? undefined : deterministicPromptCatalog);
+  const duelCore = promptCatalog
+    ? createDuelCore({
+        promptCatalog,
+        random: options.promptRandom,
+        createDuelId: options.createDuelId,
+      })
+    : null;
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("Content-Security-Policy", [
@@ -123,7 +152,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     socket.send(serializeMessage({ type: "welcome", message: "Connected to WikiDuel server" }));
 
-    const leaveCurrentLobby = () => {
+    const leaveCurrentLobby = (disconnected = false) => {
       if (!session.lobbyCode || !session.memberId) return;
 
       const lobby = lobbies.get(session.lobbyCode);
@@ -132,6 +161,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (lobby && member?.socket === socket) {
         if (lobby.matched) {
           lobbies.delete(lobby.code);
+          const forfeit = disconnected
+            ? duelCore?.disconnectPlayer({ lobbyId: lobby.code, playerId: member.id })
+            : null;
+          if (!forfeit) duelCore?.disbandLobby(lobby.code);
 
           for (const remainingMember of lobby.members.values()) {
             if (
@@ -139,10 +172,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
               && remainingMember.connected
               && remainingMember.socket?.readyState === 1
             ) {
-              remainingMember.socket.send(serializeMessage({
-                type: "lobby-closed",
-                message: "The other player left. The lobby has been closed.",
-              }));
+              remainingMember.socket.send(serializeMessage(forfeit
+                ? {
+                    type: "duel-forfeited",
+                    ...forfeit,
+                    message: "Your opponent disconnected. The Duel ended by Forfeit.",
+                  }
+                : {
+                    type: "lobby-closed",
+                    message: "The other player left. The lobby has been closed.",
+                  }));
             }
           }
         } else {
@@ -233,6 +272,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
 
         if (message.type === "create-lobby") {
+          if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
+            sendCommandRejection(socket, "create-lobby", "invalid-state");
+            return;
+          }
           const code = generateLobbyCode(lobbies);
           const lobby: LobbyRecord = { code, matched: false, members: new Map() };
           lobbies.set(code, lobby);
@@ -241,6 +284,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
 
         if (message.type === "join-lobby") {
+          if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
+            sendCommandRejection(socket, "join-lobby", "invalid-state");
+            return;
+          }
           const code = message.lobbyCode.trim().toUpperCase();
           const lobby = lobbies.get(code);
 
@@ -261,6 +308,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         if (message.type === "set-ready") {
           if (!session.lobbyCode || !session.memberId) return;
 
+          if (duelCore?.hasActiveDuel(session.lobbyCode)) {
+            sendCommandRejection(socket, "set-ready", "invalid-state");
+            return;
+          }
+
           const lobby = lobbies.get(session.lobbyCode);
           const member = lobby?.members.get(session.memberId);
           if (!lobby || !member) return;
@@ -270,28 +322,54 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return;
         }
 
-        if (message.type === "start-game") {
-          if (!session.lobbyCode || !session.memberId) return;
+        if (message.type === "start-duel") {
+          if (!session.lobbyCode || !session.memberId) {
+            sendCommandRejection(socket, "start-duel", "invalid-state");
+            return;
+          }
 
           const lobby = lobbies.get(session.lobbyCode);
-          const member = lobby?.members.get(session.memberId);
-          const canStart = lobby
-            && member?.role === "host"
-            && lobby.members.size === 2
-            && Array.from(lobby.members.values()).every(
-              (lobbyMember) => lobbyMember.connected && lobbyMember.ready,
-            );
+          if (!lobby) {
+            sendCommandRejection(socket, "start-duel", "invalid-state");
+            return;
+          }
 
-          if (lobby && canStart) {
-            const startedMessage = serializeMessage({ type: "game-started" });
-            for (const lobbyMember of lobby.members.values()) {
-              if (lobbyMember.socket?.readyState === 1) lobbyMember.socket.send(startedMessage);
+          if (!duelCore) {
+            sendCommandRejection(socket, "start-duel", "invalid-state");
+            return;
+          }
+
+          const result = duelCore.startDuel({
+            lobbyId: lobby.code,
+            actorId: session.memberId,
+            players: Array.from(lobby.members.values(), ({ socket: _socket, ...player }) => player),
+          });
+          if (!result.ok) {
+            sendCommandRejection(
+              socket,
+              result.rejection.command,
+              result.rejection.reason,
+            );
+            return;
+          }
+
+          for (const projection of result.projections) {
+            const recipient = lobby.members.get(projection.recipientId);
+            if (recipient?.socket?.readyState === 1) {
+              recipient.socket.send(serializeMessage({
+                type: "duel-state",
+                duel: projection.duel,
+              }));
             }
           }
           return;
         }
 
         if (message.type === "leave-lobby") {
+          if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
+            sendCommandRejection(socket, "leave-lobby", "invalid-state");
+            return;
+          }
           leaveCurrentLobby();
         }
       } catch {
@@ -299,7 +377,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       }
     });
 
-    socket.on("close", leaveCurrentLobby);
+    socket.on("close", () => leaveCurrentLobby(true));
   });
 
   return app;

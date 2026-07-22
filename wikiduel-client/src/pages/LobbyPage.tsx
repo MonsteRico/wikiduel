@@ -15,7 +15,7 @@ export function LobbyPage() {
   const [copied, setCopied] = useState(false)
   const normalizedLobbyCode = lobbyCode?.toUpperCase() ?? ''
   const isValidLobbyCode = /^[A-Z2-9]{5}$/.test(normalizedLobbyCode)
-  const { status, lobby, error, notice, clientId, joinLobby, leaveLobby, setReady, startGame } = useLobby()
+  const { status, lobby, duel, error, notice, clientId, joinLobby, leaveLobby, setReady, startDuel } = useLobby()
   const currentMember = lobby?.members.find((member) => member.id === clientId)
 
   useEffect(() => {
@@ -34,6 +34,10 @@ export function LobbyPage() {
   useEffect(() => {
     if (notice) navigate('/', { replace: true })
   }, [navigate, notice])
+
+  useEffect(() => {
+    if (duel) navigate(`/duel/${duel.id}`, { replace: true })
+  }, [duel, navigate])
 
   if (!isValidLobbyCode) return <Navigate to="/" replace />
 
@@ -75,7 +79,7 @@ export function LobbyPage() {
             currentMember={currentMember}
             error={error}
             onSetReady={setReady}
-            onStartGame={startGame}
+            onStartDuel={startDuel}
           />
         </Panel>
       </section>

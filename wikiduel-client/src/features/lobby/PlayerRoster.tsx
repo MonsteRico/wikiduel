@@ -9,10 +9,10 @@ type PlayerRosterProps = {
   currentMember: LobbyMember | undefined
   error: string | null
   onSetReady: (ready: boolean) => void
-  onStartGame: () => void
+  onStartDuel: () => void
 }
 
-export function PlayerRoster({ lobby, currentMember, error, onSetReady, onStartGame }: PlayerRosterProps) {
+export function PlayerRoster({ lobby, currentMember, error, onSetReady, onStartDuel }: PlayerRosterProps) {
   const bothPlayersReady = lobby?.members.length === 2
     && lobby.members.every((member) => member.connected && member.ready)
   const isHost = currentMember?.role === 'host'
@@ -59,7 +59,7 @@ export function PlayerRoster({ lobby, currentMember, error, onSetReady, onStartG
               {currentMember.ready ? 'Cancel ready' : 'I’m ready'}
             </Button>
             {isHost ? (
-              <Button icon={<ArrowRightIcon />} onClick={onStartGame} disabled={!bothPlayersReady}>Start duel</Button>
+              <Button icon={<ArrowRightIcon />} onClick={onStartDuel} disabled={!bothPlayersReady}>Start duel</Button>
             ) : (
               <span className="px-2 text-xs text-ink-soft">The host starts the duel.</span>
             )}
