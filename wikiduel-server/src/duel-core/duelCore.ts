@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  ArticleBlock,
+  ArticleInline,
   DuelProjection,
   NavigationDestination,
   RoundOutcome,
@@ -89,7 +91,28 @@ type DuelPlayerState = Readonly<{
   hp: number;
   path: readonly Prompt["start"][];
   clicks: number;
+  article?: PlayableArticle;
+  navigating?: boolean;
+  requests: Set<string>;
 }>;
+
+function hasDestination(blocks: readonly ArticleBlock[], destination: NavigationDestination): boolean {
+  const inlineHas = (nodes: readonly ArticleInline[]): boolean => nodes.some((node) =>
+    (node.type === "navigation" && node.destination.pageId === destination.pageId
+      && node.destination.title === destination.title)
+    || ("children" in node && inlineHas(node.children)));
+  return blocks.some((block) => {
+    switch (block.type) {
+      case "heading": case "paragraph": case "line": return inlineHas(block.children);
+      case "figure": return inlineHas(block.caption);
+      case "list": return block.items.some((item) => inlineHas(item.children) || hasDestination(item.blocks, destination));
+      case "infobox": return inlineHas(block.title ?? []) || block.sections.some((section) =>
+        inlineHas(section.label ?? []) || section.items.some((item) =>
+          inlineHas(item.label ?? []) || hasDestination(item.blocks, destination)));
+      case "media-placeholder": return false;
+    }
+  });
+}
 
 type DuelState = {
   id: string;
@@ -118,13 +141,14 @@ function projectDuel(
   opponent: DuelPlayerState,
   serverNow: number,
 ): DuelProjection {
+  const article = self.article ?? duel.article;
   const projection = {
     id: duel.id,
     serverNow,
     round: {
       id: duel.roundId,
       number: duel.roundNumber,
-      ...(duel.article ? { article: duel.article } : {}),
+      ...(article ? { article } : {}),
       prompt: {
         id: duel.prompt.id,
         start: duel.prompt.start,
@@ -144,16 +168,18 @@ function projectDuel(
       name: opponent.name,
       role: opponent.role,
       hp: opponent.hp,
+      clicks: opponent.clicks,
+      connected: true,
     },
   };
   if (duel.phase === "post-round" || duel.phase === "completed") {
     return { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
-      round: { ...projection.round, article: duel.article! }, outcome: duel.outcome! };
+      round: { ...projection.round, article: article! }, outcome: duel.outcome! };
   }
   return duel.phase === "preparing"
     ? { ...projection, phase: "preparing" }
     : { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
-        round: { ...projection.round, article: duel.article! } };
+        round: { ...projection.round, article: article! } };
 }
 
 export function createDuelCore(options: CreateDuelCoreOptions) {
@@ -218,6 +244,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         hp: 100,
         path: [selection.prompt.start],
         clicks: 0,
+        requests: new Set(),
       });
       const players: [DuelPlayerState, DuelPlayerState] = [
         createPlayerState(command.players[0]!),
@@ -262,7 +289,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         duel.received.clear();
         duel.rendered.clear();
         const resetPlayer = (player: DuelPlayerState): DuelPlayerState => ({ ...player,
-          path: [duel.prompt.start], clicks: 0,
+          path: [duel.prompt.start], clicks: 0, article: undefined, navigating: false, requests: new Set(),
         });
         duel.players = [resetPlayer(duel.players[0]), resetPlayer(duel.players[1])];
         publish(lobbyId, duel);
@@ -316,6 +343,45 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
     canNavigate(command: RoundCommand): boolean {
       const duel = currentRound(command);
       return !!duel && isNavigable(duel);
+    },
+
+    async navigate(command: RoundCommand & {
+      requestId: string; source: NavigationDestination; expectedClicks: number;
+      destination: NavigationDestination;
+    }): Promise<boolean> {
+      const duel = currentRound(command);
+      if (!duel || !isNavigable(duel)) return false;
+      const index = duel.players[0].id === command.playerId ? 0 : 1;
+      const player = duel.players[index];
+      const article = player.article ?? duel.article;
+      if (player.navigating || player.requests.has(command.requestId) || !article
+        || player.clicks !== command.expectedClicks
+        || article.identity.pageId !== command.source.pageId || article.identity.title !== command.source.title
+        || !hasDestination(article.document.blocks, command.destination)) return false;
+      player.requests.add(command.requestId);
+      const pending = { ...player, navigating: true };
+      duel.players = index === 0 ? [pending, duel.players[1]] : [duel.players[0], pending];
+      try {
+        const result = await options.repository?.getByTitle(command.destination.title);
+        if (!result?.ok || currentRound(command) !== duel || !isNavigable(duel)
+          || duel.players[index] !== pending) return false;
+        const updated = { ...pending, navigating: false, article: result.article,
+          clicks: pending.clicks + 1, path: [...pending.path, Object.freeze({ ...result.article.identity })] };
+        duel.players = index === 0 ? [updated, duel.players[1]] : [duel.players[0], updated];
+        duel.phase = "active";
+        if (result.article.identity.pageId === duel.prompt.target.pageId
+          && result.article.identity.title === duel.prompt.target.title) {
+          this.endRound({ ...command, cause: { type: "target-arrival" } });
+        } else publish(command.lobbyId, duel);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        if (duel.players[index] === pending) {
+          const released = { ...pending, navigating: false };
+          duel.players = index === 0 ? [released, duel.players[1]] : [duel.players[0], released];
+        }
+      }
     },
 
     // Server-only commit of a canonical move already validated by Navigation.

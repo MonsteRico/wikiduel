@@ -19,20 +19,23 @@ class ArticleRenderBoundary extends Component<{ children: ReactNode }, { failed:
 }
 
 function RoundArticle({ duel, active }: { duel: DuelProjection, active: boolean }) {
-  const { acknowledgeRendered, navigate } = useLobby()
+  const { acknowledgeRendered, navigate, navigating, status } = useLobby()
   const article = duel.round.article
   useEffect(() => {
     if (article && duel.phase === 'preparing') acknowledgeRendered(duel.id, duel.round.id)
   }, [article, duel.id, duel.phase, duel.round.id, acknowledgeRendered])
   if (!article) return null
   return <div hidden={!active} inert={!active} aria-hidden={!active}>
-    <PlayableArticleArea article={article} onNavigate={navigate} />
+    <fieldset disabled={!active || navigating || status !== 'connected'} className="m-0 min-w-0 border-0 p-0" aria-label="Article Navigation" aria-busy={navigating}>
+      <PlayableArticleArea article={article} onNavigate={navigate} />
+    </fieldset>
+    {navigating && <p role="status">Loading article...</p>}
   </div>
 }
 
 export function DuelPage() {
   const { duelId } = useParams()
-  const { duel, notice, getServerTime } = useLobby()
+  const { duel, notice, error, getServerTime } = useLobby()
   const [, tick] = useState(0)
   useEffect(() => {
     const timer = window.setInterval(() => tick((value) => value + 1), 50)
@@ -64,7 +67,7 @@ export function DuelPage() {
 
           <div className="grid grid-cols-2 border-b border-line-soft max-[560px]:grid-cols-1">
             {[duel.self, duel.opponent].map((player) => (
-              <article className="flex items-center gap-4 border-r border-line-soft px-6 py-5 last:border-r-0 max-[560px]:border-r-0 max-[560px]:border-b max-[560px]:last:border-b-0" key={player.id}>
+              <article aria-label={player.id === duel.self.id ? 'Your status' : 'Opponent status'} className="flex items-center gap-4 border-r border-line-soft px-6 py-5 last:border-r-0 max-[560px]:border-r-0 max-[560px]:border-b max-[560px]:last:border-b-0" key={player.id}>
                 <PlayerAvatar role={player.role} />
                 <div className="min-w-0 flex-1">
                   <p className={`ds-label mb-1 ${player.role === 'host' ? 'text-host' : 'text-opponent'}`}>
@@ -72,12 +75,19 @@ export function DuelPage() {
                   </p>
                   <strong className="font-display text-lg text-ink">{player.hp} HP</strong>
                 </div>
-                {player.id === duel.self.id ? (
-                  <span className="font-mono text-xs text-ink-soft">{duel.self.clicks} clicks</span>
-                ) : null}
+                <span className="font-mono text-xs text-ink-soft">{player.clicks} clicks</span>
+                {player.id === duel.opponent.id && <span>{duel.opponent.connected ? 'Connected' : 'Disconnected'}</span>}
               </article>
             ))}
           </div>
+
+          {error && <p role="alert" className="px-6 text-danger">{error}</p>}
+          {active && <div className="px-6 py-3">
+            <h2 className="ds-label">Your path</h2>
+            <ol aria-label="Your path" className="flex flex-wrap gap-x-5 gap-y-1">
+              {duel.self.path.map((article, index) => <li key={index}>{index + 1}. {article.title}</li>)}
+            </ol>
+          </div>}
 
           {!ended && duel.phase !== 'preparing' && <div className="px-6 py-5 text-center">
             <p>Start: {duel.round.prompt.start.title}</p>

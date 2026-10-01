@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,7 +33,7 @@ function preparedDuel(clientId: string): PreparingDuelProjection {
       id: 'prompt-1', start: roundArticle.identity, target: { pageId: 1002, title: 'Fixture Target One' },
     } },
     self: { id: clientId, name: 'Host', role: 'host', hp: 100, path: [roundArticle.identity], clicks: 0 },
-    opponent: { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 100 },
+    opponent: { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 100, clicks: 0, connected: true },
   }
 }
 function hostLobby(clientId: string): Lobby {
@@ -78,6 +78,40 @@ afterEach(() => {
 })
 
 describe('Lobby client', () => {
+  it('locks Navigation until its result and displays only authoritative route and opponent status', () => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const prepared = preparedDuel(sentClientId(socket))
+    const duel = { ...prepared, phase: 'active' as const, startsAt: 99_000,
+      round: { ...prepared.round, article: roundArticle } }
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    const link = screen.getByRole('button', { name: 'Follow this link' })
+    act(() => { link.click(); link.click() })
+    expect(link).toBeDisabled()
+    const command = sentMessages(socket).at(-1)!
+    expect(command).toMatchObject({ type: 'navigate', source: roundArticle.identity, expectedClicks: 0 })
+    expect(sentMessages(socket).filter((message) => message.type === 'navigate')).toHaveLength(1)
+    act(() => socket.receive({ type: 'duel-state', duel: { ...duel, opponent: { ...duel.opponent, clicks: 3 } } }))
+    expect(link).toBeDisabled()
+    expect(screen.getByLabelText('Opponent status')).toHaveTextContent('3 clicks')
+    expect(screen.getByLabelText('Opponent status')).toHaveTextContent('Connected')
+    act(() => socket.receive({ type: 'navigation-result', duelId: duel.id, roundId: duel.round.id,
+      requestId: 'unrelated', accepted: false }))
+    expect(link).toBeDisabled()
+    act(() => socket.receive({ type: 'navigation-result', duelId: duel.id, roundId: duel.round.id,
+      requestId: String(command.requestId), accepted: false }))
+    expect(link).toBeEnabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Navigation failed')
+    const target = prepared.round.prompt.target
+    act(() => link.click())
+    act(() => socket.receive({ type: 'duel-state', duel: { ...duel,
+      self: { ...duel.self, clicks: 1, path: [roundArticle.identity, target] },
+      round: { ...duel.round, article: { ...roundArticle, identity: target } } } }))
+    const path = screen.getByRole('list', { name: 'Your path' })
+    expect(within(path).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(path).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(path).queryByRole('link')).not.toBeInTheDocument()
+  })
   it.each(['post-round', 'completed'] as const)('stops active play when the server reports %s', (phase) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
     const socket = renderApp('/lobby/7G8KZ')
@@ -251,6 +285,7 @@ describe('Lobby client', () => {
           clicks: 0,
         },
         opponent: {
+          clicks: 0, connected: true,
           id: 'opponent-id',
           name: 'Opponent',
           role: 'opponent',
@@ -262,7 +297,7 @@ describe('Lobby client', () => {
     expect(await screen.findByRole('heading', { name: 'Preparing the duel' })).toBeInTheDocument()
     expect(screen.getByText('Round 1')).toBeInTheDocument()
     expect(screen.getAllByText('100 HP')).toHaveLength(2)
-    expect(screen.getByText('0 clicks')).toBeInTheDocument()
+    expect(screen.getAllByText('0 clicks')).toHaveLength(2)
     expect(screen.queryByText('Fixture Start One')).not.toBeInTheDocument()
     expect(screen.queryByText('Fixture Target One')).not.toBeInTheDocument()
 

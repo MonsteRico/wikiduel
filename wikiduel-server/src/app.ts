@@ -303,13 +303,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           || message.type === "navigate") {
           const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
           const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
-          const accepted = member?.socket === socket && duelCore && message.type !== "navigate"
+          if (message.type === "navigate") {
+            const accepted = !!(member?.socket === socket && duelCore
+              && await duelCore.navigate({ ...message, lobbyId: lobby!.code, playerId: member.id }));
+            socket.send(serializeMessage({ type: "navigation-result", duelId: message.duelId,
+              roundId: message.roundId, requestId: message.requestId, accepted }));
+            return;
+          }
+          const accepted = member?.socket === socket && duelCore
             && duelCore.acknowledgeRound({
               lobbyId: lobby!.code, playerId: member.id,
               duelId: message.duelId, roundId: message.roundId,
               kind: message.type === "round-received" ? "received" : "rendered",
             });
-          // Active Navigation is implemented by the next lifecycle slice.
           if (!accepted) sendCommandRejection(socket, message.type, "invalid-state");
           return;
         }

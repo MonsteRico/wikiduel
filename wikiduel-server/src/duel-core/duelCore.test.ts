@@ -55,6 +55,7 @@ describe("Duel core", () => {
               clicks: 0,
             },
             opponent: {
+              clicks: 0, connected: true,
               id: "opponent-id",
               name: "Opponent",
               role: "opponent",
@@ -86,6 +87,7 @@ describe("Duel core", () => {
               clicks: 0,
             },
             opponent: {
+              clicks: 0, connected: true,
               id: "host-id",
               name: "host",
               role: "host",
