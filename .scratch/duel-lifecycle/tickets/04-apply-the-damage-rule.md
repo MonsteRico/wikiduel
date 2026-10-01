@@ -1,7 +1,7 @@
 # Apply the Damage Rule
 
 Status: completed
-Completed: 2026-10-01 05:28 PM
+Completed: 2026-10-01 05:28 PM via [PR #17](https://github.com/MonsteRico/wikiduel/pull/17)
 Scope: MVP required
 Category: enhancement
 
