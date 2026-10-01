@@ -1,7 +1,7 @@
 # Reveal Post-Round and Continue the Duel
 
 Status: completed
-Completed: 2026-10-01 07:22 PM
+Completed: 2026-10-01 07:22 PM via [PR #22](https://github.com/MonsteRico/wikiduel/pull/22)
 Scope: MVP required
 Category: enhancement
 
