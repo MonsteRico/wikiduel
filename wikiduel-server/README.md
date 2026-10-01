@@ -15,10 +15,10 @@ The server listens on `http://localhost:3000` by default. Set `PORT` or `HOST` t
 
 The WebSocket endpoint is available at `ws://localhost:3000/ws`.
 
-Until the human-maintained production Prompt seed is available, non-production
-startup uses the deterministic Prompt Catalog fixture for Duel development.
-Production startup does not enable Duel creation without an injected validated
-Prompt Catalog.
+Server startup loads `prompts/production.json` and validates its endpoints before
+accepting connections. Both development and production use this human-authored
+catalog. Invalid seeds or unavailable endpoints prevent startup. Tests can still
+inject deterministic catalogs without contacting Wikipedia.
 
 ## Scripts
 
