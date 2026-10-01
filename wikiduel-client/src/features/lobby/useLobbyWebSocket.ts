@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useWebSocket } from '../../websocket/webSocketContext'
 import type { ConnectionStatus } from '../../websocket/WebSocketTransport'
-import type { Lobby, PreparingDuelProjection } from '@wikiduel/contracts'
+import type { Lobby, DuelProjection, NavigationDestination } from '@wikiduel/contracts'
 
 const clientId = crypto.randomUUID()
 
@@ -10,10 +10,13 @@ export function useLobbyWebSocket() {
   const webSocket = useWebSocket()
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [lobby, setLobby] = useState<Lobby | null>(null)
-  const [duel, setDuel] = useState<PreparingDuelProjection | null>(null)
+  const [duel, setDuel] = useState<DuelProjection | null>(null)
+  const serverClock = useRef({ serverNow: 0, receivedAt: 0 })
+  const receivedRounds = useRef(new Set<string>())
+  const renderedRounds = useRef(new Set<string>())
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Readonly<{
-    title: 'Lobby closed' | 'Forfeit'
+    title: 'Lobby closed' | 'Forfeit' | 'Interruption'
     message: string
   }> | null>(null)
 
@@ -34,6 +37,12 @@ export function useLobbyWebSocket() {
       setNotice({ title: 'Lobby closed', message: message.message })
     })
     const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
+      serverClock.current = { serverNow: message.duel.serverNow, receivedAt: performance.now() }
+      if (message.duel.phase === 'preparing' && message.duel.round.article
+        && !receivedRounds.current.has(message.duel.round.id)) {
+        receivedRounds.current.add(message.duel.round.id)
+        webSocket.send({ type: 'round-received', duelId: message.duel.id, roundId: message.duel.round.id })
+      }
       setDuel(message.duel)
       setError(null)
     })
@@ -46,6 +55,12 @@ export function useLobbyWebSocket() {
       setError(null)
       setNotice({ title: 'Forfeit', message: message.message })
     })
+    const unsubscribeDuelInterrupted = webSocket.subscribe('duel-interrupted', (message) => {
+      setLobby(null)
+      setDuel(null)
+      setError(null)
+      setNotice({ title: 'Interruption', message: message.message })
+    })
     const unsubscribeFailure = webSocket.subscribeFailure((failure) => {
       if (failure === 'unreadable-message') setError('The server sent an unreadable message')
     })
@@ -57,6 +72,7 @@ export function useLobbyWebSocket() {
       unsubscribeDuelState()
       unsubscribeCommandRejected()
       unsubscribeDuelForfeited()
+      unsubscribeDuelInterrupted()
       unsubscribeFailure()
     }
   }, [webSocket])
@@ -88,6 +104,18 @@ export function useLobbyWebSocket() {
   }, [webSocket])
 
   const clearNotice = useCallback(() => setNotice(null), [])
+  const acknowledgeRendered = useCallback((duelId: string, roundId: string) => {
+    if (renderedRounds.current.has(roundId)) return
+    renderedRounds.current.add(roundId)
+    webSocket.send({ type: 'round-rendered', duelId, roundId })
+  }, [webSocket])
+  const getServerTime = useCallback(() => serverClock.current.serverNow
+    + performance.now() - serverClock.current.receivedAt, [])
+  const navigate = useCallback((destination: NavigationDestination) => {
+    if (!duel || duel.phase === 'preparing' || getServerTime() < duel.startsAt) return
+    webSocket.send({ type: 'navigate', duelId: duel.id, roundId: duel.round.id,
+      requestId: crypto.randomUUID(), destination })
+  }, [duel, getServerTime, webSocket])
 
   return {
     status,
@@ -102,5 +130,8 @@ export function useLobbyWebSocket() {
     setReady,
     startDuel,
     clearNotice,
+    acknowledgeRendered,
+    getServerTime,
+    navigate,
   }
 }

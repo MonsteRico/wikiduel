@@ -9,7 +9,7 @@ import {
   type ServerMessage,
 } from "@wikiduel/contracts";
 
-import { createDuelCore } from "./duel-core/duelCore.js";
+import { createDuelCore, type CreateDuelCoreOptions } from "./duel-core/duelCore.js";
 import type { PlayableArticleRepository } from "./playable-articles/repository.js";
 import {
   buildPreviewDiagnostics,
@@ -25,6 +25,8 @@ export type BuildAppOptions = Readonly<{
   promptCatalog?: PromptCatalog;
   promptRandom?: () => number;
   createDuelId?: () => string;
+  now?: CreateDuelCoreOptions["now"];
+  schedule?: CreateDuelCoreOptions["schedule"];
 }>;
 
 
@@ -128,8 +130,34 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         promptCatalog,
         random: options.promptRandom,
         createDuelId: options.createDuelId,
+        repository: options.repository,
+        now: options.now,
+        schedule: options.schedule,
+        onEvent: (lobbyId, event) => {
+          const lobby = lobbies.get(lobbyId);
+          if (!lobby) return;
+          if (event.type === "projections") {
+            for (const projection of event.projections) {
+              const socket = lobby.members.get(projection.recipientId)?.socket;
+              if (socket?.readyState === 1) socket.send(serializeMessage({
+                type: "duel-state", duel: projection.duel,
+              }));
+            }
+          } else {
+            lobbies.delete(lobbyId);
+            for (const member of lobby.members.values()) {
+              if (member.socket?.readyState === 1) member.socket.send(serializeMessage({
+                type: "duel-interrupted", duelId: event.duelId, reason: event.reason,
+                message: event.reason === "preparation-deadline"
+                  ? "A player could not prepare the Round within 30 seconds. The Duel was interrupted and the Lobby closed. No winner was assigned."
+                  : "The start article could not be prepared. The Duel was interrupted and the Lobby closed. No winner was assigned.",
+              }));
+            }
+          }
+        },
       })
     : null;
+  app.addHook("onClose", async () => duelCore?.dispose());
 
   app.addHook("onSend", async (_request, reply, payload) => {
     reply.header("Content-Security-Policy", [
@@ -271,6 +299,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return;
         }
 
+        if (message.type === "round-received" || message.type === "round-rendered"
+          || message.type === "navigate") {
+          const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
+          const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
+          const accepted = member?.socket === socket && duelCore && message.type !== "navigate"
+            && duelCore.acknowledgeRound({
+              lobbyId: lobby!.code, playerId: member.id,
+              duelId: message.duelId, roundId: message.roundId,
+              kind: message.type === "round-received" ? "received" : "rendered",
+            });
+          // Active Navigation is implemented by the next lifecycle slice.
+          if (!accepted) sendCommandRejection(socket, message.type, "invalid-state");
+          return;
+        }
+
         if (message.type === "create-lobby") {
           if (session.lobbyCode && duelCore?.hasActiveDuel(session.lobbyCode)) {
             sendCommandRejection(socket, "create-lobby", "invalid-state");
@@ -362,6 +405,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
               }));
             }
           }
+          await duelCore.prepareRound(lobby.code);
           return;
         }
 

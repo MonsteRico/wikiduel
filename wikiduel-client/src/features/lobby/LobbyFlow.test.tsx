@@ -5,7 +5,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from '../../App'
 import { ControllableWebSocket, sockets } from '../../test/ControllableWebSocket'
-import type { Lobby } from '@wikiduel/contracts'
+import type { Lobby, PreparingDuelProjection, PlayableArticle } from '@wikiduel/contracts'
+
+const roundArticle: PlayableArticle = {
+  identity: { pageId: 1001, title: 'Fixture Start One' },
+  revision: { id: 1, timestamp: '2026-10-01T00:00:00Z' },
+  attribution: {
+    sourceUrl: 'https://en.wikipedia.org/wiki/Fixture_Start_One',
+    historyUrl: 'https://en.wikipedia.org/w/index.php?title=Fixture_Start_One&action=history',
+    licenseName: 'Creative Commons Attribution-ShareAlike 4.0 International',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    modificationNotice: 'Adapted for Wiki Duel',
+  },
+  document: { title: 'Fixture Start One', tableOfContents: [], blocks: [{
+    type: 'paragraph', children: [
+      { type: 'text', value: 'Secret article content. ' },
+      { type: 'navigation', destination: { pageId: 1002, title: 'Fixture Target One' },
+        children: [{ type: 'text', value: 'Follow this link' }] },
+    ],
+  }] },
+}
+
+function preparedDuel(clientId: string): PreparingDuelProjection {
+  return {
+    id: 'duel-1', phase: 'preparing', serverNow: 100_000,
+    round: { id: 'round-1', number: 1, article: roundArticle, prompt: {
+      id: 'prompt-1', start: roundArticle.identity, target: { pageId: 1002, title: 'Fixture Target One' },
+    } },
+    self: { id: clientId, name: 'Host', role: 'host', hp: 100, path: [roundArticle.identity], clicks: 0 },
+    opponent: { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 100 },
+  }
+}
 function hostLobby(clientId: string): Lobby {
   return {
     code: '7G8KZ',
@@ -42,11 +72,48 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
 describe('Lobby client', () => {
+  it('acknowledges covered rendering once and uses server time for countdown and stopwatch', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const duel = preparedDuel(sentClientId(socket))
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    expect(screen.getByText(/Secret article content/)).not.toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
+    expect(sentMessages(socket).filter((message) => String(message.type).startsWith('round-'))).toEqual([
+      { type: 'round-received', duelId: 'duel-1', roundId: 'round-1' },
+      { type: 'round-rendered', duelId: 'duel-1', roundId: 'round-1' },
+    ])
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    expect(sentMessages(socket).filter((message) => message.type === 'round-rendered')).toHaveLength(1)
+    act(() => socket.receive({ type: 'duel-state', duel: {
+      ...duel, phase: 'countdown', startsAt: 103_000,
+      round: { ...duel.round, article: roundArticle },
+    } }))
+    expect(screen.getByLabelText('Round countdown')).toHaveTextContent('3')
+    expect(screen.getByText('Target: Fixture Target One')).toBeVisible()
+    act(() => vi.advanceTimersByTime(2950))
+    expect(screen.getByLabelText('Round countdown')).toHaveTextContent('1')
+    expect(screen.getByText(/Secret article content/)).not.toBeVisible()
+    act(() => vi.advanceTimersByTime(50))
+    expect(screen.getByLabelText('Elapsed time')).toHaveTextContent('0:00')
+    expect(screen.getByText(/Secret article content/)).toBeVisible()
+    act(() => screen.getByRole('button', { name: 'Follow this link' }).click())
+    expect(sentMessages(socket).at(-1)).toMatchObject({ type: 'navigate', roundId: 'round-1' })
+    act(() => vi.advanceTimersByTime(65_000))
+    expect(screen.getByLabelText('Elapsed time')).toHaveTextContent('1:05')
+    act(() => socket.receive({ type: 'duel-interrupted', duelId: 'duel-1',
+      reason: 'preparation-deadline', message: 'The Round could not prepare. No winner was assigned.' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Interruption. The Round could not prepare. No winner was assigned.')
+    expect(screen.queryByLabelText('Elapsed time')).not.toBeInTheDocument()
+  })
+
   it('presents connection state and creates a Lobby through the WebSocket', async () => {
     const user = userEvent.setup()
     const socket = renderApp()
@@ -136,7 +203,9 @@ describe('Lobby client', () => {
       duel: {
         id: 'duel-1',
         phase: 'preparing',
+        serverNow: 100_000,
         round: {
+          id: 'round-1',
           number: 1,
           prompt: {
             id: 'fixture-first',

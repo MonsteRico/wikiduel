@@ -2,8 +2,113 @@ import type { RawData, WebSocket } from "ws";
 import { expect, test } from "vitest";
 import type { PreparingDuelProjection, StartDuelRejectionReason } from "@wikiduel/contracts";
 
+import { preparedArticle } from "./duel-core/fixtures.js";
 import { buildApp } from "./app.js";
 import { deterministicPromptCatalog } from "./prompt-catalog/fixtures.js";
+import { decodeServerMessage, type DuelProjection } from "@wikiduel/contracts";
+
+function nextRound(socket: WebSocket, phase: DuelProjection["phase"]): Promise<DuelProjection> {
+  return new Promise((resolve) => {
+    const listener = (data: RawData) => {
+      const result = decodeServerMessage(JSON.parse(data.toString()));
+      if (result.ok && result.message.type === "duel-state"
+        && result.message.duel.phase === phase && result.message.duel.round.article) {
+        socket.off("message", listener);
+        resolve(result.message.duel);
+      }
+    };
+    socket.on("message", listener);
+  });
+}
+
+test.each(["start", "deadline"] as const)("prepared Round WebSocket flow: %s", async (ending) => {
+  let now = 100_000;
+  const timers = new Set<{ at: number; callback: () => void }>();
+  const advance = (milliseconds: number) => {
+    now += milliseconds;
+    for (const timer of timers) if (timer.at <= now) {
+      timers.delete(timer);
+      timer.callback();
+    }
+  };
+  const app = await buildApp({
+    promptRandom: () => 0,
+    repository: { getByTitle: async () => ({ ok: true, article: preparedArticle }) },
+    now: () => now,
+    schedule: (callback, delay) => {
+      const timer = { at: now + delay, callback };
+      timers.add(timer);
+      return () => { timers.delete(timer); };
+    },
+  });
+  await app.ready();
+  const host = await app.injectWS("/ws");
+  const opponent = await app.injectWS("/ws");
+  try {
+    const lobby = await createLobby(host);
+    await joinLobby(host, opponent, lobby.lobby.code);
+    await setReady(host, opponent, true);
+    await setReady(opponent, host, true);
+    const prepared = [nextRound(host, "preparing"), nextRound(opponent, "preparing")];
+    host.send(JSON.stringify({ type: "start-duel" }));
+    const [first, second] = await Promise.all(prepared);
+    expect(first!.round).toEqual(second!.round);
+    expect(first!.round.article).toEqual(preparedArticle);
+    const ids = { duelId: first!.id, roundId: first!.round.id };
+    const reject = async (socket: WebSocket, message: object) => {
+      const rejected = nextMessage(socket, "command-rejected");
+      socket.send(JSON.stringify(message));
+      await expect(rejected).resolves.toMatchObject({ reason: "invalid-state" });
+    };
+    await reject(host, { type: "round-rendered", ...ids, roundId: "wrong" });
+    await reject(host, { type: "navigate", ...ids, requestId: "early", destination: first!.round.prompt.target });
+    host.send(JSON.stringify({ type: "round-received", ...ids }));
+    host.send(JSON.stringify({ type: "round-rendered", ...ids }));
+    // Ping provides an ordering barrier for commands on each real WebSocket.
+    const flush = async (socket: WebSocket) => {
+      const pong = nextMessage(socket, "pong");
+      socket.send(JSON.stringify({ type: "ping" }));
+      await pong;
+    };
+    await flush(host);
+    advance(60_000);
+    expect(timers.size).toBe(0);
+    opponent.send(JSON.stringify({ type: "round-received", ...ids }));
+    await flush(opponent);
+    if (ending === "deadline") {
+      const interrupted = [nextMessage(host, "duel-interrupted"), nextMessage(opponent, "duel-interrupted")];
+      advance(30_000);
+      const notices = await Promise.all(interrupted);
+      for (const notice of notices) {
+        expect(notice).toMatchObject({ reason: "preparation-deadline", duelId: first!.id });
+        expect(notice).not.toHaveProperty("winnerId");
+      }
+      await reject(host, { type: "round-rendered", ...ids });
+      const missing = nextMessage(opponent, "lobby-error");
+      opponent.send(JSON.stringify({ type: "join-lobby", clientId: "replacement", lobbyCode: lobby.lobby.code }));
+      await expect(missing).resolves.toMatchObject({ message: "Lobby not found" });
+      const fresh = await createLobby(host, "fresh-host");
+      expect(fresh.lobby.members).toHaveLength(1);
+    } else {
+      const countdown = [nextRound(host, "countdown"), nextRound(opponent, "countdown")];
+      opponent.send(JSON.stringify({ type: "round-rendered", ...ids }));
+      for (const duel of await Promise.all(countdown)) expect(duel).toMatchObject({ startsAt: 163_000 });
+      await reject(host, { type: "round-rendered", ...ids });
+      advance(2999);
+      await reject(host, { type: "navigate", ...ids, requestId: "still-early", destination: first!.round.prompt.target });
+      const active = [nextRound(host, "active"), nextRound(opponent, "active")];
+      advance(1);
+      for (const duel of await Promise.all(active)) {
+        expect(duel).toMatchObject({ startsAt: 163_000, self: { clicks: 0, path: [preparedArticle.identity] } });
+      }
+    }
+  } finally {
+    host.terminate();
+    opponent.terminate();
+    await app.close();
+  }
+  expect(timers.size).toBe(0);
+});
 
 type LobbyStateMessage = {
   type: "lobby-state";
@@ -133,6 +238,7 @@ test("a ready Host starts one player-private Duel and disconnect forfeits it onc
   const app = await buildApp({
     promptCatalog: deterministicPromptCatalog,
     createDuelId: () => "duel-1",
+    repository: { getByTitle: async () => ({ ok: true, article: preparedArticle }) },
     promptRandom: () => 0,
   });
   await app.ready();

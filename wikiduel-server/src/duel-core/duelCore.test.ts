@@ -36,7 +36,9 @@ describe("Duel core", () => {
           duel: {
             id: "duel-1",
             phase: "preparing",
+            serverNow: expect.any(Number),
             round: {
+              id: expect.any(String),
               number: 1,
               prompt: {
                 id: "fixture-first",
@@ -65,7 +67,9 @@ describe("Duel core", () => {
           duel: {
             id: "duel-1",
             phase: "preparing",
+            serverNow: expect.any(Number),
             round: {
+              id: expect.any(String),
               number: 1,
               prompt: {
                 id: "fixture-first",
