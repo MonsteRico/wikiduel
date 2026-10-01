@@ -3,7 +3,7 @@
 Status: completed
 Scope: MVP required
 Category: content
-Completed: 2026-10-01 05:39 PM
+Completed: 2026-10-01 05:39 PM via [PR #19](https://github.com/MonsteRico/wikiduel/pull/19)
 
 ## What to build
 
