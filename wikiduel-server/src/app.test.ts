@@ -116,12 +116,13 @@ test("GET /health reports that the server is healthy", async () => {
   await app.close();
 });
 
-test("responses permit only the approved Wikimedia image origin", async () => {
+test("responses permit only the approved Wikimedia image origins", async () => {
   const app = await buildApp();
   const response = await app.inject({ method: "GET", url: "/health" });
 
   const policy = response.headers["content-security-policy"];
   expect(policy).toContain("img-src 'self' https://upload.wikimedia.org");
+  expect(policy).toContain("https://thumb.wikimedia.org");
   expect(policy).not.toContain("img-src *");
   expect(policy).not.toMatch(/img-src[^;]*\shttps:(?:\s|;|$)/);
 

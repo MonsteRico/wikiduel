@@ -137,7 +137,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       "base-uri 'none'",
       "object-src 'none'",
       "frame-ancestors 'none'",
-      "img-src 'self' https://upload.wikimedia.org",
+      "img-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org",
     ].join("; "));
     return payload;
   });

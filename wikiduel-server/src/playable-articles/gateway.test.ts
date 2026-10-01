@@ -92,6 +92,41 @@ describe("WikipediaGateway", () => {
     });
   });
 
+  test.each([
+    [
+      "upload.wikimedia.org",
+      "https://upload.wikimedia.org/wikipedia/commons/2/21/cat.png?utm_source=en.wikipedia.org&utm_campaign=imageinfo&utm_content=original",
+      "https://upload.wikimedia.org/wikipedia/commons/2/21/cat.png",
+    ],
+    [
+      "thumb.wikimedia.org",
+      "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/21/cat.png/800px-cat.png?utm_source=en.wikipedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/21/cat.png/800px-cat.png",
+    ],
+  ])("removes Wikimedia tracking parameters from %s image URLs", async (_host, thumburl, expectedSourceUrl) => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      query: { pages: [{
+        title: "File:Cat.png",
+        imageinfo: [{
+          thumburl,
+          thumbwidth: 800,
+          thumbheight: 600,
+          descriptionurl: "https://commons.wikimedia.org/wiki/File:Cat.png",
+          mime: "image/png",
+          extmetadata: {},
+        }],
+      }] },
+    }), { status: 200 }));
+    const gateway = createWikipediaGateway({
+      userAgent: "WikiDuel/0.1 (contact@example.com)",
+      request,
+    });
+
+    await expect(gateway.fetchImageMetadata(["File:Cat.png"])).resolves.toMatchObject([{
+      sourceUrl: expectedSourceUrl,
+    }]);
+  });
+
   test("translates booleanish non-free metadata conservatively", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       query: { pages: [{

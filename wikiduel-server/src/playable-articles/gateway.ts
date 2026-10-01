@@ -91,6 +91,21 @@ function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+function imageSourceUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value;
+  }
+
+  if (!["upload.wikimedia.org", "thumb.wikimedia.org"].includes(url.hostname)) return value;
+  for (const parameter of ["utm_source", "utm_campaign", "utm_content"]) {
+    url.searchParams.delete(parameter);
+  }
+  return url.href;
+}
+
 function parsedRetryAfter(value: unknown): number | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const seconds = Number(value);
@@ -390,7 +405,7 @@ export function createWikipediaGateway(dependencies: GatewayDependencies): Wikip
         const restrictionValue = metadataText(metadata, "Restrictions");
         images.push({
           requestedTitle,
-          sourceUrl: info.thumburl,
+          sourceUrl: imageSourceUrl(info.thumburl),
           width,
           height,
           mimeType: info.mime,

@@ -15,5 +15,8 @@ test-results/
 # Worktrees
 .worktrees/
 
+# Local Codex workspace metadata
+.codex/
+
 # VSCode files (I needed for Vitest)
 .vscode/

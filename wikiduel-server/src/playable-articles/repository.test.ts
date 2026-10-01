@@ -463,6 +463,32 @@ describe("PlayableArticleRepository", () => {
     });
   });
 
+  test("preserves an attributed figure from Wikimedia's thumbnail host", async () => {
+    const repository = createPlayableArticleRepository({
+      fetchPage: async () => ({
+        ...baseSnapshot,
+        html: `<figure typeof="mw:File/Thumb">
+          <a href="/wiki/File:Ada_portrait.jpg"><img alt="Ada Lovelace"></a>
+        </figure>`,
+      }),
+      resolveLinks: async () => [],
+      fetchImageMetadata: async () => [{
+        ...safeImageMetadata,
+        sourceUrl: "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/320px-Ada.jpg",
+      }],
+    });
+
+    const result = await repository.getByTitle("Ada Lovelace");
+
+    expect(result).toMatchObject({
+      ok: true,
+      article: { document: { blocks: [{
+        type: "figure",
+        sourceUrl: "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada.jpg/320px-Ada.jpg",
+      }] } },
+    });
+  });
+
   test.each([
     ["HTTP source", { sourceUrl: "http://upload.wikimedia.org/image.jpg" }],
     ["protocol-relative source", { sourceUrl: "//upload.wikimedia.org/image.jpg" }],
@@ -470,6 +496,9 @@ describe("PlayableArticleRepository", () => {
     ["unapproved source origin", { sourceUrl: "https://images.example/image.jpg" }],
     ["redirect-shaped source path", {
       sourceUrl: "https://upload.wikimedia.org/redirect?to=https://images.example/image.jpg",
+    }],
+    ["unrecognized source query parameter", {
+      sourceUrl: "https://upload.wikimedia.org/wikipedia/commons/a/ada.jpg?redirect=https://images.example/",
     }],
     ["unapproved description origin", { descriptionUrl: "https://example.com/wiki/File:Ada_portrait.jpg" }],
     ["non-Creative-Commons HTTP license", { licenseUrl: "http://licenses.example/by/4.0/" }],

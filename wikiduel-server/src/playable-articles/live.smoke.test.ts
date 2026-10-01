@@ -27,7 +27,7 @@ live("live English Wikipedia smoke", () => {
       const figure = result.article.document.blocks.find((block) => block.type === "figure");
       expect(figure).toBeDefined();
       if (figure) {
-        expect(figure.sourceUrl).toMatch(/^https:\/\/upload\.wikimedia\.org\/wikipedia\//);
+        expect(figure.sourceUrl).toMatch(/^https:\/\/(?:upload|thumb)\.wikimedia\.org\/wikipedia\//);
         expect(figure.width).toBeGreaterThan(1);
         expect(figure.height).toBeGreaterThan(1);
         expect(figure.alt.trim().length + figure.caption.length).toBeGreaterThan(0);
