@@ -131,6 +131,15 @@ type DuelState = {
   players: readonly [DuelPlayerState, DuelPlayerState];
 };
 
+function commitNavigation(
+  duel: DuelState, index: 0 | 1, destination: NavigationDestination, article?: PlayableArticle,
+): void {
+  const player = duel.players[index];
+  const updated = { ...player, navigating: false, article: article ?? player.article,
+    clicks: player.clicks + 1, path: [...player.path, Object.freeze({ ...destination })] };
+  duel.players = index === 0 ? [updated, duel.players[1]] : [duel.players[0], updated];
+}
+
 function rejection(reason: StartDuelRejectionReason): StartDuelResult {
   return { ok: false, rejection: { command: "start-duel", reason } };
 }
@@ -365,9 +374,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         const result = await options.repository?.getByTitle(command.destination.title);
         if (!result?.ok || currentRound(command) !== duel || !isNavigable(duel)
           || duel.players[index] !== pending) return false;
-        const updated = { ...pending, navigating: false, article: result.article,
-          clicks: pending.clicks + 1, path: [...pending.path, Object.freeze({ ...result.article.identity })] };
-        duel.players = index === 0 ? [updated, duel.players[1]] : [duel.players[0], updated];
+        commitNavigation(duel, index, result.article.identity, result.article);
         duel.phase = "active";
         if (result.article.identity.pageId === duel.prompt.target.pageId
           && result.article.identity.title === duel.prompt.target.title) {
@@ -395,9 +402,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       const index = duel.players[0].id === command.playerId ? 0 : 1;
       const player = duel.players[index];
       if (player.clicks !== command.expectedClicks) return false;
-      const updated = { ...player, clicks: player.clicks + 1,
-        path: [...player.path, Object.freeze({ ...command.destination })] };
-      duel.players = index === 0 ? [updated, duel.players[1]] : [duel.players[0], updated];
+      commitNavigation(duel, index, command.destination);
       return true;
     },
 
