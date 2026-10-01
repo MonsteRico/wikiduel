@@ -1,7 +1,7 @@
 # Create Authoritative Round Outcomes
 
 Status: completed
-Completed: 2026-10-01 06:32 PM
+Completed: 2026-10-01 06:32 PM via [PR #20](https://github.com/MonsteRico/wikiduel/pull/20)
 Scope: MVP required
 Category: enhancement
 
