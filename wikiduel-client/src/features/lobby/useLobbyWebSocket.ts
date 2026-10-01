@@ -11,6 +11,8 @@ export function useLobbyWebSocket() {
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [lobby, setLobby] = useState<Lobby | null>(null)
   const [duel, setDuel] = useState<DuelProjection | null>(null)
+  const pendingNavigation = useRef<{ requestId: string; duelId: string; roundId: string } | null>(null)
+  const [navigating, setNavigating] = useState(false)
   const serverClock = useRef({ serverNow: 0, receivedAt: 0 })
   const receivedRounds = useRef(new Set<string>())
   const renderedRounds = useRef(new Set<string>())
@@ -37,6 +39,12 @@ export function useLobbyWebSocket() {
       setNotice({ title: 'Lobby closed', message: message.message })
     })
     const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
+      const pending = pendingNavigation.current
+      if (pending && (pending.duelId !== message.duel.id || pending.roundId !== message.duel.round.id
+        || message.duel.phase === 'post-round' || message.duel.phase === 'completed')) {
+        pendingNavigation.current = null
+        setNavigating(false)
+      }
       serverClock.current = { serverNow: message.duel.serverNow, receivedAt: performance.now() }
       if (message.duel.phase === 'preparing' && message.duel.round.article
         && !receivedRounds.current.has(message.duel.round.id)) {
@@ -48,6 +56,14 @@ export function useLobbyWebSocket() {
     })
     const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
       setError(`The ${message.command} command was rejected: ${message.reason}.`)
+    })
+    const unsubscribeNavigation = webSocket.subscribe('navigation-result', (message) => {
+      const pending = pendingNavigation.current
+      if (!pending || pending.requestId !== message.requestId || pending.duelId !== message.duelId
+        || pending.roundId !== message.roundId) return
+      pendingNavigation.current = null
+      setNavigating(false)
+      if (!message.accepted) setError('Navigation failed. Choose a link to try again.')
     })
     const unsubscribeDuelForfeited = webSocket.subscribe('duel-forfeited', (message) => {
       setLobby(null)
@@ -71,6 +87,7 @@ export function useLobbyWebSocket() {
       unsubscribeLobbyClosed()
       unsubscribeDuelState()
       unsubscribeCommandRejected()
+      unsubscribeNavigation()
       unsubscribeDuelForfeited()
       unsubscribeDuelInterrupted()
       unsubscribeFailure()
@@ -112,9 +129,17 @@ export function useLobbyWebSocket() {
   const getServerTime = useCallback(() => serverClock.current.serverNow
     + performance.now() - serverClock.current.receivedAt, [])
   const navigate = useCallback((destination: NavigationDestination) => {
-    if (!duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
-    webSocket.send({ type: 'navigate', duelId: duel.id, roundId: duel.round.id,
-      requestId: crypto.randomUUID(), destination })
+    if (pendingNavigation.current || !duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
+    const pending = { requestId: crypto.randomUUID(), duelId: duel.id, roundId: duel.round.id }
+    pendingNavigation.current = pending
+    if (webSocket.send({ type: 'navigate', ...pending, destination,
+      source: duel.round.article.identity, expectedClicks: duel.self.clicks })) {
+      setNavigating(true)
+      setError(null)
+    } else {
+      pendingNavigation.current = null
+      setError('Navigation failed. Check your connection.')
+    }
   }, [duel, getServerTime, webSocket])
 
   return {
@@ -133,5 +158,6 @@ export function useLobbyWebSocket() {
     acknowledgeRendered,
     getServerTime,
     navigate,
+    navigating,
   }
 }

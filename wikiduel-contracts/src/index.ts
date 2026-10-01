@@ -277,7 +277,10 @@ const PreparingDuelProjectionSchema = z.strictObject({
     path: z.array(NavigationDestinationSchema),
     clicks: z.number().int().nonnegative(),
   }),
-  opponent: DuelPlayerIdentitySchema,
+  opponent: DuelPlayerIdentitySchema.extend({
+    clicks: z.number().int().nonnegative(),
+    connected: z.boolean(),
+  }),
 });
 
 const TimedDuelProjectionSchema = PreparingDuelProjectionSchema.extend({
@@ -349,6 +352,7 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("navigate"), ...RoundCommandFields,
     requestId: z.string().min(1), destination: NavigationDestinationSchema,
+    source: NavigationDestinationSchema, expectedClicks: z.number().int().nonnegative(),
   }),
   z.strictObject({ type: z.literal("leave-lobby") }),
   PreviewArticleRequestSchema,
@@ -386,6 +390,10 @@ const PreviewErrorMessageSchema = z.strictObject({
 });
 
 const ServerMessageSchema = z.union([
+  z.strictObject({
+    type: z.literal("navigation-result"), ...RoundCommandFields,
+    requestId: z.string().min(1), accepted: z.boolean(), ...TimestampSchema,
+  }),
   z.strictObject({ type: z.literal("welcome"), message: z.string(), ...TimestampSchema }),
   z.strictObject({ type: z.literal("pong"), message: z.string(), ...TimestampSchema }),
   z.strictObject({ type: z.literal("lobby-state"), lobby: LobbySchema, ...TimestampSchema }),

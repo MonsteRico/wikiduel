@@ -20,9 +20,21 @@ const article = {
 } as const;
 
 describe("Round preparation contracts", () => {
+  it("requires source and click version for Navigation and correlates its result", () => {
+    const command = { type: "navigate", duelId: "duel", roundId: "round", requestId: "request",
+      source: article.identity, destination: article.identity, expectedClicks: 2 };
+    for (const patch of [{ source: undefined }, { expectedClicks: undefined }, { expectedClicks: -1 }, { expectedClicks: 0.5 }]) {
+      expect(decodeClientMessage({ ...command, ...patch }).ok).toBe(false);
+    }
+    const result = { type: "navigation-result", duelId: "duel", roundId: "round", requestId: "request",
+      accepted: false, sentAt: "now" };
+    expect(decodeServerMessage(result).ok).toBe(true);
+    expect(decodeServerMessage({ ...result, requestId: undefined }).ok).toBe(false);
+  });
   it.each(["round-received", "round-rendered", "navigate"])("decodes strict %s commands", (type) => {
     const command = { type, duelId: "duel-1", roundId: "round-1",
-      ...(type === "navigate" ? { requestId: "request-1", destination: article.identity } : {}),
+      ...(type === "navigate" ? { requestId: "request-1", destination: article.identity,
+        source: article.identity, expectedClicks: 0 } : {}),
     };
     expect(decodeClientMessage(command)).toEqual({ ok: true, message: command });
     expect(decodeClientMessage({ ...command, roundId: "" }).ok).toBe(false);
@@ -39,10 +51,15 @@ describe("Round preparation contracts", () => {
           id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
         } },
         self: { ...player, path: [article.identity], clicks: 0 },
-        opponent: { ...player, id: "opponent", role: "opponent" },
+        opponent: { ...player, id: "opponent", role: "opponent", clicks: 0, connected: true },
       },
     };
     expect(decodeServerMessage(message).ok).toBe(true);
+    for (const privateField of ["article", "currentArticle", "path", "distance", "estimatedDistance"]) {
+      expect(decodeServerMessage({ ...message, duel: { ...message.duel,
+        opponent: { ...message.duel.opponent, [privateField]: article },
+      } }).ok).toBe(false);
+    }
     expect(decodeServerMessage({ ...message, duel: { ...message.duel, phase: "active" } }).ok).toBe(true);
     expect(decodeServerMessage({ ...message, duel: { ...message.duel, startsAt: undefined } }).ok).toBe(false);
     expect(decodeServerMessage({ ...message, duel: { ...message.duel,
@@ -165,6 +182,7 @@ describe("decodeServerMessage", () => {
           clicks: 0,
         },
         opponent: {
+          clicks: 0, connected: true,
           id: "player-2",
           name: "Opponent",
           role: "opponent",
@@ -264,6 +282,7 @@ describe("decodeServerMessage", () => {
           clicks: 0,
         },
         opponent: {
+          clicks: 0, connected: true,
           id: "player-2",
           name: "Opponent",
           role: "opponent",
@@ -313,7 +332,7 @@ it("decodes only strict Round Outcomes in ended projections", () => {
       id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
     } },
     self: { ...player, path: [article.identity], clicks: 1 },
-    opponent: { ...player, id: "opponent", role: "opponent", hp: 78 },
+    opponent: { ...player, id: "opponent", role: "opponent", hp: 78, clicks: 0, connected: true },
     outcome,
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });

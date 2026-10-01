@@ -1,6 +1,6 @@
 import type { RawData, WebSocket } from "ws";
 import { expect, test } from "vitest";
-import type { PreparingDuelProjection, StartDuelRejectionReason } from "@wikiduel/contracts";
+import type { PreparingDuelProjection, StartDuelRejectionReason, PlayableArticle } from "@wikiduel/contracts";
 
 import { preparedArticle } from "./duel-core/fixtures.js";
 import { buildApp } from "./app.js";
@@ -20,6 +20,147 @@ function nextRound(socket: WebSocket, phase: DuelProjection["phase"]): Promise<D
     socket.on("message", listener);
   });
 }
+
+function navigationResult(socket: WebSocket, requestId: string): Promise<{ accepted: boolean }> {
+  return new Promise((resolve) => {
+    const listener = (raw: RawData) => {
+      const decoded = decodeServerMessage(JSON.parse(raw.toString()));
+      if (decoded.ok && decoded.message.type === "navigation-result" && decoded.message.requestId === requestId) {
+        socket.off("message", listener);
+        resolve(decoded.message);
+      }
+    };
+    socket.on("message", listener);
+  });
+}
+
+test.each(["throw", "failure"])("two players serialize Navigation, keep routes private and resolve the first Target Arrival with lookup %s", async (failure) => {
+  const alias = { pageId: 42, title: "Linked redirect" };
+  const secret = { pageId: 43, title: "Private canonical destination" };
+  const target = deterministicPromptCatalog.prompts[0]!.target;
+  const broken = { pageId: 44, title: "Unavailable" };
+  const start: PlayableArticle = { ...preparedArticle, document: { ...preparedArticle.document,
+    blocks: [{ type: "paragraph", children: [alias, target, broken].map((destination) => ({
+      type: "navigation", destination, children: [{ type: "text", value: destination.title }],
+    })) }] } };
+  const destination: PlayableArticle = { ...preparedArticle, identity: secret,
+    document: { title: secret.title, tableOfContents: [], blocks: [{ type: "infobox",
+      title: [{ type: "text", value: "Private content" }], sections: [{ items: [{ blocks: [
+        { type: "paragraph", children: [{ type: "navigation", destination: target,
+          children: [{ type: "text", value: "Target" }] }] },
+      ] }] }] }] } };
+  const lookups: Array<{ title: string; resolve: (article: PlayableArticle) => void }> = [];
+  let now = 100_000;
+  let activate = () => {};
+  const app = await buildApp({ promptRandom: () => 0, now: () => now,
+    schedule: (callback, delay) => { if (delay === 3000) activate = callback; return () => {}; },
+    repository: { getByTitle: async (title) => {
+      if (title === start.identity.title) return { ok: true, article: start };
+      if (title === broken.title) {
+        if (failure === "throw") throw new Error("Upstream unavailable");
+        return { ok: false, failure: { code: "article-not-found" } };
+      }
+      const article = await new Promise<PlayableArticle>((resolve) => lookups.push({ title, resolve }));
+      return { ok: true, article };
+    } },
+  });
+  await app.ready();
+  const host = await app.injectWS("/ws");
+  const opponent = await app.injectWS("/ws");
+  const hostStates: DuelProjection[] = [];
+  const opponentStates: DuelProjection[] = [];
+  for (const [socket, states] of [[host, hostStates], [opponent, opponentStates]] as const) {
+    socket.on("message", (raw) => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === "duel-state") {
+        expect(decodeServerMessage(message).ok).toBe(true);
+        states.push(message.duel);
+      }
+    });
+  }
+  const flush = async (socket: WebSocket) => {
+    const pong = nextMessage(socket, "pong");
+    socket.send(JSON.stringify({ type: "ping" }));
+    await pong;
+  };
+  try {
+    const lobby = await createLobby(host);
+    await joinLobby(host, opponent, lobby.lobby.code);
+    await setReady(host, opponent, true);
+    await setReady(opponent, host, true);
+    const prepared = [nextRound(host, "preparing"), nextRound(opponent, "preparing")];
+    host.send(JSON.stringify({ type: "start-duel" }));
+    const [duel] = await Promise.all(prepared);
+    const ids = { duelId: duel!.id, roundId: duel!.round.id };
+    const command = { type: "navigate", ...ids, requestId: "move", source: start.identity,
+      expectedClicks: 0, destination: alias };
+    const reject = async (socket: WebSocket, overrides: object) => {
+      const result = nextMessage(socket, "navigation-result");
+      socket.send(JSON.stringify({ ...command, ...overrides }));
+      await expect(result).resolves.toMatchObject({ accepted: false });
+    };
+    await reject(host, {});
+    const countdown = nextRound(host, "countdown");
+    for (const socket of [host, opponent]) {
+      socket.send(JSON.stringify({ type: "round-received", ...ids }));
+      socket.send(JSON.stringify({ type: "round-rendered", ...ids }));
+    }
+    await countdown;
+    const active = [nextRound(host, "active"), nextRound(opponent, "active")];
+    now += 3000;
+    activate();
+    await Promise.all(active);
+    const before = opponentStates.at(-1)!;
+    for (const invalid of [
+      { roundId: "wrong" }, { duelId: "wrong" }, { source: target },
+      { expectedClicks: 1 }, { destination: secret }, { destination: { ...alias, pageId: 999 } },
+      { requestId: "failed", destination: broken },
+    ]) await reject(host, invalid);
+    const moved = navigationResult(host, "move");
+    host.send(JSON.stringify(command));
+    await flush(host);
+    expect(lookups).toHaveLength(1);
+    expect(hostStates.at(-1)!.self.clicks).toBe(0);
+    await reject(host, { requestId: "conflict" });
+    const changed = [nextRound(host, "active"), nextRound(opponent, "active")];
+    lookups[0]!.resolve(destination);
+    await expect(moved).resolves.toMatchObject({ accepted: true });
+    await Promise.all(changed);
+    expect(hostStates.at(-1)!).toMatchObject({ self: { clicks: 1, path: [start.identity, secret] },
+      round: { article: destination } });
+    expect(opponentStates.at(-1)).toEqual({ ...before, opponent: { ...before.opponent, clicks: 1 } });
+    expect(JSON.stringify(opponentStates)).not.toContain(secret.title);
+    expect(JSON.stringify(opponentStates)).not.toContain("Private content");
+    await reject(host, { source: secret, expectedClicks: 1, destination: target }); // duplicate request ID
+    await reject(host, { requestId: "stale", expectedClicks: 1, destination: target });
+    expect(lookups).toHaveLength(1);
+    const hostResult = nextMessage(host, "navigation-result");
+    host.send(JSON.stringify({ ...command, requestId: "host-target", source: secret,
+      expectedClicks: 1, destination: target }));
+    await flush(host);
+    const opponentResult = nextMessage(opponent, "navigation-result");
+    opponent.send(JSON.stringify({ ...command, requestId: "opponent-target", destination: target }));
+    await flush(opponent);
+    expect(lookups).toHaveLength(3);
+    const ended = [nextRound(host, "post-round"), nextRound(opponent, "post-round")];
+    now += 1500;
+    lookups[2]!.resolve({ ...preparedArticle, identity: target });
+    const outcomes = await Promise.all(ended);
+    await expect(opponentResult).resolves.toMatchObject({ accepted: true });
+    lookups[1]!.resolve({ ...preparedArticle, identity: target });
+    await expect(hostResult).resolves.toMatchObject({ accepted: false });
+    for (const state of outcomes) {
+      if (state.phase !== "post-round") throw new Error("Expected Round Outcome");
+      expect(state.outcome.winnerId).toBe(duel!.opponent.id);
+      expect(state.outcome.players.map((player) => player.clicks)).toEqual([1, 1]);
+    }
+    await reject(host, { requestId: "late", source: secret, expectedClicks: 1, destination: target });
+    expect(hostStates.at(-1)).toEqual(outcomes[0]);
+    expect(opponentStates.at(-1)).toEqual(outcomes[1]);
+  } finally {
+    host.terminate(); opponent.terminate(); await app.close();
+  }
+});
 
 test.each(["start", "deadline"] as const)("prepared Round WebSocket flow: %s", async (ending) => {
   let now = 100_000;
@@ -61,7 +202,13 @@ test.each(["start", "deadline"] as const)("prepared Round WebSocket flow: %s", a
       await expect(rejected).resolves.toMatchObject({ reason: "invalid-state" });
     };
     await reject(host, { type: "round-rendered", ...ids, roundId: "wrong" });
-    await reject(host, { type: "navigate", ...ids, requestId: "early", destination: first!.round.prompt.target });
+    const rejectNavigation = async (requestId: string) => {
+      const rejected = nextMessage(host, "navigation-result");
+      host.send(JSON.stringify({ type: "navigate", ...ids, requestId, destination: first!.round.prompt.target,
+        source: preparedArticle.identity, expectedClicks: 0 }));
+      await expect(rejected).resolves.toMatchObject({ accepted: false, requestId });
+    };
+    await rejectNavigation("early");
     host.send(JSON.stringify({ type: "round-received", ...ids }));
     host.send(JSON.stringify({ type: "round-rendered", ...ids }));
     // Ping provides an ordering barrier for commands on each real WebSocket.
@@ -95,7 +242,7 @@ test.each(["start", "deadline"] as const)("prepared Round WebSocket flow: %s", a
       for (const duel of await Promise.all(countdown)) expect(duel).toMatchObject({ startsAt: 163_000 });
       await reject(host, { type: "round-rendered", ...ids });
       advance(2999);
-      await reject(host, { type: "navigate", ...ids, requestId: "still-early", destination: first!.round.prompt.target });
+      await rejectNavigation("still-early");
       const active = [nextRound(host, "active"), nextRound(opponent, "active")];
       advance(1);
       for (const duel of await Promise.all(active)) {
@@ -313,7 +460,7 @@ test("a ready Host starts one player-private Duel and disconnect forfeits it onc
     { pageId: 1001, title: "Fixture Start One" },
   ]);
   expect(hostDuelState.duel.opponent).not.toHaveProperty("path");
-  expect(hostDuelState.duel.opponent).not.toHaveProperty("clicks");
+  expect(hostDuelState.duel.opponent).toMatchObject({ clicks: 0, connected: true });
   expect(opponentDuelState.duel.self.id).toBe("opponent-id");
   expect(opponentDuelState.duel.opponent.id).toBe("host-id");
   expect(opponentDuelState.duel.opponent).not.toHaveProperty("path");
