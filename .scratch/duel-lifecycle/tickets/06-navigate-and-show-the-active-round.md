@@ -1,7 +1,7 @@
 # Navigate and Show the Active Round
 
 Status: completed
-Completed: 2026-10-01 06:53 PM
+Completed: 2026-10-01 06:53 PM via [PR #21](https://github.com/MonsteRico/wikiduel/pull/21)
 Scope: MVP required
 Category: enhancement
 
