@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from '../../App'
 import { ControllableWebSocket, sockets } from '../../test/ControllableWebSocket'
-import type { Lobby, PreparingDuelProjection, PlayableArticle } from '@wikiduel/contracts'
+import type { Lobby, DuelProjection, PreparingDuelProjection, PlayableArticle } from '@wikiduel/contracts'
 
 const roundArticle: PlayableArticle = {
   identity: { pageId: 1001, title: 'Fixture Start One' },
@@ -121,7 +121,7 @@ describe('Lobby client', () => {
       ...duel, phase: 'active', startsAt: 99_000, round: { ...duel.round, article: roundArticle },
     } }))
     expect(screen.getByText(/Secret article content/)).toBeVisible()
-    act(() => socket.receive({ type: 'duel-state', duel: {
+    const ended: Extract<DuelProjection, { phase: 'post-round' | 'completed' }> = {
       ...duel, phase, startsAt: 99_000, readyPlayerIds: [], round: { ...duel.round, article: roundArticle },
       outcome: {
         roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: duel.self.id,
@@ -134,7 +134,8 @@ describe('Lobby client', () => {
           clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
           minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
       },
-    } }))
+    }
+    act(() => socket.receive({ type: 'duel-state', duel: ended }))
     act(() => vi.advanceTimersByTime(5000))
     expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Elapsed time')).not.toBeInTheDocument()
@@ -149,6 +150,9 @@ describe('Lobby client', () => {
     const ready = screen.queryByRole('button', { name: 'Ready for Next Round' })
     if (phase === 'completed') expect(ready).not.toBeInTheDocument()
     else {
+      act(() => socket.receive({ type: 'duel-state', duel: { ...ended, readyPlayerIds: ['opponent'] } }))
+      expect(screen.getByRole('status')).toHaveTextContent('Your opponent is ready.')
+      expect(ready).toBeEnabled()
       act(() => screen.getByRole('link', { name: 'WikiDuel home' }).click())
       expect(screen.getByRole('dialog', { name: 'Leave Duel?' })).toBeVisible()
       act(() => screen.getByRole('button', { name: 'Keep playing' }).click())
@@ -158,6 +162,9 @@ describe('Lobby client', () => {
       expect(sentMessages(socket).filter((message) => message.type === 'ready-next-round')).toEqual([
         { type: 'ready-next-round', duelId: 'duel-1', roundId: 'round-1' },
       ])
+      act(() => socket.receive({ type: 'duel-state', duel: { ...ended, readyPlayerIds: [duel.self.id] } }))
+      expect(screen.getByRole('status')).toHaveTextContent('Your opponent is not ready yet.')
+      expect(ready).toBeDisabled()
       act(() => socket.receive({ type: 'duel-state', duel: { ...duel, round: { ...duel.round, id: 'round-2', number: 2 } } }))
       expect(screen.getByRole('heading', { name: 'Prompt covered' })).toBeVisible()
       expect(sentMessages(socket)).toContainEqual({ type: 'round-rendered', duelId: 'duel-1', roundId: 'round-2' })

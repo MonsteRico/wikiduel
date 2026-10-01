@@ -135,6 +135,9 @@ it("preserves HP across Rounds, clamps at zero and retains the final Round Outco
   expect(core.endRound({ ...command, cause: { type: "target-arrival" } }).ok).toBe(false);
   expect(core.canNavigate(command)).toBe(false);
   expect(core.readyForNextRound(command)).toBe(false);
+  expect(core.leaveDuel(command)).toEqual({ type: "lobby-closed" });
+  expect(core.hasActiveDuel("lobby")).toBe(false);
+  expect(outcomes[4]).toMatchObject({ winnerId: "host", final: true, players: [{ hp: 100 }, { hp: 0 }] });
 });
 
 it("cannot replace an active Round with preparation", async () => {

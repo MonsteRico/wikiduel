@@ -476,9 +476,13 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
 
     leaveDuel(command: DisconnectPlayerCommand & { duelId: string }) {
       const duel = duels.get(command.lobbyId);
-      if (duel?.id !== command.duelId) return null;
+      if (duel?.id !== command.duelId || !duel.players.some((player) => player.id === command.playerId)) return null;
+      if (duel.phase === "completed") {
+        disband(command.lobbyId);
+        return { type: "lobby-closed" as const };
+      }
       const forfeit = this.disconnectPlayer(command);
-      return forfeit ? { ...forfeit, reason: "player-left" as const } : null;
+      return forfeit ? { type: "duel-forfeited" as const, ...forfeit, reason: "player-left" as const } : null;
     },
 
     disconnectPlayer(command: DisconnectPlayerCommand): DuelForfeit | null {
