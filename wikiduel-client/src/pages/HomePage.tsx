@@ -39,7 +39,7 @@ export function HomePage() {
     <AppShell headerAction={<ConnectionBadge status={status} />}>
       {notice ? (
         <div className="ds-inset mb-5 flex items-center justify-between gap-5 border-danger/40 bg-danger/10 px-4 py-3 text-sm text-ink motion-safe:animate-arrive" role="alert">
-          <p className="m-0"><strong>Lobby closed.</strong> {notice}</p>
+          <p className="m-0"><strong>{notice.title}.</strong> {notice.message}</p>
           <button className="ds-focus cursor-pointer rounded-sm border-0 bg-transparent p-1 text-xl leading-none text-ink-soft hover:text-ink" type="button" onClick={clearNotice} aria-label="Dismiss message">×</button>
         </div>
       ) : null}

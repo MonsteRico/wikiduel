@@ -15,6 +15,11 @@ The server listens on `http://localhost:3000` by default. Set `PORT` or `HOST` t
 
 The WebSocket endpoint is available at `ws://localhost:3000/ws`.
 
+Until the human-maintained production Prompt seed is available, non-production
+startup uses the deterministic Prompt Catalog fixture for Duel development.
+Production startup does not enable Duel creation without an injected validated
+Prompt Catalog.
+
 ## Scripts
 
 - `npm run dev` starts the server with file watching.

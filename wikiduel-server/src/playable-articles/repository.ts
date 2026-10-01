@@ -249,7 +249,10 @@ function safeFigure(
   // whether those fields are safe and complete enough to become article output.
   // Returning rejection reasons is intentional degradation: unsafe media disappears, but
   // the surrounding article can still be playable as text.
-  const source = safeUrl(metadata.sourceUrl, ["https://upload.wikimedia.org"]);
+  const source = safeUrl(metadata.sourceUrl, [
+    "https://upload.wikimedia.org",
+    "https://thumb.wikimedia.org",
+  ]);
   const description = safeUrl(metadata.descriptionUrl, [
     "https://commons.wikimedia.org",
     "https://en.wikipedia.org",
@@ -261,7 +264,7 @@ function safeFigure(
     ?? (isPublicDomain ? "https://creativecommons.org/publicdomain/mark/1.0/" : undefined);
   const license = effectiveLicenseUrl ? safeUrl(effectiveLicenseUrl) : undefined;
   const fileTitle = description ? descriptionFileTitle(description) : undefined;
-  // The source check is narrower than "any upload.wikimedia.org URL": thumbnails
+  // The source check is narrower than "any Wikimedia image URL": thumbnails
   // must be ordinary `/wikipedia/` media with no query/hash. That keeps redirect
   // endpoints, tracking parameters, and non-file service URLs out of the render
   // contract even when they came from upstream metadata.
