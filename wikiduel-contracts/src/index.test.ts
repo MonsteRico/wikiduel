@@ -19,6 +19,47 @@ const article = {
   },
 } as const;
 
+describe("Round preparation contracts", () => {
+  it.each(["round-received", "round-rendered", "navigate"])("decodes strict %s commands", (type) => {
+    const command = { type, duelId: "duel-1", roundId: "round-1",
+      ...(type === "navigate" ? { requestId: "request-1", destination: article.identity } : {}),
+    };
+    expect(decodeClientMessage(command)).toEqual({ ok: true, message: command });
+    expect(decodeClientMessage({ ...command, roundId: "" }).ok).toBe(false);
+    expect(decodeClientMessage({ ...command, playerId: "spoofed" }).ok).toBe(false);
+  });
+
+  it("requires article content and an authoritative timestamp for timed phases", () => {
+    const player = { id: "host", name: "Host", role: "host", hp: 100 };
+    const message = {
+      type: "duel-state", sentAt: "2026-10-01T00:00:00Z",
+      duel: {
+        id: "duel-1", phase: "countdown", serverNow: 100_000, startsAt: 103_000,
+        round: { id: "round-1", number: 1, article, prompt: {
+          id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
+        } },
+        self: { ...player, path: [article.identity], clicks: 0 },
+        opponent: { ...player, id: "opponent", role: "opponent" },
+      },
+    };
+    expect(decodeServerMessage(message).ok).toBe(true);
+    expect(decodeServerMessage({ ...message, duel: { ...message.duel, phase: "active" } }).ok).toBe(true);
+    expect(decodeServerMessage({ ...message, duel: { ...message.duel, startsAt: undefined } }).ok).toBe(false);
+    expect(decodeServerMessage({ ...message, duel: { ...message.duel,
+      round: { ...message.duel.round, article: undefined },
+    } }).ok).toBe(false);
+  });
+
+  it("does not permit a winner in an Interruption notice", () => {
+    const message = { type: "duel-interrupted", duelId: "duel-1",
+      reason: "preparation-deadline", message: "Round preparation expired.",
+      sentAt: "2026-10-01T00:00:00Z",
+    };
+    expect(decodeServerMessage(message).ok).toBe(true);
+    expect(decodeServerMessage({ ...message, winnerId: "host" }).ok).toBe(false);
+  });
+});
+
 const emptyOmission = { count: 0, reasons: [], examples: [] } as const;
 const diagnostics = {
   requestedTitle: "Douglas Adams",
@@ -105,7 +146,9 @@ describe("decodeServerMessage", () => {
       duel: {
         id: "duel-1",
         phase: "preparing",
+        serverNow: 100_000,
         round: {
+          id: "round-1",
           number: 1,
           prompt: {
             id: "prompt-1",
@@ -202,7 +245,9 @@ describe("decodeServerMessage", () => {
       duel: {
         id: "duel-1",
         phase: "preparing",
+        serverNow: 100_000,
         round: {
+          id: "round-1",
           number: 1,
           prompt: {
             id: "prompt-1",

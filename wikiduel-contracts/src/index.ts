@@ -266,9 +266,12 @@ const DuelPlayerIdentitySchema = z.strictObject({
 const PreparingDuelProjectionSchema = z.strictObject({
   id: z.string(),
   phase: z.literal("preparing"),
+  serverNow: z.number().nonnegative(),
   round: z.strictObject({
+    id: z.string().min(1),
     number: z.number().int().positive(),
     prompt: DuelPromptSchema,
+    article: PlayableArticleSchema.optional(),
   }),
   self: DuelPlayerIdentitySchema.extend({
     path: z.array(NavigationDestinationSchema),
@@ -276,6 +279,17 @@ const PreparingDuelProjectionSchema = z.strictObject({
   }),
   opponent: DuelPlayerIdentitySchema,
 });
+
+const TimedDuelProjectionSchema = PreparingDuelProjectionSchema.extend({
+  phase: z.enum(["countdown", "active"]),
+  startsAt: z.number().nonnegative(),
+  round: PreparingDuelProjectionSchema.shape.round.extend({ article: PlayableArticleSchema }),
+});
+const DuelProjectionSchema = z.union([PreparingDuelProjectionSchema, TimedDuelProjectionSchema]);
+const RoundCommandFields = {
+  duelId: z.string().min(1),
+  roundId: z.string().min(1),
+};
 
 const StartDuelRejectionReasonSchema = z.enum([
   "invalid-state",
@@ -294,6 +308,12 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({ type: z.literal("set-ready"), ready: z.boolean() }),
   z.strictObject({ type: z.literal("start-duel") }),
+  z.strictObject({ type: z.literal("round-received"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("round-rendered"), ...RoundCommandFields }),
+  z.strictObject({
+    type: z.literal("navigate"), ...RoundCommandFields,
+    requestId: z.string().min(1), destination: NavigationDestinationSchema,
+  }),
   z.strictObject({ type: z.literal("leave-lobby") }),
   PreviewArticleRequestSchema,
 ]);
@@ -337,7 +357,7 @@ const ServerMessageSchema = z.union([
   z.strictObject({ type: z.literal("lobby-closed"), message: z.string(), ...TimestampSchema }),
   z.strictObject({
     type: z.literal("duel-state"),
-    duel: PreparingDuelProjectionSchema,
+    duel: DuelProjectionSchema,
     ...TimestampSchema,
   }),
   z.strictObject({
@@ -348,8 +368,18 @@ const ServerMessageSchema = z.union([
       "set-ready",
       "start-duel",
       "leave-lobby",
+      "round-received",
+      "round-rendered",
+      "navigate",
     ]),
     reason: StartDuelRejectionReasonSchema,
+    ...TimestampSchema,
+  }),
+  z.strictObject({
+    type: z.literal("duel-interrupted"),
+    duelId: z.string(),
+    reason: z.enum(["preparation-deadline", "article-unavailable"]),
+    message: z.string(),
     ...TimestampSchema,
   }),
   z.strictObject({
@@ -388,6 +418,7 @@ export type Lobby = DeepReadonly<z.infer<typeof LobbySchema>>;
 export type DuelPrompt = DeepReadonly<z.infer<typeof DuelPromptSchema>>;
 export type PreparingDuelProjection =
   DeepReadonly<z.infer<typeof PreparingDuelProjectionSchema>>;
+export type DuelProjection = DeepReadonly<z.infer<typeof DuelProjectionSchema>>;
 export type StartDuelRejectionReason = z.infer<typeof StartDuelRejectionReasonSchema>;
 export type ClientMessage = DeepReadonly<z.infer<typeof ClientMessageSchema>>;
 export type PreviewArticleResultMessage =
