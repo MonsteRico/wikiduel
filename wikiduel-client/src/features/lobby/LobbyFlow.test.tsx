@@ -78,6 +78,35 @@ afterEach(() => {
 })
 
 describe('Lobby client', () => {
+  it.each(['post-round', 'completed'] as const)('stops active play when the server reports %s', (phase) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const duel = preparedDuel(sentClientId(socket))
+    act(() => socket.receive({ type: 'duel-state', duel: {
+      ...duel, phase: 'active', startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+    } }))
+    expect(screen.getByText(/Secret article content/)).toBeVisible()
+    act(() => socket.receive({ type: 'duel-state', duel: {
+      ...duel, phase, startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+      outcome: {
+        roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: duel.self.id,
+        startsAt: 99_000, endedAt: 100_000, final: phase === 'completed',
+        players: [
+          { id: duel.self.id, path: [roundArticle.identity], clicks: 1, activeElapsedMs: 1000, hp: 100 },
+          { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, hp: phase === 'completed' ? 0 : 78 },
+        ],
+        damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
+          clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
+          minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+      },
+    } }))
+    act(() => vi.advanceTimersByTime(5000))
+    expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Elapsed time')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Round ended' })).toBeVisible()
+  })
+
   it('acknowledges covered rendering once and uses server time for countdown and stopwatch', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
     const socket = renderApp('/lobby/7G8KZ')

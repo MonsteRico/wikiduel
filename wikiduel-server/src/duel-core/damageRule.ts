@@ -1,19 +1,9 @@
+import type { DamageBreakdown } from "@wikiduel/contracts";
+export type { DamageBreakdown } from "@wikiduel/contracts";
+
 export type FrozenRoundClicks = Readonly<{
   winnerClicks: number;
   loserClicks: number;
-}>;
-
-export type DamageBreakdown = Readonly<{
-  winnerClicks: number;
-  loserClicks: number;
-  baseDamage: number;
-  clickDifferential: number;
-  clickMultiplier: number;
-  multiplierContribution: number;
-  unclampedDamage: number;
-  minimumDamage: number;
-  maximumDamage: number;
-  finalDamage: number;
 }>;
 
 /** Apply the locked MVP rule to click counts frozen by the authoritative Round. */

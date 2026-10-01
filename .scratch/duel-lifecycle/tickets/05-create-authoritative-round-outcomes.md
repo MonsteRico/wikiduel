@@ -1,6 +1,7 @@
 # Create Authoritative Round Outcomes
 
-Status: ready-for-agent
+Status: completed
+Completed: 2026-10-01 06:32 PM via [PR #20](https://github.com/MonsteRico/wikiduel/pull/20)
 Scope: MVP required
 Category: enhancement
 
@@ -14,16 +15,16 @@ Create the one authoritative transition that ends an active Round. Given a valid
 
 ## Acceptance criteria
 
-- [ ] A valid first Target Arrival freezes both players' canonical paths and click counts exactly once.
-- [ ] Both active elapsed times derive from the authoritative Round start and accepted end time rather than client clocks.
-- [ ] The Damage Rule receives only frozen authoritative inputs and its final damage is applied to the losing player's HP.
-- [ ] HP persists from prior Rounds, clamps at zero, and cannot become negative.
-- [ ] The Round Outcome is immutable and includes one server-provided labeled damage breakdown and both resulting HP values.
-- [ ] A zero-HP result marks the Duel normally completed while retaining the final Round Outcome for Post-Round presentation.
-- [ ] A non-zero result marks the Duel ready to enter Post-Round and later prepare another Round.
-- [ ] Duplicate Target Arrival, late Navigation, stale Round IDs, and repeated completion attempts cannot overwrite or reapply damage.
-- [ ] Both player projections identify the same public Round Outcome while retaining only information that becomes public after Round end.
-- [ ] The transition interface can accept an additional future end cause without restructuring Navigation or Post-Round.
+- [x] A valid first Target Arrival freezes both players' canonical paths and click counts exactly once.
+- [x] Both active elapsed times derive from the authoritative Round start and accepted end time rather than client clocks.
+- [x] The Damage Rule receives only frozen authoritative inputs and its final damage is applied to the losing player's HP.
+- [x] HP persists from prior Rounds, clamps at zero, and cannot become negative.
+- [x] The Round Outcome is immutable and includes one server-provided labeled damage breakdown and both resulting HP values.
+- [x] A zero-HP result marks the Duel normally completed while retaining the final Round Outcome for Post-Round presentation.
+- [x] A non-zero result marks the Duel ready to enter Post-Round and later prepare another Round.
+- [x] Duplicate Target Arrival, late Navigation, stale Round IDs, and repeated completion attempts cannot overwrite or reapply damage.
+- [x] Both player projections identify the same public Round Outcome while retaining only information that becomes public after Round end.
+- [x] The transition interface can accept an additional future end cause without restructuring Navigation or Post-Round.
 
 ## Blocked by
 
@@ -40,3 +41,6 @@ Create the one authoritative transition that ends an active Round. Given a valid
 ## Comments
 
 - 2026-07-12: Round Outcome is the authoritative record; Post-Round is the later synchronized presentation/readiness phase.
+
+- 2026-10-01: Added the server-only `endRound` transition and trusted `recordNavigation` commit seam. Outcomes freeze routes, clicks, server timing, damage, and resulting HP. Later preparation requires a non-final outcome. Shared contracts publish the same outcome to both players, and ended projections stop active client controls. Navigation triggering and Post-Round presentation remain in their own tickets.
+- Validation: `npm test` passed 247 tests with 5 skipped; `npm run typecheck`, `npm run build`, and `npm run lint` passed. Standards and spec reviews found no actionable issues.
