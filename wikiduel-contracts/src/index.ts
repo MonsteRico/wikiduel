@@ -321,6 +321,7 @@ const RoundOutcomeSchema = z.strictObject({
 const EndedDuelProjectionSchema = TimedDuelProjectionSchema.extend({
   phase: z.enum(["post-round", "completed"]),
   outcome: RoundOutcomeSchema,
+  readyPlayerIds: z.array(z.string()).max(2),
 });
 const DuelProjectionSchema = z.union([
   PreparingDuelProjectionSchema, TimedDuelProjectionSchema, EndedDuelProjectionSchema,
@@ -349,6 +350,8 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("start-duel") }),
   z.strictObject({ type: z.literal("round-received"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("round-rendered"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("ready-next-round"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("leave-duel"), duelId: z.string().min(1) }),
   z.strictObject({
     type: z.literal("navigate"), ...RoundCommandFields,
     requestId: z.string().min(1), destination: NavigationDestinationSchema,
@@ -414,6 +417,8 @@ const ServerMessageSchema = z.union([
       "leave-lobby",
       "round-received",
       "round-rendered",
+      "ready-next-round",
+      "leave-duel",
       "navigate",
     ]),
     reason: StartDuelRejectionReasonSchema,
@@ -430,7 +435,7 @@ const ServerMessageSchema = z.union([
     type: z.literal("duel-forfeited"),
     duelId: z.string(),
     winnerId: z.string(),
-    reason: z.literal("player-disconnected"),
+    reason: z.enum(["player-disconnected", "player-left"]),
     message: z.string(),
     ...TimestampSchema,
   }),

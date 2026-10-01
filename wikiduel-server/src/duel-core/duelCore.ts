@@ -124,6 +124,7 @@ type DuelState = {
   loading: boolean;
   received: Set<string>;
   rendered: Set<string>;
+  ready: Set<string>;
   deadline?: number;
   startsAt?: number;
   cancelTimer?: () => void;
@@ -183,7 +184,7 @@ function projectDuel(
   };
   if (duel.phase === "post-round" || duel.phase === "completed") {
     return { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
-      round: { ...projection.round, article: article! }, outcome: duel.outcome! };
+      round: { ...projection.round, article: article! }, outcome: duel.outcome!, readyPlayerIds: [...duel.ready] };
   }
   return duel.phase === "preparing"
     ? { ...projection, phase: "preparing" }
@@ -263,7 +264,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         id: createDuelId(),
         phase: "preparing",
         roundId: randomUUID(), roundNumber: 1, loading: false,
-        received: new Set(), rendered: new Set(),
+        received: new Set(), rendered: new Set(), ready: new Set(),
         prompt: selection.prompt,
         players,
       };
@@ -281,6 +282,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
     async prepareRound(lobbyId: string): Promise<void> {
       const duel = duels.get(lobbyId);
       if (!duel || duel.loading || duel.phase === "countdown" || duel.phase === "active" || duel.phase === "completed"
+        || (duel.phase === "post-round" && duel.ready.size !== 2)
         || (duel.phase === "preparing" && duel.article)) return;
       if (duel.phase === "post-round") {
         duel.outcome = undefined;
@@ -297,6 +299,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         duel.deadline = undefined;
         duel.received.clear();
         duel.rendered.clear();
+        duel.ready.clear();
         const resetPlayer = (player: DuelPlayerState): DuelPlayerState => ({ ...player,
           path: [duel.prompt.start], clicks: 0, article: undefined, navigating: false, requests: new Set(),
         });
@@ -318,6 +321,14 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       } catch {
         interrupt(lobbyId, duel, "article-unavailable");
       }
+    },
+
+    readyForNextRound(command: RoundCommand): boolean {
+      const duel = currentRound(command);
+      if (!duel || duel.phase !== "post-round" || duel.outcome?.final || duel.ready.has(command.playerId)) return false;
+      duel.ready.add(command.playerId);
+      publish(command.lobbyId, duel);
+      return true;
     },
 
     acknowledgeRound(command: RoundCommand & { kind: "received" | "rendered" }): boolean {
@@ -461,6 +472,13 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
 
     disbandLobby(lobbyId: string): void {
       disband(lobbyId);
+    },
+
+    leaveDuel(command: DisconnectPlayerCommand & { duelId: string }) {
+      const duel = duels.get(command.lobbyId);
+      if (duel?.id !== command.duelId) return null;
+      const forfeit = this.disconnectPlayer(command);
+      return forfeit ? { ...forfeit, reason: "player-left" as const } : null;
     },
 
     disconnectPlayer(command: DisconnectPlayerCommand): DuelForfeit | null {

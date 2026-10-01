@@ -122,12 +122,12 @@ describe('Lobby client', () => {
     } }))
     expect(screen.getByText(/Secret article content/)).toBeVisible()
     act(() => socket.receive({ type: 'duel-state', duel: {
-      ...duel, phase, startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+      ...duel, phase, startsAt: 99_000, readyPlayerIds: [], round: { ...duel.round, article: roundArticle },
       outcome: {
         roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: duel.self.id,
         startsAt: 99_000, endedAt: 100_000, final: phase === 'completed',
         players: [
-          { id: duel.self.id, path: [roundArticle.identity], clicks: 1, activeElapsedMs: 1000, hp: 100 },
+          { id: duel.self.id, path: [roundArticle.identity, duel.round.prompt.target], clicks: 1, activeElapsedMs: 1000, hp: 100 },
           { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, hp: phase === 'completed' ? 0 : 78 },
         ],
         damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
@@ -139,6 +139,35 @@ describe('Lobby client', () => {
     expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Elapsed time')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Round ended' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Host won the Round' })).toBeVisible()
+    const route = screen.getByRole('list', { name: 'Host frozen path' })
+    expect(within(route).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Fixture Start One', 'Fixture Target One'])
+    expect(within(route).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Opponent Round Outcome')).toHaveTextContent(phase === 'completed' ? '0 HP' : '78 HP')
+    expect(screen.getByLabelText('Host Round Outcome')).toHaveTextContent('1.000 s')
+    expect(screen.getByLabelText('Damage Rule')).toHaveTextContent('Final damage22')
+    const ready = screen.queryByRole('button', { name: 'Ready for Next Round' })
+    if (phase === 'completed') expect(ready).not.toBeInTheDocument()
+    else {
+      act(() => screen.getByRole('link', { name: 'WikiDuel home' }).click())
+      expect(screen.getByRole('dialog', { name: 'Leave Duel?' })).toBeVisible()
+      act(() => screen.getByRole('button', { name: 'Keep playing' }).click())
+      expect(sentMessages(socket).filter((message) => message.type === 'leave-duel')).toHaveLength(0)
+      act(() => { ready!.click(); ready!.click() })
+      expect(ready).toBeDisabled()
+      expect(sentMessages(socket).filter((message) => message.type === 'ready-next-round')).toEqual([
+        { type: 'ready-next-round', duelId: 'duel-1', roundId: 'round-1' },
+      ])
+      act(() => socket.receive({ type: 'duel-state', duel: { ...duel, round: { ...duel.round, id: 'round-2', number: 2 } } }))
+      expect(screen.getByRole('heading', { name: 'Prompt covered' })).toBeVisible()
+      expect(sentMessages(socket)).toContainEqual({ type: 'round-rendered', duelId: 'duel-1', roundId: 'round-2' })
+      act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+      act(() => screen.getByRole('button', { name: 'Confirm Leave Duel' }).click())
+      expect(sentMessages(socket).at(-1)).toEqual({ type: 'leave-duel', duelId: 'duel-1' })
+      act(() => socket.receive({ type: 'duel-forfeited', duelId: 'duel-1', winnerId: 'opponent',
+        reason: 'player-left', message: 'You left the Duel.' }))
+      expect(screen.getByRole('alert')).toHaveTextContent('You left the Duel.')
+    }
   })
 
   it('acknowledges covered rendering once and uses server time for countdown and stopwatch', () => {

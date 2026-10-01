@@ -29,6 +29,13 @@ async function activeRound() {
     return event.projections;
   };
   const activate = async () => {
+    const previous = events.at(-1);
+    if (previous?.type === "projections" && previous.projections[0]!.duel.phase === "post-round") {
+      const duel = previous.projections[0]!.duel;
+      for (const playerId of ["host", "opponent"]) {
+        core.readyForNextRound({ lobbyId: "lobby", duelId: duel.id, roundId: duel.round.id, playerId });
+      }
+    }
     await core.prepareRound("lobby");
     const duel = latest()[0]!.duel;
     const command = { lobbyId: "lobby", duelId: duel.id, roundId: duel.round.id, playerId: "host" };
@@ -127,6 +134,7 @@ it("preserves HP across Rounds, clamps at zero and retains the final Round Outco
   expect(outcomes[0]!.players[1]!.hp).toBe(78);
   expect(core.endRound({ ...command, cause: { type: "target-arrival" } }).ok).toBe(false);
   expect(core.canNavigate(command)).toBe(false);
+  expect(core.readyForNextRound(command)).toBe(false);
 });
 
 it("cannot replace an active Round with preparation", async () => {
@@ -141,6 +149,8 @@ it("rejects outcomes before activation and accepts a due start even before its t
   const { core, activate, latest, command } = await activeRound();
   core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
   core.endRound({ ...command, cause: { type: "target-arrival" } });
+  core.readyForNextRound(command);
+  core.readyForNextRound({ ...command, playerId: "opponent" });
   await core.prepareRound("lobby");
   const duel = latest()[0]!.duel;
   const next = { ...command, roundId: duel.round.id };
@@ -159,4 +169,26 @@ it("rejects outcomes before activation and accepts a due start even before its t
   } });
   await activate();
   expect(latest()[0]!.duel.phase).toBe("active");
+});
+
+it("requires distinct current-Round readiness before preparing again", async () => {
+  const { core, latest, command } = await activeRound();
+  expect(core.readyForNextRound(command)).toBe(false);
+  core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
+  core.endRound({ ...command, cause: { type: "target-arrival" } });
+  const ended = latest()[0]!.duel;
+  await core.prepareRound("lobby");
+  expect(latest()[0]!.duel).toEqual(ended);
+  for (const invalid of [{ roundId: "stale" }, { duelId: "wrong" }, { playerId: "outsider" }]) {
+    expect(core.readyForNextRound({ ...command, ...invalid })).toBe(false);
+  }
+  expect(core.readyForNextRound(command)).toBe(true);
+  expect(core.readyForNextRound(command)).toBe(false);
+  await core.prepareRound("lobby");
+  expect(latest()[0]!.duel).toMatchObject({ phase: "post-round", readyPlayerIds: ["host"] });
+  expect(core.readyForNextRound({ ...command, playerId: "opponent" })).toBe(true);
+  await core.prepareRound("lobby");
+  expect(latest()[0]!.duel).toMatchObject({ phase: "preparing", round: { number: 2 }, self: { hp: 100 }, opponent: { hp: 78 } });
+  expect(latest()[0]!.duel.round.prompt.id).not.toBe(ended.round.prompt.id);
+  expect(core.readyForNextRound(command)).toBe(false);
 });

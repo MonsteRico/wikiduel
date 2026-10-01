@@ -13,6 +13,8 @@ export function useLobbyWebSocket() {
   const [duel, setDuel] = useState<DuelProjection | null>(null)
   const pendingNavigation = useRef<{ requestId: string; duelId: string; roundId: string } | null>(null)
   const [navigating, setNavigating] = useState(false)
+  const readyRequest = useRef<string | null>(null)
+  const [readyPending, setReadyPending] = useState<string | null>(null)
   const serverClock = useRef({ serverNow: 0, receivedAt: 0 })
   const receivedRounds = useRef(new Set<string>())
   const renderedRounds = useRef(new Set<string>())
@@ -55,6 +57,10 @@ export function useLobbyWebSocket() {
       setError(null)
     })
     const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
+      if (message.command === 'ready-next-round') {
+        readyRequest.current = null
+        setReadyPending(null)
+      }
       setError(`The ${message.command} command was rejected: ${message.reason}.`)
     })
     const unsubscribeNavigation = webSocket.subscribe('navigation-result', (message) => {
@@ -121,6 +127,17 @@ export function useLobbyWebSocket() {
   }, [webSocket])
 
   const clearNotice = useCallback(() => setNotice(null), [])
+  const readyForNextRound = useCallback(() => {
+    if (!duel || duel.phase !== 'post-round' || duel.outcome.final
+      || duel.readyPlayerIds.includes(duel.self.id) || readyRequest.current === duel.round.id) return
+    if (webSocket.send({ type: 'ready-next-round', duelId: duel.id, roundId: duel.round.id })) {
+      readyRequest.current = duel.round.id
+      setReadyPending(duel.round.id)
+    }
+  }, [duel, webSocket])
+  const leaveDuel = useCallback(() => {
+    if (duel) webSocket.send({ type: 'leave-duel', duelId: duel.id })
+  }, [duel, webSocket])
   const acknowledgeRendered = useCallback((duelId: string, roundId: string) => {
     if (renderedRounds.current.has(roundId)) return
     renderedRounds.current.add(roundId)
@@ -159,5 +176,8 @@ export function useLobbyWebSocket() {
     getServerTime,
     navigate,
     navigating,
+    readyForNextRound,
+    readyPending: readyPending === duel?.round.id,
+    leaveDuel,
   }
 }
