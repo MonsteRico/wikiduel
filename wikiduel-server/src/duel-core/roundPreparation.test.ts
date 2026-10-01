@@ -109,6 +109,11 @@ it("reuses preparation for a later Round and rejects acknowledgements from the p
     core.acknowledgeRound({ ...command, playerId, kind: "rendered" });
   }
   vi.advanceTimersByTime(3000);
+  const active = events.at(-1)!;
+  if (active.type !== "projections") throw new Error("Expected active Round");
+  core.recordNavigation({ ...command, playerId: "host", expectedClicks: 0,
+    destination: active.projections[0]!.duel.round.prompt.target });
+  core.endRound({ ...command, playerId: "host", cause: { type: "target-arrival" } });
   await core.prepareRound("lobby");
   const event = events.at(-1)!;
   if (event.type !== "projections") throw new Error("Expected second Round");

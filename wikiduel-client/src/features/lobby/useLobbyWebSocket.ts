@@ -112,7 +112,7 @@ export function useLobbyWebSocket() {
   const getServerTime = useCallback(() => serverClock.current.serverNow
     + performance.now() - serverClock.current.receivedAt, [])
   const navigate = useCallback((destination: NavigationDestination) => {
-    if (!duel || duel.phase === 'preparing' || getServerTime() < duel.startsAt) return
+    if (!duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
     webSocket.send({ type: 'navigate', duelId: duel.id, roundId: duel.round.id,
       requestId: crypto.randomUUID(), destination })
   }, [duel, getServerTime, webSocket])

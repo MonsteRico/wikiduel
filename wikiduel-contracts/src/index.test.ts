@@ -293,3 +293,44 @@ describe("decodeServerMessage", () => {
     });
   });
 });
+
+it("decodes only strict Round Outcomes in ended projections", () => {
+  const player = { id: "host", name: "Host", role: "host", hp: 100 };
+  const outcome = {
+    roundId: "round-1", roundNumber: 1, endReason: "target-arrival", winnerId: "host",
+    startsAt: 1000, endedAt: 5000, final: false,
+    players: [
+      { id: "host", path: [article.identity], clicks: 1, activeElapsedMs: 4000, hp: 100 },
+      { id: "opponent", path: [article.identity], clicks: 0, activeElapsedMs: 4000, hp: 78 },
+    ],
+    damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
+      clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
+      minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+  };
+  const duel = {
+    id: "duel-1", phase: "post-round", serverNow: 5000, startsAt: 1000,
+    round: { id: "round-1", number: 1, article, prompt: {
+      id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
+    } },
+    self: { ...player, path: [article.identity], clicks: 1 },
+    opponent: { ...player, id: "opponent", role: "opponent", hp: 78 },
+    outcome,
+  };
+  const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
+  expect(decode(duel).ok).toBe(true);
+  expect(decode({ ...duel, phase: "completed", outcome: { ...outcome, final: true } }).ok).toBe(true);
+  for (const invalid of [
+    undefined,
+    { ...outcome, privateState: {} },
+    { ...outcome, players: [outcome.players[0]] },
+    { ...outcome, players: [...outcome.players, outcome.players[0]] },
+    { ...outcome, players: [{ ...outcome.players[0], hp: -1 }, outcome.players[1]] },
+    { ...outcome, players: [{ ...outcome.players[0], activeElapsedMs: -1 }, outcome.players[1]] },
+    { ...outcome, players: [{ ...outcome.players[0], clicks: 1.5 }, outcome.players[1]] },
+    { ...outcome, damage: { ...outcome.damage, finalDamage: -1 } },
+    { ...outcome, damage: { ...outcome.damage, hiddenRule: 1 } },
+    { ...outcome, endReason: "time-limit" },
+  ]) expect(decode({ ...duel, outcome: invalid }).ok).toBe(false);
+  expect(decode({ ...duel, phase: "active" }).ok).toBe(false);
+  expect(decodeClientMessage({ type: "end-round", outcome }).ok).toBe(false);
+});

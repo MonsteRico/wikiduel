@@ -285,7 +285,43 @@ const TimedDuelProjectionSchema = PreparingDuelProjectionSchema.extend({
   startsAt: z.number().nonnegative(),
   round: PreparingDuelProjectionSchema.shape.round.extend({ article: PlayableArticleSchema }),
 });
-const DuelProjectionSchema = z.union([PreparingDuelProjectionSchema, TimedDuelProjectionSchema]);
+const DamageBreakdownSchema = z.strictObject({
+  winnerClicks: z.number().int().nonnegative(),
+  loserClicks: z.number().int().nonnegative(),
+  baseDamage: z.number().nonnegative(),
+  clickDifferential: z.number().int(),
+  clickMultiplier: z.number().nonnegative(),
+  multiplierContribution: z.number(),
+  unclampedDamage: z.number(),
+  minimumDamage: z.number().nonnegative(),
+  maximumDamage: z.number().nonnegative(),
+  finalDamage: z.number().nonnegative(),
+});
+const RoundOutcomePlayerSchema = z.strictObject({
+  id: z.string(),
+  path: z.array(NavigationDestinationSchema).min(1),
+  clicks: z.number().int().nonnegative(),
+  activeElapsedMs: z.number().nonnegative(),
+  hp: z.number().int().min(0).max(100),
+});
+const RoundOutcomeSchema = z.strictObject({
+  roundId: z.string().min(1),
+  roundNumber: z.number().int().positive(),
+  endReason: z.literal("target-arrival"),
+  winnerId: z.string(),
+  startsAt: z.number().nonnegative(),
+  endedAt: z.number().nonnegative(),
+  players: z.tuple([RoundOutcomePlayerSchema, RoundOutcomePlayerSchema]),
+  damage: DamageBreakdownSchema,
+  final: z.boolean(),
+});
+const EndedDuelProjectionSchema = TimedDuelProjectionSchema.extend({
+  phase: z.enum(["post-round", "completed"]),
+  outcome: RoundOutcomeSchema,
+});
+const DuelProjectionSchema = z.union([
+  PreparingDuelProjectionSchema, TimedDuelProjectionSchema, EndedDuelProjectionSchema,
+]);
 const RoundCommandFields = {
   duelId: z.string().min(1),
   roundId: z.string().min(1),
@@ -418,6 +454,8 @@ export type Lobby = DeepReadonly<z.infer<typeof LobbySchema>>;
 export type DuelPrompt = DeepReadonly<z.infer<typeof DuelPromptSchema>>;
 export type PreparingDuelProjection =
   DeepReadonly<z.infer<typeof PreparingDuelProjectionSchema>>;
+export type DamageBreakdown = DeepReadonly<z.infer<typeof DamageBreakdownSchema>>;
+export type RoundOutcome = DeepReadonly<z.infer<typeof RoundOutcomeSchema>>;
 export type DuelProjection = DeepReadonly<z.infer<typeof DuelProjectionSchema>>;
 export type StartDuelRejectionReason = z.infer<typeof StartDuelRejectionReasonSchema>;
 export type ClientMessage = DeepReadonly<z.infer<typeof ClientMessageSchema>>;

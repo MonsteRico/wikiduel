@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type {
   DuelProjection,
+  NavigationDestination,
+  RoundOutcome,
   PlayableArticle,
   StartDuelRejectionReason,
 } from "@wikiduel/contracts";
+
+import { calculateDamage } from "./damageRule.js";
 
 import type { Prompt, PromptCatalog } from "../prompt-catalog/catalog.js";
 import type { PlayableArticleRepository } from "../playable-articles/repository.js";
@@ -61,6 +65,12 @@ export type RoundCommand = Readonly<{
   lobbyId: string; duelId: string; roundId: string; playerId: string;
 }>;
 
+// Server-only cause. Future end causes extend this union and the outcome resolver.
+export type RoundEndCause = Readonly<{ type: "target-arrival" }>;
+export type EndRoundResult =
+  | Readonly<{ ok: true; outcome: RoundOutcome }>
+  | Readonly<{ ok: false }>;
+
 export type DisconnectPlayerCommand = Readonly<{
   lobbyId: string;
   playerId: string;
@@ -83,7 +93,8 @@ type DuelPlayerState = Readonly<{
 
 type DuelState = {
   id: string;
-  phase: "preparing" | "countdown" | "active";
+  phase: "preparing" | "countdown" | "active" | "post-round" | "completed";
+  outcome?: RoundOutcome;
   roundId: string;
   roundNumber: number;
   article?: PlayableArticle;
@@ -125,7 +136,7 @@ function projectDuel(
       name: self.name,
       role: self.role,
       hp: self.hp,
-      path: self.path,
+      path: Object.freeze(self.path.map((article) => Object.freeze({ ...article }))),
       clicks: self.clicks,
     },
     opponent: {
@@ -135,6 +146,10 @@ function projectDuel(
       hp: opponent.hp,
     },
   };
+  if (duel.phase === "post-round" || duel.phase === "completed") {
+    return { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
+      round: { ...projection.round, article: duel.article! }, outcome: duel.outcome! };
+  }
   return duel.phase === "preparing"
     ? { ...projection, phase: "preparing" }
     : { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
@@ -175,6 +190,10 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
     return duel?.id === command.duelId && duel.roundId === command.roundId
       && duel.players.some((player) => player.id === command.playerId) ? duel : undefined;
   };
+
+  const isNavigable = (duel: DuelState) =>
+    (duel.phase === "active" || duel.phase === "countdown")
+    && duel.startsAt !== undefined && now() >= duel.startsAt;
 
   return {
     startDuel(command: StartDuelCommand): StartDuelResult {
@@ -225,9 +244,10 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
     // Internal lifecycle entry point, reused by later Post-Round and Rematch transitions.
     async prepareRound(lobbyId: string): Promise<void> {
       const duel = duels.get(lobbyId);
-      if (!duel || duel.loading || duel.phase === "countdown"
+      if (!duel || duel.loading || duel.phase === "countdown" || duel.phase === "active" || duel.phase === "completed"
         || (duel.phase === "preparing" && duel.article)) return;
-      if (duel.phase === "active") {
+      if (duel.phase === "post-round") {
+        duel.outcome = undefined;
         const selection = selectLobbyPrompt(options.promptCatalog,
           promptHistoryByLobby.get(lobbyId) ?? EMPTY_LOBBY_PROMPT_HISTORY,
           { random: options.random });
@@ -295,7 +315,65 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
 
     canNavigate(command: RoundCommand): boolean {
       const duel = currentRound(command);
-      return !!duel && duel.startsAt !== undefined && now() >= duel.startsAt;
+      return !!duel && isNavigable(duel);
+    },
+
+    // Server-only commit of a canonical move already validated by Navigation.
+    // expectedClicks must come from the server snapshot taken before resolving the move.
+    // No transport handler may forward unvalidated client destinations here.
+    recordNavigation(command: RoundCommand & {
+      expectedClicks: number; destination: NavigationDestination;
+    }): boolean {
+      const duel = currentRound(command);
+      if (!duel || !isNavigable(duel)) return false;
+      const index = duel.players[0].id === command.playerId ? 0 : 1;
+      const player = duel.players[index];
+      if (player.clicks !== command.expectedClicks) return false;
+      const updated = { ...player, clicks: player.clicks + 1,
+        path: [...player.path, Object.freeze({ ...command.destination })] };
+      duel.players = index === 0 ? [updated, duel.players[1]] : [duel.players[0], updated];
+      return true;
+    },
+
+    // Synchronous so the first accepted cause freezes state before another command runs.
+    endRound(command: RoundCommand & { cause: RoundEndCause }): EndRoundResult {
+      const duel = currentRound(command);
+      if (!duel || !isNavigable(duel)) return { ok: false };
+      const endedAt = now();
+      const winner = duel.players.find((player) => player.id === command.playerId)!;
+      const arrival = winner.path.at(-1)!;
+      if (command.cause.type !== "target-arrival" || winner.clicks === 0
+        || arrival.pageId !== duel.prompt.target.pageId
+        || arrival.title !== duel.prompt.target.title) return { ok: false };
+      const loser = duel.players.find((player) => player.id !== winner.id)!;
+      const freezePlayer = (player: DuelPlayerState) => Object.freeze({
+        id: player.id,
+        path: Object.freeze(player.path.map((article) => Object.freeze({ ...article }))),
+        clicks: player.clicks,
+        activeElapsedMs: endedAt - duel.startsAt!,
+        hp: player.hp,
+      });
+      const frozen = [freezePlayer(duel.players[0]), freezePlayer(duel.players[1])] as const;
+      const damage = calculateDamage({
+        winnerClicks: frozen.find((player) => player.id === winner.id)!.clicks,
+        loserClicks: frozen.find((player) => player.id === loser.id)!.clicks,
+      });
+      const resultingPlayer = (player: RoundOutcome["players"][number]) => Object.freeze({
+        ...player, hp: player.id === loser.id ? Math.max(0, player.hp - damage.finalDamage) : player.hp,
+      });
+      const players = Object.freeze([resultingPlayer(frozen[0]), resultingPlayer(frozen[1])] as const);
+      const outcome: RoundOutcome = Object.freeze({
+        roundId: duel.roundId, roundNumber: duel.roundNumber,
+        endReason: command.cause.type, winnerId: winner.id,
+        startsAt: duel.startsAt!, endedAt, players, damage,
+        final: players.some((player) => player.hp === 0),
+      });
+      duel.players = [{ ...duel.players[0], hp: players[0].hp }, { ...duel.players[1], hp: players[1].hp }];
+      duel.outcome = outcome;
+      duel.phase = outcome.final ? "completed" : "post-round";
+      duel.cancelTimer?.();
+      publish(command.lobbyId, duel);
+      return { ok: true, outcome };
     },
 
     dispose(): void {

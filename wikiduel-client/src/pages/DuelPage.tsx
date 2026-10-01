@@ -40,8 +40,9 @@ export function DuelPage() {
   }, [])
 
   if (!duel || duel.id !== duelId || notice) return <Navigate to="/" replace />
+  const ended = duel.phase === 'post-round' || duel.phase === 'completed'
   const elapsed = duel.phase === 'preparing' ? null : getServerTime() - duel.startsAt
-  const active = elapsed !== null && elapsed >= 0
+  const active = !ended && elapsed !== null && elapsed >= 0
   const seconds = Math.floor(Math.max(0, elapsed ?? 0) / 1000)
   const stopwatch = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
@@ -53,11 +54,11 @@ export function DuelPage() {
             <div>
               <p className="ds-label mb-2 text-host">Round {duel.round.number}</p>
               <h1 className="m-0 font-display text-2xl font-extrabold tracking-[0.01em] text-ink">
-                {duel.phase === 'preparing' ? 'Preparing the duel' : active ? 'Round in progress' : 'Get ready'}
+                {ended ? 'Round ended' : duel.phase === 'preparing' ? 'Preparing the duel' : active ? 'Round in progress' : 'Get ready'}
               </h1>
             </div>
             <span className="rounded-control border border-warning/35 bg-warning/10 px-3 py-2 font-display text-[10px] font-bold tracking-[0.05em] text-warning uppercase">
-              {active ? 'Active' : 'Covered'}
+              {ended ? 'Ended' : active ? 'Active' : 'Covered'}
             </span>
           </header>
 
@@ -78,14 +79,14 @@ export function DuelPage() {
             ))}
           </div>
 
-          {duel.phase !== 'preparing' && <div className="px-6 py-5 text-center">
+          {!ended && duel.phase !== 'preparing' && <div className="px-6 py-5 text-center">
             <p>Start: {duel.round.prompt.start.title}</p>
             <p>Target: {duel.round.prompt.target.title}</p>
             <p role="timer" aria-label={active ? 'Elapsed time' : 'Round countdown'} className="font-mono text-3xl">
               {active ? stopwatch : Math.ceil(-(elapsed ?? 0) / 1000)}
             </p>
           </div>}
-          {!active && <div className="grid min-h-[300px] place-items-center bg-canvas-deep/30 px-6 py-12 text-center">
+          {!active && !ended && <div className="grid min-h-[300px] place-items-center bg-canvas-deep/30 px-6 py-12 text-center">
             <div className="max-w-[420px]">
               <div className="mx-auto mb-5 grid size-14 place-items-center rounded-full border border-line bg-surface-raised font-display text-xl font-black text-warning" aria-hidden="true">
                 ?
