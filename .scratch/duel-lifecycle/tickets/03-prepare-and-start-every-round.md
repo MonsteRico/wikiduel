@@ -1,7 +1,7 @@
 # Prepare and Start Every Round
 
 Status: completed
-Completed: 2026-10-01 05:36 PM
+Completed: 2026-10-01 05:36 PM via [PR #18](https://github.com/MonsteRico/wikiduel/pull/18)
 Scope: MVP required
 Category: enhancement
 
