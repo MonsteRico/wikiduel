@@ -19,6 +19,30 @@ function resolverWith(
 }
 
 describe("loadPromptCatalog", () => {
+  test("limits endpoint lookups to one at a time to avoid upstream request bursts", async () => {
+    let active = 0;
+    let peak = 0;
+    let pageId = 0;
+    const result = await loadPromptCatalog({
+      version: 1,
+      prompts: [
+        { id: "first", start: "A", target: "B", enabled: true },
+        { id: "second", start: "C", target: "D", enabled: true },
+      ],
+    }, {
+      getByTitle: async (title) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await Promise.resolve();
+        active -= 1;
+        return { ok: true, article: { identity: { pageId: ++pageId, title } } };
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(peak).toBe(1);
+    expect(pageId).toBe(4);
+  });
+
   test("loads ordered Prompts with canonical Playable Article identities", async () => {
     const result = await loadPromptCatalog(
       {

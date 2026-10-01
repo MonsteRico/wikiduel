@@ -231,11 +231,10 @@ export async function loadPromptCatalog(
   const parsed = parseSeed(input);
   if (!parsed.ok) return parsed;
   const { seed } = parsed;
-  const resolutions = await Promise.all(seed.prompts.map(async (record, index) => {
-    const [startResult, targetResult] = await Promise.all([
-      resolver.getByTitle(record.start),
-      resolver.getByTitle(record.target),
-    ]);
+  // Each article lookup can issue several upstream requests. Avoid a catalog-wide burst.
+  const resolvePrompt = async (record: typeof seed.prompts[number], index: number) => {
+    const startResult = await resolver.getByTitle(record.start);
+    const targetResult = await resolver.getByTitle(record.target);
 
     const diagnostics: PromptCatalogDiagnostic[] = [];
     if (!startResult.ok) {
@@ -266,7 +265,11 @@ export async function loadPromptCatalog(
           : { metadata: Object.freeze({ ...record.metadata }) }),
       }),
     };
-  }));
+  };
+  const resolutions = [];
+  for (const [index, record] of seed.prompts.entries()) {
+    resolutions.push(await resolvePrompt(record, index));
+  }
 
   const endpointDiagnostics = resolutions.flatMap((resolution) => resolution.diagnostics);
   if (endpointDiagnostics.length > 0) return { ok: false, diagnostics: endpointDiagnostics };

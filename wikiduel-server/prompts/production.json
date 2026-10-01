@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "prompts": [
+    { "id": "initial-01", "start": "Nintendo", "target": "Oak", "enabled": true },
+    { "id": "initial-02", "start": "Cattle", "target": "Volkswagen", "enabled": true },
+    { "id": "initial-03", "start": "Grey-cheeked fulvetta", "target": "Motherboard", "enabled": true },
+    { "id": "initial-04", "start": "YouTube", "target": "Kyoto", "enabled": true },
+    { "id": "initial-05", "start": "John Purdue", "target": "Perdue Farms", "enabled": true },
+    { "id": "initial-06", "start": "Genshin Impact", "target": "Popular Democratic Union (Yemen)", "enabled": true },
+    { "id": "initial-07", "start": "Kanjuruhan Stadium disaster", "target": "Conga line", "enabled": true },
+    { "id": "initial-08", "start": "Flower", "target": "Flour", "enabled": true },
+    { "id": "initial-09", "start": "Dr Pepper", "target": "Neurosurgery", "enabled": true },
+    { "id": "initial-10", "start": "Jack Black", "target": "Patrick Mahomes", "enabled": true }
+  ]
+}

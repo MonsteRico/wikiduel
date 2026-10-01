@@ -8,7 +8,7 @@ task; deterministic server tests use `deterministicPromptCatalog` from
 
 ## Seed location and format
 
-The production seed created by `prompt-pool/01` should live at
+The human-authored production seed lives at
 `wikiduel-server/prompts/production.json`. The file is a versioned document:
 
 ```json
@@ -69,6 +69,16 @@ The command does not check reachability, route quality, difficulty, balance, or
 editorial suitability. Those remain explicit maintainer responsibilities.
 
 ## Server integration
+
+Server startup loads the production seed relative to the server module, validates
+it through the live repository, and passes the catalog to the application before
+listening. Deployment must include `wikiduel-server/prompts/production.json`
+alongside `dist/`. A validation failure prevents startup.
+
+The maintainer supplied the initial ten ordered pairs. Agents may normalize
+article titles and run validation; selecting or replacing pairs remains the
+maintainer's responsibility. These prompts have no verified routes or assigned
+difficulty.
 
 Import `loadPromptCatalog`, `selectLobbyPrompt`, and their types from
 `wikiduel-server/src/prompt-catalog/index.ts`. The loader accepts the catalog's
