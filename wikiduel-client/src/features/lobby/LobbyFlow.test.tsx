@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { createBrowserRouter, createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from '../../App'
@@ -43,12 +43,35 @@ function hostLobby(clientId: string): Lobby {
   }
 }
 
+function departureDuel(clientId: string, phase: DuelProjection['phase']): DuelProjection {
+  const prepared = preparedDuel(clientId)
+  if (phase === 'preparing') return prepared
+  const started = { ...prepared, startsAt: phase === 'countdown' ? 103_000 : 99_000,
+    round: { ...prepared.round, article: roundArticle } }
+  if (phase === 'active' || phase === 'countdown') return { ...started, phase }
+  if (phase === 'post-duel') return { ...started, phase, rematchPlayerIds: [], summary: {
+    winnerId: clientId, endReason: 'hp-depleted',
+    players: [{ id: clientId, name: 'Host', role: 'host', hp: 100 },
+      { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 0 }],
+    rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, damage: 22 }],
+  } }
+  return { ...started, phase, readyPlayerIds: [], outcome: {
+    roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: clientId,
+    startsAt: 99_000, endedAt: 100_000, final: phase === 'completed',
+    players: [
+      { id: clientId, path: [roundArticle.identity, prepared.round.prompt.target], clicks: 1, activeElapsedMs: 1000, hp: 100 },
+      { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, hp: phase === 'completed' ? 0 : 78 },
+    ],
+    damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
+      clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
+      minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+  } }
+}
+
+let router: ReturnType<typeof createMemoryRouter>
 function renderApp(initialPath = '/') {
-  render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <App />
-    </MemoryRouter>,
-  )
+  router = createMemoryRouter([{ path: '*', element: <App /> }], { initialEntries: ['/', initialPath] })
+  render(<RouterProvider router={router} />)
 
   const socket = sockets.at(-1)
   if (!socket) throw new Error('Expected the WebSocket provider to open a connection')
@@ -68,16 +91,186 @@ function sentClientId(socket: ControllableWebSocket) {
 beforeEach(() => {
   sockets.length = 0
   vi.stubGlobal('WebSocket', ControllableWebSocket)
+  // jsdom has no native modal dialog methods. Model visibility at the browser boundary.
+  HTMLDialogElement.prototype.showModal = function () { this.open = true }
+  HTMLDialogElement.prototype.close = function () { this.open = false }
 })
 
 afterEach(() => {
   cleanup()
+  router?.dispose()
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
 describe('Lobby client', () => {
+  it('intercepts browser history Back and restores the current URL when cancelled', async () => {
+    window.history.replaceState(null, '', '/')
+    router = createBrowserRouter([{ path: '*', element: <App /> }])
+    render(<RouterProvider router={router} />)
+    const socket = sockets.at(-1)!
+    act(() => socket.open())
+    await act(async () => { await router.navigate('/lobby/7G8KZ') })
+    const duel = preparedDuel(sentClientId(socket))
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    act(() => window.history.back())
+    expect(await screen.findByRole('dialog', { name: 'Leave Duel?' })).toBeVisible()
+    await waitFor(() => expect(window.location.pathname).toBe('/duel/duel-1'))
+    act(() => screen.getByRole('button', { name: 'Keep playing' }).click())
+    expect(router.state.location.pathname).toBe('/duel/duel-1')
+    expect(sentMessages(socket).filter((message) => message.type === 'leave-duel')).toHaveLength(0)
+    act(() => window.history.back())
+    expect(await screen.findByRole('dialog', { name: 'Leave Duel?' })).toBeVisible()
+    await waitFor(() => expect(window.location.pathname).toBe('/duel/duel-1'))
+    act(() => screen.getByRole('button', { name: 'Confirm Leave Duel' }).click())
+    act(() => socket.receive({ type: 'duel-forfeited', duelId: duel.id, winnerId: 'opponent',
+      reason: 'player-left', message: 'You left the Duel.' }))
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('accepts a Rematch that wins the race against an old departure command', () => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const clientId = sentClientId(socket)
+    act(() => socket.receive({ type: 'duel-state', duel: departureDuel(clientId, 'post-duel') }))
+    act(() => screen.getByRole('button', { name: 'Rematch' }).click())
+    act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+    act(() => screen.getByRole('button', { name: 'Confirm Leave Duel' }).click())
+    act(() => socket.receive({ type: 'duel-state', duel: { ...preparedDuel(clientId), id: 'duel-2' } }))
+    act(() => socket.receive({ type: 'command-rejected', command: 'leave-duel', reason: 'invalid-state' }))
+    expect(router.state.location.pathname).toBe('/duel/duel-2')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Preparing the duel' })).toBeVisible()
+  })
+  it.each(['preparing', 'countdown', 'active', 'post-round', 'completed', 'post-duel'] as const)(
+    'cancels without commands or changed content, then confirms departure during %s', (phase) => {
+      const socket = renderApp('/lobby/7G8KZ')
+      act(() => socket.open())
+      const duel = departureDuel(sentClientId(socket), phase)
+      act(() => socket.receive({ type: 'duel-state', duel }))
+      const before = [...socket.sentMessages]
+      const heading = screen.getAllByRole('heading')[0]!.textContent
+      act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+      act(() => screen.getByRole('button', { name: 'Keep playing' }).click())
+      expect(socket.sentMessages).toEqual(before)
+      expect(screen.getAllByRole('heading')[0]!.textContent).toBe(heading)
+      expect(router.state.location.pathname).toBe('/duel/duel-1')
+      const unload = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(unload)
+      expect(unload.defaultPrevented).toBe(true)
+      expect(socket.sentMessages).toEqual(before)
+      act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+      const confirm = screen.getByRole('button', { name: 'Confirm Leave Duel' })
+      act(() => { confirm.click(); confirm.click() })
+      expect(sentMessages(socket).filter((message) => message.type === 'leave-duel')).toEqual([
+        { type: 'leave-duel', duelId: duel.id },
+      ])
+      for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled()
+      if (phase === 'completed' || phase === 'post-duel') {
+        act(() => socket.receive({ type: 'lobby-closed', message: 'The completed Duel\'s Lobby has closed.' }))
+      } else {
+        act(() => socket.receive({ type: 'duel-forfeited', duelId: duel.id, winnerId: 'opponent',
+          reason: 'player-left', message: 'You left the Duel.' }))
+      }
+      expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeVisible()
+      expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Post-Round')).not.toBeInTheDocument()
+      const after = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(after)
+      expect(after.defaultPrevented).toBe(false)
+    },
+  )
+
+  it('discards an old confirmation when a Rematch starts and ignores old terminal events', () => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const clientId = sentClientId(socket)
+    act(() => socket.receive({ type: 'duel-state', duel: departureDuel(clientId, 'post-duel') }))
+    act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+    const staleConfirm = screen.getByRole('button', { name: 'Confirm Leave Duel' })
+    const rematch = { ...preparedDuel(clientId), id: 'duel-2', round: { ...preparedDuel(clientId).round, id: 'round-2' } }
+    act(() => socket.receive({ type: 'duel-state', duel: rematch }))
+    act(() => staleConfirm.click())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(sentMessages(socket).filter((message) => message.type === 'leave-duel')).toHaveLength(0)
+    act(() => socket.receive({ type: 'duel-forfeited', duelId: 'duel-1', winnerId: clientId,
+      reason: 'player-left', message: 'Old departure' }))
+    expect(router.state.location.pathname).toBe('/duel/duel-2')
+    expect(screen.getByRole('heading', { name: 'Preparing the duel' })).toBeVisible()
+  })
+
+  it('keeps one Opponent left notice after duplicate terminal events and a late projection', () => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const clientId = sentClientId(socket)
+    const duel = preparedDuel(clientId)
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+    const notice = { type: 'duel-forfeited' as const, duelId: duel.id, winnerId: clientId,
+      reason: 'player-left' as const, message: 'Your opponent left. The Duel ended by Forfeit.' }
+    act(() => { socket.receive(notice); socket.receive(notice); socket.receive({ type: 'duel-state', duel }) })
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert')).toHaveTextContent('Opponent left')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    act(() => screen.getByRole('button', { name: 'Dismiss message' }).click())
+    expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeVisible()
+  })
+  it.each([false, true])('clears a disconnected Duel and its confirmation, including departure pending: %s', (confirm) => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    act(() => socket.receive({ type: 'duel-state', duel: preparedDuel(sentClientId(socket)) }))
+    act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+    if (confirm) act(() => screen.getByRole('button', { name: 'Confirm Leave Duel' }).click())
+    act(() => { socket.close(); socket.close() })
+    expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('Connection lost')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+  })
+  it.each(['route', 'back'])('confirms a %s attempt, preserves the Duel on cancellation, and returns home on confirmation', async (attempt) => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const duel = preparedDuel(sentClientId(socket))
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    const before = [...socket.sentMessages]
+    const tryLeaving = async () => {
+      await act(async () => {
+        if (attempt === 'back') await router.navigate(-1)
+        else await router.navigate('/other-route')
+      })
+    }
+    await tryLeaving()
+    expect(screen.getByRole('dialog', { name: 'Leave Duel?' })).toBeVisible()
+    expect(router.state.location.pathname).toBe('/duel/duel-1')
+    act(() => screen.getByRole('button', { name: 'Keep playing' }).click())
+    expect(socket.sentMessages).toEqual(before)
+    expect(screen.getByRole('heading', { name: 'Preparing the duel' })).toBeVisible()
+    await tryLeaving()
+    act(() => screen.getByRole('button', { name: 'Confirm Leave Duel' }).click())
+    expect(sentMessages(socket).at(-1)).toEqual({ type: 'leave-duel', duelId: duel.id })
+    act(() => socket.receive({ type: 'duel-forfeited', duelId: duel.id, winnerId: 'opponent',
+      reason: 'player-left', message: 'You left the Duel.' }))
+    expect(router.state.location.pathname).toBe('/')
+  })
+  it('sends departure once and blocks further commands while awaiting Forfeit', () => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const prepared = preparedDuel(sentClientId(socket))
+    const duel = { ...prepared, phase: 'active' as const, startsAt: 99_000,
+      round: { ...prepared.round, article: roundArticle } }
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
+    const confirm = screen.getByRole('button', { name: 'Confirm Leave Duel' })
+    act(() => { confirm.click(); confirm.click() })
+    act(() => screen.getByRole('button', { name: 'Follow this link' }).click())
+    expect(sentMessages(socket).filter((message) => message.type === 'leave-duel')).toHaveLength(1)
+    expect(sentMessages(socket).filter((message) => message.type === 'navigate')).toHaveLength(0)
+    act(() => socket.receive({ type: 'duel-forfeited', duelId: duel.id, winnerId: 'opponent',
+      reason: 'player-left', message: 'You left the Duel.' }))
+    expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeVisible()
+    expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+  })
   it.each(['rematch', 'back', 'opponent-back'])('handles Post-Duel intent and the authoritative %s transition', (choice) => {
     const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
