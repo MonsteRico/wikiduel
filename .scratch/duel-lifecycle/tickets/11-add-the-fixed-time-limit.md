@@ -1,6 +1,6 @@
 # Add the Fixed Time Limit
 
-Status: ready-for-agent
+Status: wontfix
 Scope: MVP optional
 Category: enhancement
 
@@ -9,6 +9,8 @@ Category: enhancement
 - [Duel Lifecycle spec](../spec.md)
 
 ## What to build
+
+Superseded by [duel-lifecycle/17](./17-refine-click-scored-rounds.md). The Host-toggleable Time Limit is now part of the required click-scored round redesign. Do not implement this older standalone proposal. The text below records the previous scope.
 
 Add one server-authoritative fixed five-minute Time Limit to each active Round through the existing Round Outcome seam. When enabled in the deployed build, replace the elapsed stopwatch with remaining time and create a no-damage draw if no Target Arrival is accepted before expiry.
 

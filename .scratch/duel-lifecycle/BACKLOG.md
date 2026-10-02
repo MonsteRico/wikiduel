@@ -3,7 +3,7 @@
 Status: ready-for-agent
 Source: [Duel Lifecycle spec](./spec.md)
 
-This is the canonical progress and dependency index for direct Duel behavior. Work the frontier: any `ready-for-agent` ticket whose blockers are completed may start. The shared-contracts ticket is the recommended next task even where another independent ticket is technically unblocked.
+This is the canonical progress and dependency index for direct Duel behavior. After deployment setup, the next required work is grilling [duel-lifecycle/17](./tickets/17-refine-click-scored-rounds.md), then implementing its agreed rules. Earlier completed tickets record the original gameplay model.
 
 ## External prerequisites and checkpoints
 
@@ -12,6 +12,8 @@ This is the canonical progress and dependency index for direct Duel behavior. Wo
 - The required Playable Article foundation and Lobby transport baseline are already completed.
 
 ## MVP required
+
+Next: [`duel-lifecycle/17`](./tickets/17-refine-click-scored-rounds.md), refine both-player completion, click-based damage, and a Host-toggleable Time Limit before creating implementation tickets.
 
 1. [`duel-lifecycle/01`](./tickets/01-establish-the-prompt-catalog.md) — establish the Prompt format, validation, selection, fixtures, and Lobby history
 2. [`duel-lifecycle/02`](./tickets/02-enter-the-first-duel.md) — cross the Lobby seam into the minimal authoritative Duel core
@@ -26,7 +28,7 @@ This is the canonical progress and dependency index for direct Duel behavior. Wo
 
 ## MVP optional
 
-- [`duel-lifecycle/11`](./tickets/11-add-the-fixed-time-limit.md) — add a fixed five-minute Time Limit through the Round Outcome seam
+- [`duel-lifecycle/11`](./tickets/11-add-the-fixed-time-limit.md) is superseded by required ticket 17; do not implement separately.
 - [`duel-lifecycle/12`](./tickets/12-show-opponent-activity.md) — add non-strategic Navigation activity feedback
 - [`duel-lifecycle/13`](./tickets/13-evaluate-and-tune-the-damage-rule.md) — revisit damage after first-test evidence
 - [`duel-lifecycle/14`](./tickets/14-show-a-forfeit-summary.md) — enrich terminal Forfeit explanation

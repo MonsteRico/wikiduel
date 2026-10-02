@@ -12,6 +12,8 @@ Planning stubs begin at `needs-triage`. Before assigning one to an implementatio
 
 ## MVP required
 
+Next after deployment setup: [`duel-lifecycle/17`](../duel-lifecycle/tickets/17-refine-click-scored-rounds.md). Refine and implement both-player completion, click-based damage, and an optional Host-enabled Time Limit before the first MVP playtest. This changes the previous first-arrival-wins scope; exact rules await grilling.
+
 - [`lobby/01`](../lobby/tickets/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language
 - [`test-automation/03`](../test-automation/tickets/03-standardize-tests-on-vitest.md) — establish Vitest across client and server
 - [`test-automation/04`](../test-automation/tickets/04-strengthen-lobby-regression-coverage.md) — protect the implemented Lobby before transport refactoring
@@ -49,7 +51,7 @@ Additional required implementation tickets can be added within the relevant feat
 - [`how-to-play/01`](../how-to-play/tickets/01-how-to-play-guide.md) — explain the Duel inside the product
 - [`player-display-names/01`](../player-display-names/tickets/01-player-display-names.md) — lightweight names without accounts
 - [`prompt-pool/02`](../prompt-pool/tickets/02-expand-prompt-pool.md) — broaden the larger-test pool to 25–50 prompts
-- [`duel-lifecycle/11`](../duel-lifecycle/tickets/11-add-the-fixed-time-limit.md) — add an optional fixed five-minute Time Limit
+- [`wayfinder/01`](../wayfinder/tickets/01-explore-animated-round-path-review.md) — explore animated Post-Round path graphs with slow-fast-slow pacing
 - [`duel-lifecycle/12`](../duel-lifecycle/tickets/12-show-opponent-activity.md) — add a subtle non-strategic activity signal
 - [`duel-lifecycle/14`](../duel-lifecycle/tickets/14-show-a-forfeit-summary.md) — explain a forfeited Duel without treating it as normal completion
 - [`duel-lifecycle/15`](../duel-lifecycle/tickets/15-enrich-the-post-duel-summary.md) — add best-path and fastest-arrival highlights
