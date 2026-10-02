@@ -325,6 +325,7 @@ const EndedDuelProjectionSchema = TimedDuelProjectionSchema.extend({
 });
 const PostDuelProjectionSchema = TimedDuelProjectionSchema.extend({
   phase: z.literal("post-duel"),
+  rematchPlayerIds: z.array(z.string().min(1)).max(2),
   summary: z.strictObject({
     winnerId: z.string(),
     endReason: z.literal("hp-depleted"),
@@ -366,6 +367,8 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("round-rendered"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("ready-next-round"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("continue-post-duel"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("request-rematch"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("back-to-lobby"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("leave-duel"), duelId: z.string().min(1) }),
   z.strictObject({
     type: z.literal("navigate"), ...RoundCommandFields,
@@ -434,6 +437,8 @@ const ServerMessageSchema = z.union([
       "round-rendered",
       "ready-next-round",
       "continue-post-duel",
+      "request-rematch",
+      "back-to-lobby",
       "leave-duel",
       "navigate",
     ]),

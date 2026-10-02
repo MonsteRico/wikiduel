@@ -38,7 +38,7 @@ function RoundArticle({ duel, active }: { duel: DuelProjection, active: boolean 
 
 export function DuelPage() {
   const { duelId } = useParams()
-  const { duel, notice, error, getServerTime, leaveDuel, status } = useLobby()
+  const { duel, lobby, notice, error, getServerTime, leaveDuel, status } = useLobby()
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [, tick] = useState(0)
   useEffect(() => {
@@ -52,7 +52,9 @@ export function DuelPage() {
     return () => window.removeEventListener('beforeunload', confirmUnload)
   }, [duel, notice])
 
-  if (!duel || duel.id !== duelId || notice) return <Navigate to="/" replace />
+  if (notice) return <Navigate to="/" replace />
+  if (!duel) return <Navigate to={lobby ? `/lobby/${lobby.code}` : '/'} replace />
+  if (duel.id !== duelId) return <Navigate to={`/duel/${duel.id}`} replace />
   const ended = duel.phase === 'post-round' || duel.phase === 'completed' || duel.phase === 'post-duel'
   const elapsed = duel.phase === 'preparing' ? null : getServerTime() - duel.startsAt
   const active = !ended && elapsed !== null && elapsed >= 0

@@ -1,6 +1,7 @@
 # Rematch or Return to the Lobby
 
-Status: ready-for-agent
+Status: completed
+Completed: 2026-10-01 10:30 PM via [PR #24](https://github.com/MonsteRico/wikiduel/pull/24)
 Scope: MVP required
 Category: enhancement
 
@@ -14,14 +15,14 @@ Complete the repeat-play loop after normal Post-Duel. Record each player's Remat
 
 ## Acceptance criteria
 
-- [ ] One Rematch request records visible intent but cannot create a new Duel alone.
-- [ ] Two accepted Rematch requests create exactly one new Duel with both players at 100 HP and Round number reset.
-- [ ] The Rematch uses the established Prompt Catalog and reusable Round preparation path rather than a separate start implementation.
-- [ ] Lobby used-Prompt history persists across the completed Duel and Rematch, exhausting enabled Prompts before reuse.
-- [ ] Either player's accepted Back to Lobby command returns both players, clears Rematch intent, clears completed Duel state, and resets both Lobby readiness values.
-- [ ] Only the ready Host can start a later Duel from the restored Lobby.
-- [ ] Serialized simultaneous Rematch/Back commands produce one deterministic valid transition and cannot strand the clients in different lifecycle states.
-- [ ] A deterministic two-socket regression completes multiple Rounds through zero HP, displays Post-Duel, starts a Rematch, and observes reset HP with retained Prompt history.
+- [x] One Rematch request records visible intent but cannot create a new Duel alone.
+- [x] Two accepted Rematch requests create exactly one new Duel with both players at 100 HP and Round number reset.
+- [x] The Rematch uses the established Prompt Catalog and reusable Round preparation path rather than a separate start implementation.
+- [x] Lobby used-Prompt history persists across the completed Duel and Rematch, exhausting enabled Prompts before reuse.
+- [x] Either player's accepted Back to Lobby command returns both players, clears Rematch intent, clears completed Duel state, and resets both Lobby readiness values.
+- [x] Only the ready Host can start a later Duel from the restored Lobby.
+- [x] Serialized simultaneous Rematch/Back commands produce one deterministic valid transition and cannot strand the clients in different lifecycle states.
+- [x] A deterministic two-socket regression completes multiple Rounds through zero HP, displays Post-Duel, starts a Rematch, and observes reset HP with retained Prompt history.
 
 ## Blocked by
 
@@ -36,3 +37,4 @@ Complete the repeat-play loop after normal Post-Duel. Record each player's Remat
 ## Comments
 
 - 2026-07-12: This ticket closes the core product hypothesis loop: face the same opponent, finish, and voluntarily start another Duel.
+- 2026-10-01: Added scoped Rematch and Back to Lobby commands, visible intent, synchronized client routing, and deterministic core, socket, contract, and client regressions. Validation passed with 268 tests passing and 5 skipped, plus typecheck, build, and lint. Standards and spec reviews found no actionable issues.

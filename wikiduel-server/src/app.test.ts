@@ -744,7 +744,7 @@ test("the Host is notified when the Opponent explicitly departs", async () => {
 });
 
 
-test("completes a multi-round Duel and continues each socket independently", async () => {
+test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Duel and repeats play via %s", async (choice) => {
   let now = 100_000;
   let activate = () => {};
   const app = await buildApp({ promptRandom: () => 0, now: () => now,
@@ -769,8 +769,10 @@ test("completes a multi-round Duel and continues each socket independently", asy
     let prepared = nextRound(host, "preparing");
     host.send(JSON.stringify({ type: "start-duel" }));
     let final: DuelProjection | undefined;
+    const prompts: string[] = [];
     for (let round = 1; round <= 5; round++) {
       const duel = await prepared;
+      prompts.push(duel.round.prompt.id);
       const ids = { duelId: duel.id, roundId: duel.round.id };
       const countdown = nextRound(host, "countdown");
       for (const socket of [host, opponent]) {
@@ -815,6 +817,51 @@ test("completes a multi-round Duel and continues each socket independently", asy
     const other = nextRound(opponent, "post-duel");
     opponent.send(JSON.stringify({ type: "continue-post-duel", ...ids }));
     expect(await other).toMatchObject({ phase: "post-duel", summary: summary!.phase === "post-duel" ? summary!.summary : null });
+    const intent = [nextRound(host, "post-duel"), nextRound(opponent, "post-duel")];
+    host.send(JSON.stringify({ type: "request-rematch", ...ids }));
+    for (const projection of await Promise.all(intent)) {
+      expect(projection).toMatchObject({ id: ids.duelId, rematchPlayerIds: [final!.self.id] });
+    }
+    if (choice === "rematch") {
+      const fresh = [nextRound(host, "preparing"), nextRound(opponent, "preparing")];
+      const stale = nextMessage(opponent, "command-rejected");
+      // Same-socket ordering guarantees the second intent commits before Back arrives.
+      opponent.send(JSON.stringify({ type: "request-rematch", ...ids }));
+      opponent.send(JSON.stringify({ type: "back-to-lobby", ...ids }));
+      await expect(stale).resolves.toMatchObject({ command: "back-to-lobby", reason: "invalid-state" });
+      const rematches = await Promise.all(fresh);
+      expect(rematches[0]!.id).not.toBe(ids.duelId);
+      expect(rematches[1]!.id).toBe(rematches[0]!.id);
+      for (const duel of rematches) {
+        expect(duel).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100, clicks: 0 }, opponent: { hp: 100, clicks: 0 } });
+        expect(duel.round.prompt.id).toBe("fixture-third");
+      }
+      expect(prompts).toEqual(["fixture-first", "fixture-second", "fixture-third", "fixture-first", "fixture-second"]);
+    } else {
+      const actor = choice === "host-back" ? host : opponent;
+      const restored = [nextMessage<LobbyStateMessage>(host, "lobby-state"), nextMessage<LobbyStateMessage>(opponent, "lobby-state")];
+      const stale = nextMessage(actor, "command-rejected");
+      actor.send(JSON.stringify({ type: "back-to-lobby", ...ids }));
+      actor.send(JSON.stringify({ type: "request-rematch", ...ids }));
+      const states = await Promise.all(restored);
+      expect(states[0]!.lobby).toEqual(states[1]!.lobby);
+      expect(states[0]!.lobby).toMatchObject({ code: lobby.lobby.code, members: [{ ready: false }, { ready: false }] });
+      await expect(stale).resolves.toMatchObject({ command: "request-rematch", reason: "invalid-state" });
+      let rejected = nextMessage(host, "command-rejected");
+      host.send(JSON.stringify({ type: "start-duel" }));
+      await expect(rejected).resolves.toMatchObject({ reason: "players-not-ready" });
+      await setReady(host, opponent, true);
+      await setReady(opponent, host, true);
+      rejected = nextMessage(opponent, "command-rejected");
+      opponent.send(JSON.stringify({ type: "start-duel" }));
+      await expect(rejected).resolves.toMatchObject({ reason: "not-host" });
+      const fresh = [nextRound(host, "preparing"), nextRound(opponent, "preparing")];
+      host.send(JSON.stringify({ type: "start-duel" }));
+      for (const duel of await Promise.all(fresh)) {
+        expect(duel.id).not.toBe(ids.duelId);
+        expect(duel).toMatchObject({ round: { number: 1, prompt: { id: "fixture-third" } }, self: { hp: 100 }, opponent: { hp: 100 } });
+      }
+    }
   } finally {
     host.terminate(); opponent.terminate(); await app.close();
   }
