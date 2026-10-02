@@ -20,7 +20,7 @@ class ArticleRenderBoundary extends Component<{ children: ReactNode }, { failed:
   }
 }
 
-function RoundArticle({ duel, active }: { duel: DuelProjection, active: boolean }) {
+function RoundArticle({ duel, active, expired }: { duel: DuelProjection, active: boolean, expired: boolean }) {
   const { acknowledgeRendered, navigate, navigating, status } = useLobby()
   const article = duel.round.article
   useEffect(() => {
@@ -28,7 +28,7 @@ function RoundArticle({ duel, active }: { duel: DuelProjection, active: boolean 
   }, [article, duel.id, duel.phase, duel.round.id, acknowledgeRendered])
   if (!article) return null
   return <div hidden={!active} inert={!active} aria-hidden={!active}>
-    <fieldset disabled={!active || navigating || status !== 'connected'} className="m-0 min-w-0 border-0 p-0" aria-label="Article Navigation" aria-busy={navigating}>
+    <fieldset disabled={!active || duel.self.arrived || expired || navigating || status !== 'connected'} className="m-0 min-w-0 border-0 p-0" aria-label="Article Navigation" aria-busy={navigating}>
       <PlayableArticleArea article={article} onNavigate={navigate} />
     </fieldset>
     {navigating && <p role="status">Loading article...</p>}
@@ -50,7 +50,8 @@ export function DuelPage() {
   const ended = duel.phase === 'post-round' || duel.phase === 'completed' || duel.phase === 'post-duel'
   const elapsed = duel.phase === 'preparing' ? null : getServerTime() - duel.startsAt
   const active = !ended && elapsed !== null && elapsed >= 0
-  const seconds = Math.floor(Math.max(0, elapsed ?? 0) / 1000)
+  const remaining = duel.phase === 'preparing' || duel.expiresAt === null ? null : Math.max(0, duel.expiresAt - getServerTime())
+  const seconds = remaining === null ? Math.floor(Math.max(0, elapsed ?? 0) / 1000) : Math.ceil(remaining / 1000)
   const stopwatch = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
   return (
@@ -80,6 +81,7 @@ export function DuelPage() {
                   <strong className="font-display text-lg text-ink">{player.hp} HP</strong>
                 </div>
                 <span className="font-mono text-xs text-ink-soft">{player.clicks} clicks</span>
+                {active && <span>{player.arrived ? 'Target reached' : 'Navigating'}</span>}
                 {player.id === duel.opponent.id && <span>{duel.opponent.connected ? 'Connected' : 'Disconnected'}</span>}
               </article>
             ))}
@@ -99,9 +101,12 @@ export function DuelPage() {
           {!ended && duel.phase !== 'preparing' && <div className="px-6 py-5 text-center">
             <p>Start: {duel.round.prompt.start.title}</p>
             <p>Target: {duel.round.prompt.target.title}</p>
-            <p role="timer" aria-label={active ? 'Elapsed time' : 'Round countdown'} className="font-mono text-3xl">
+            <p role="timer" aria-label={active ? remaining === null ? 'Elapsed time' : 'Remaining time' : 'Round countdown'} className="font-mono text-3xl">
               {active ? stopwatch : Math.ceil(-(elapsed ?? 0) / 1000)}
             </p>
+            {active && duel.self.arrived && <p>Your arrival time: {(duel.self.arrivalElapsedMs! / 1000).toFixed(3)} s</p>}
+            {active && duel.self.arrived && <p>Target reached. Waiting for your opponent{remaining === null ? '.' : ' or the Time Limit.'}</p>}
+            {active && remaining === 0 && <p>Time Limit reached. Waiting for the Round Outcome.</p>}
           </div>}
           {!active && !ended && <div className="grid min-h-[300px] place-items-center bg-canvas-deep/30 px-6 py-12 text-center">
             <div className="max-w-[420px]">
@@ -115,7 +120,7 @@ export function DuelPage() {
             </div>
           </div>}
           <ArticleRenderBoundary key={duel.round.id}>
-            <RoundArticle duel={duel} active={active} />
+            <RoundArticle duel={duel} active={active} expired={remaining === 0} />
           </ArticleRenderBoundary>
         </Panel>
       </section>

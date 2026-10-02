@@ -12,7 +12,7 @@ Planning stubs begin at `needs-triage`. Before assigning one to an implementatio
 
 ## MVP required
 
-Next after deployment setup: [`duel-lifecycle/17`](../duel-lifecycle/tickets/17-refine-click-scored-rounds.md). Refine and implement both-player completion, click-based damage, and an optional Host-enabled Time Limit before the first MVP playtest. This changes the previous first-arrival-wins scope; exact rules await grilling.
+Completed: [`duel-lifecycle/18`](../duel-lifecycle/tickets/18-implement-click-scored-rounds.md) adds both-player completion, click-based damage, and the Host-toggleable five-minute Time Limit, default off. The maintainer approved closure with this PR after automated and local browser validation. Deployed acceptance remains outstanding under deployment/01.
 
 - [`lobby/01`](../lobby/tickets/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language
 - [`test-automation/03`](../test-automation/tickets/03-standardize-tests-on-vitest.md) — establish Vitest across client and server
@@ -24,7 +24,7 @@ Next after deployment setup: [`duel-lifecycle/17`](../duel-lifecycle/tickets/17-
 - [`playable-articles/09`](../playable-articles/tickets/09-add-repository-caching-and-resilience.md) — bound, coalesce, and cache complete article retrieval
 - [`playable-articles/10`](../playable-articles/tickets/10-render-typed-article-documents.md) — render the production Article Document contract
 - [`playable-articles/11`](../playable-articles/tickets/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end article acceptance surface
-- [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the Zod-validated client/server contract seam; recommended next task
+- [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the existing Zod-validated client/server contract seam
 - [`duel-lifecycle/01`](../duel-lifecycle/tickets/01-establish-the-prompt-catalog.md) — provide the Prompt format, fixtures, selection, and Lobby history
 - [`duel-lifecycle/02`](../duel-lifecycle/tickets/02-enter-the-first-duel.md) — enter the minimal authoritative Duel core
 - [`duel-lifecycle/03`](../duel-lifecycle/tickets/03-prepare-and-start-every-round.md) — prepare and start first, later, and Rematch Rounds fairly

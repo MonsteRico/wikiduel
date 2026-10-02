@@ -1,6 +1,7 @@
 import type { DuelProjection } from '@wikiduel/contracts'
 import { Button } from '../../components/ui/Button'
 import { useLobby } from './lobbyContext'
+import { outcomeExplanation } from './outcomeExplanation'
 
 type PostDuelProjection = Extract<DuelProjection, { phase: 'post-duel' }>
 
@@ -25,7 +26,8 @@ export function PostDuel({ duel }: { duel: PostDuelProjection }) {
       <h3 className="font-display font-bold">Damage by Round</h3>
       <ol aria-label="Damage by Round" className="mt-2 space-y-2">
         {summary.rounds.map((round) => <li key={round.roundId}>
-          Round {round.roundNumber}: {name(round.winnerId)} dealt {round.damage} damage
+          Round {round.roundNumber}: {round.winnerId === null ? 'Draw, no damage' : `${name(round.winnerId)} dealt ${round.damage} damage`}
+          <p className="text-sm text-ink-soft">{outcomeExplanation[round.winReason]}</p>
         </li>)}
       </ol>
     </div>

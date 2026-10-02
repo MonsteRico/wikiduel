@@ -32,6 +32,7 @@ export type StartDuelCommand = Readonly<{
   lobbyId: string;
   actorId: string;
   players: readonly DuelLobbyPlayer[];
+  timeLimitEnabled?: boolean;
 }>;
 
 export type DuelProjectionEnvelope = Readonly<{
@@ -67,12 +68,6 @@ export type RoundCommand = Readonly<{
   lobbyId: string; duelId: string; roundId: string; playerId: string;
 }>;
 
-// Server-only cause. Future end causes extend this union and the outcome resolver.
-export type RoundEndCause = Readonly<{ type: "target-arrival" }>;
-export type EndRoundResult =
-  | Readonly<{ ok: true; outcome: RoundOutcome }>
-  | Readonly<{ ok: false }>;
-
 export type DisconnectPlayerCommand = Readonly<{
   lobbyId: string;
   playerId: string;
@@ -94,6 +89,7 @@ type DuelPlayerState = Readonly<{
   article?: PlayableArticle;
   navigating?: boolean;
   requests: Set<string>;
+  arrival?: Readonly<{ elapsedMs: number; order: number }>;
 }>;
 
 function hasDestination(blocks: readonly ArticleBlock[], destination: NavigationDestination): boolean {
@@ -129,6 +125,9 @@ type DuelState = {
   rendered: Set<string>;
   ready: Set<string>;
   deadline?: number;
+  timeLimitEnabled: boolean;
+  expiresAt: number | null;
+  arrivalCount: number;
   startsAt?: number;
   cancelTimer?: () => void;
   prompt: Prompt;
@@ -175,6 +174,8 @@ function projectDuel(
       hp: self.hp,
       path: Object.freeze(self.path.map((article) => Object.freeze({ ...article }))),
       clicks: self.clicks,
+      arrived: !!self.arrival,
+      arrivalElapsedMs: self.arrival?.elapsedMs ?? null,
     },
     opponent: {
       id: opponent.id,
@@ -182,29 +183,30 @@ function projectDuel(
       role: opponent.role,
       hp: opponent.hp,
       clicks: opponent.clicks,
+      arrived: !!opponent.arrival,
       connected: true,
     },
   };
   if (duel.phase === "completed" && duel.continued.has(self.id)) {
     const identity = (player: DuelPlayerState) => ({ id: player.id, name: player.name, role: player.role, hp: player.hp });
-    return { ...projection, phase: "post-duel", startsAt: duel.startsAt!,
+    return { ...projection, phase: "post-duel", startsAt: duel.startsAt!, expiresAt: duel.expiresAt,
       rematchPlayerIds: [...duel.rematch],
       round: { ...projection.round, article: article! },
       summary: {
-        winnerId: duel.outcome!.winnerId, endReason: "hp-depleted",
+        winnerId: duel.outcome!.winnerId!, endReason: "hp-depleted",
         players: [identity(duel.players[0]), identity(duel.players[1])],
         rounds: duel.outcomes.map((outcome) => ({ roundId: outcome.roundId,
-          roundNumber: outcome.roundNumber, winnerId: outcome.winnerId, damage: outcome.damage.finalDamage })),
+          roundNumber: outcome.roundNumber, winnerId: outcome.winnerId, winReason: outcome.winReason, damage: outcome.damage.finalDamage })),
       },
     };
   }
   if (duel.phase === "post-round" || duel.phase === "completed") {
-    return { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
+    return { ...projection, phase: duel.phase, startsAt: duel.startsAt!, expiresAt: duel.expiresAt,
       round: { ...projection.round, article: article! }, outcome: duel.outcome!, readyPlayerIds: [...duel.ready] };
   }
   return duel.phase === "preparing"
     ? { ...projection, phase: "preparing" }
-    : { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
+    : { ...projection, phase: duel.phase, startsAt: duel.startsAt!, expiresAt: duel.expiresAt,
         round: { ...projection.round, article: article! } };
 }
 
@@ -243,9 +245,66 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       && duel.players.some((player) => player.id === command.playerId) ? duel : undefined;
   };
 
-  const isNavigable = (duel: DuelState) =>
+  const isNavigable = (duel: DuelState, at = now()) =>
     (duel.phase === "active" || duel.phase === "countdown")
-    && duel.startsAt !== undefined && now() >= duel.startsAt;
+    && duel.startsAt !== undefined && at >= duel.startsAt;
+
+  const finishRound = (lobbyId: string, duel: DuelState, endedAt: number) => {
+    if (duel.outcome) return;
+    const arrivals = duel.players.filter((player) => player.arrival);
+    const winner = arrivals.length === 2
+      ? [...arrivals].sort((a, b) => a.clicks - b.clicks || a.arrival!.order - b.arrival!.order)[0]
+      : arrivals[0];
+    const loser = winner && duel.players.find((player) => player.id !== winner.id)!;
+    const damage = arrivals.length === 2
+      ? calculateDamage({ kind: "completed-routes", winnerClicks: winner!.clicks, loserClicks: loser!.clicks })
+      : calculateDamage({ kind: winner ? "sole-arrival" : "draw" });
+    const freezePlayer = (player: DuelPlayerState) => {
+      const hpLoss = player.id === loser?.id ? Math.min(player.hp, damage.finalDamage) : 0;
+      return Object.freeze({ id: player.id,
+        path: Object.freeze(player.path.map((article) => Object.freeze({ ...article }))),
+        clicks: player.clicks, arrived: !!player.arrival,
+        activeElapsedMs: player.arrival?.elapsedMs ?? endedAt - duel.startsAt!,
+        hp: player.hp - hpLoss, hpLoss });
+    };
+    const players = Object.freeze([freezePlayer(duel.players[0]), freezePlayer(duel.players[1])] as const);
+    const common = { roundId: duel.roundId, roundNumber: duel.roundNumber,
+      startsAt: duel.startsAt!, endedAt, players };
+    const final = players.some((player) => player.hp === 0);
+    const outcome: RoundOutcome = Object.freeze(damage.kind === "completed-routes"
+      ? { ...common, endReason: "both-arrived", winReason: winner!.clicks === loser!.clicks ? "earlier-arrival" : "fewer-clicks",
+          winnerId: winner!.id, damage, final }
+      : damage.kind === "sole-arrival"
+        ? { ...common, endReason: "time-limit", winReason: "sole-arrival", winnerId: winner!.id, damage, final }
+        : { ...common, endReason: "time-limit", winReason: "neither-arrived", winnerId: null, damage, final: false });
+    duel.players = [{ ...duel.players[0], hp: players[0].hp, navigating: false },
+      { ...duel.players[1], hp: players[1].hp, navigating: false }];
+    duel.outcome = outcome;
+    duel.outcomes.push(outcome);
+    duel.phase = outcome.final ? "completed" : "post-round";
+    duel.cancelTimer?.();
+    publish(lobbyId, duel);
+  };
+  const expireIfDue = (lobbyId: string, duel: DuelState, at = now()) => {
+    if (!isNavigable(duel, at) || duel.expiresAt === null || at < duel.expiresAt) return false;
+    finishRound(lobbyId, duel, duel.expiresAt);
+    return true;
+  };
+  const acceptNavigation = (command: RoundCommand, duel: DuelState, index: 0 | 1,
+    destination: NavigationDestination, article?: PlayableArticle) => {
+    const acceptedAt = now();
+    if (expireIfDue(command.lobbyId, duel, acceptedAt) || !isNavigable(duel, acceptedAt)
+      || duel.players[index].arrival) return false;
+    commitNavigation(duel, index, destination, article);
+    duel.phase = "active";
+    if (destination.pageId === duel.prompt.target.pageId && destination.title === duel.prompt.target.title) {
+      const player = { ...duel.players[index], arrival: { elapsedMs: acceptedAt - duel.startsAt!, order: ++duel.arrivalCount } };
+      duel.players = index === 0 ? [player, duel.players[1]] : [duel.players[0], player];
+    }
+    if (duel.arrivalCount === 2) finishRound(command.lobbyId, duel, acceptedAt);
+    else publish(command.lobbyId, duel);
+    return true;
+  };
 
   return {
     startDuel(command: StartDuelCommand): StartDuelResult {
@@ -279,6 +338,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       const duel: DuelState = {
         id: createDuelId(),
         phase: "preparing",
+        timeLimitEnabled: command.timeLimitEnabled ?? false, expiresAt: null, arrivalCount: 0,
         roundId: randomUUID(), roundNumber: 1, loading: false,
         received: new Set(), rendered: new Set(), ready: new Set(),
         outcomes: [], continued: new Set(), rematch: new Set(),
@@ -314,11 +374,13 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         duel.article = undefined;
         duel.startsAt = undefined;
         duel.deadline = undefined;
+        duel.expiresAt = null;
+        duel.arrivalCount = 0;
         duel.received.clear();
         duel.rendered.clear();
         duel.ready.clear();
         const resetPlayer = (player: DuelPlayerState): DuelPlayerState => ({ ...player,
-          path: [duel.prompt.start], clicks: 0, article: undefined, navigating: false, requests: new Set(),
+          path: [duel.prompt.start], clicks: 0, article: undefined, navigating: false, requests: new Set(), arrival: undefined,
         });
         duel.players = [resetPlayer(duel.players[0]), resetPlayer(duel.players[1])];
         publish(lobbyId, duel);
@@ -357,6 +419,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         duel.cancelTimer?.();
         duels.delete(command.lobbyId);
         const result = this.startDuel({ lobbyId: command.lobbyId,
+          timeLimitEnabled: duel.timeLimitEnabled,
           actorId: duel.players.find((player) => player.role === "host")!.id,
           players: duel.players.map((player) => ({ ...player, connected: true, ready: true })),
         });
@@ -394,25 +457,33 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       acknowledgements.add(command.playerId);
       if (duel.received.size === 2 && duel.deadline === undefined) {
         duel.deadline = now() + 30_000;
-        duel.cancelTimer = schedule(() => interrupt(command.lobbyId, duel, "preparation-deadline"), 30_000);
+        duel.cancelTimer = schedule(() => {
+          if (currentRound(command) === duel && duel.phase === "preparing") interrupt(command.lobbyId, duel, "preparation-deadline");
+        }, 30_000);
       }
       if (duel.rendered.size === 2 && duel.received.size === 2) {
         duel.cancelTimer?.();
         duel.phase = "countdown";
         duel.startsAt = now() + 3_000;
+        duel.expiresAt = duel.timeLimitEnabled ? duel.startsAt + 300_000 : null;
         publish(command.lobbyId, duel);
         duel.cancelTimer = schedule(() => {
-          if (duels.get(command.lobbyId) !== duel || duel.phase !== "countdown") return;
-          duel.phase = "active";
-          publish(command.lobbyId, duel);
+          if (currentRound(command) !== duel || !isNavigable(duel)) return;
+          if (expireIfDue(command.lobbyId, duel)) return;
+          if (duel.phase === "countdown") { duel.phase = "active"; publish(command.lobbyId, duel); }
+          if (duel.expiresAt !== null) duel.cancelTimer = schedule(() => {
+            if (currentRound(command) === duel) expireIfDue(command.lobbyId, duel);
+          }, Math.max(0, duel.expiresAt - now()));
         }, 3_000);
       }
       return true;
     },
 
-    canNavigate(command: RoundCommand): boolean {
+    // Resolves an overdue Round before checking whether this player can navigate.
+    checkNavigationEligibility(command: RoundCommand): boolean {
       const duel = currentRound(command);
-      return !!duel && isNavigable(duel);
+      return !!duel && !expireIfDue(command.lobbyId, duel) && isNavigable(duel)
+        && !duel.players.find((player) => player.id === command.playerId)!.arrival;
     },
 
     async navigate(command: RoundCommand & {
@@ -420,7 +491,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       destination: NavigationDestination;
     }): Promise<boolean> {
       const duel = currentRound(command);
-      if (!duel || !isNavigable(duel)) return false;
+      if (!duel || !this.checkNavigationEligibility(command)) return false;
       const index = duel.players[0].id === command.playerId ? 0 : 1;
       const player = duel.players[index];
       const article = player.article ?? duel.article;
@@ -433,15 +504,9 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       duel.players = index === 0 ? [pending, duel.players[1]] : [duel.players[0], pending];
       try {
         const result = await options.repository?.getByTitle(command.destination.title);
-        if (!result?.ok || currentRound(command) !== duel || !isNavigable(duel)
+        if (currentRound(command) !== duel || !this.checkNavigationEligibility(command) || !result?.ok
           || duel.players[index] !== pending) return false;
-        commitNavigation(duel, index, result.article.identity, result.article);
-        duel.phase = "active";
-        if (result.article.identity.pageId === duel.prompt.target.pageId
-          && result.article.identity.title === duel.prompt.target.title) {
-          this.endRound({ ...command, cause: { type: "target-arrival" } });
-        } else publish(command.lobbyId, duel);
-        return true;
+        return acceptNavigation(command, duel, index, result.article.identity, result.article);
       } catch {
         return false;
       } finally {
@@ -459,54 +524,11 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       expectedClicks: number; destination: NavigationDestination;
     }): boolean {
       const duel = currentRound(command);
-      if (!duel || !isNavigable(duel)) return false;
+      if (!duel || !this.checkNavigationEligibility(command)) return false;
       const index = duel.players[0].id === command.playerId ? 0 : 1;
       const player = duel.players[index];
       if (player.clicks !== command.expectedClicks) return false;
-      commitNavigation(duel, index, command.destination);
-      return true;
-    },
-
-    // Synchronous so the first accepted cause freezes state before another command runs.
-    endRound(command: RoundCommand & { cause: RoundEndCause }): EndRoundResult {
-      const duel = currentRound(command);
-      if (!duel || !isNavigable(duel)) return { ok: false };
-      const endedAt = now();
-      const winner = duel.players.find((player) => player.id === command.playerId)!;
-      const arrival = winner.path.at(-1)!;
-      if (command.cause.type !== "target-arrival" || winner.clicks === 0
-        || arrival.pageId !== duel.prompt.target.pageId
-        || arrival.title !== duel.prompt.target.title) return { ok: false };
-      const loser = duel.players.find((player) => player.id !== winner.id)!;
-      const freezePlayer = (player: DuelPlayerState) => Object.freeze({
-        id: player.id,
-        path: Object.freeze(player.path.map((article) => Object.freeze({ ...article }))),
-        clicks: player.clicks,
-        activeElapsedMs: endedAt - duel.startsAt!,
-        hp: player.hp,
-      });
-      const frozen = [freezePlayer(duel.players[0]), freezePlayer(duel.players[1])] as const;
-      const damage = calculateDamage({
-        winnerClicks: frozen.find((player) => player.id === winner.id)!.clicks,
-        loserClicks: frozen.find((player) => player.id === loser.id)!.clicks,
-      });
-      const resultingPlayer = (player: RoundOutcome["players"][number]) => Object.freeze({
-        ...player, hp: player.id === loser.id ? Math.max(0, player.hp - damage.finalDamage) : player.hp,
-      });
-      const players = Object.freeze([resultingPlayer(frozen[0]), resultingPlayer(frozen[1])] as const);
-      const outcome: RoundOutcome = Object.freeze({
-        roundId: duel.roundId, roundNumber: duel.roundNumber,
-        endReason: command.cause.type, winnerId: winner.id,
-        startsAt: duel.startsAt!, endedAt, players, damage,
-        final: players.some((player) => player.hp === 0),
-      });
-      duel.players = [{ ...duel.players[0], hp: players[0].hp }, { ...duel.players[1], hp: players[1].hp }];
-      duel.outcome = outcome;
-      duel.outcomes.push(outcome);
-      duel.phase = outcome.final ? "completed" : "post-round";
-      duel.cancelTimer?.();
-      publish(command.lobbyId, duel);
-      return { ok: true, outcome };
+      return acceptNavigation(command, duel, index, command.destination);
     },
 
     dispose(): void {

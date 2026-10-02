@@ -48,6 +48,7 @@ type MemberRecord = LobbyMember & {
 
 type LobbyRecord = {
   code: string;
+  timeLimitEnabled: boolean;
   matched: boolean;
   members: Map<string, MemberRecord>;
 };
@@ -94,6 +95,7 @@ function lobbyState(lobby: LobbyRecord): string {
     type: "lobby-state",
     lobby: {
       code: lobby.code,
+      timeLimitEnabled: lobby.timeLimitEnabled,
       members: Array.from(lobby.members.values(), ({ socket: _socket, ...member }) => member),
     },
   });
@@ -394,7 +396,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             return;
           }
           const code = generateLobbyCode(lobbies);
-          const lobby: LobbyRecord = { code, matched: false, members: new Map() };
+          const lobby: LobbyRecord = { code, timeLimitEnabled: false, matched: false, members: new Map() };
           lobbies.set(code, lobby);
           joinLobby(lobby, message.clientId, "host");
           return;
@@ -419,6 +421,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           }
 
           joinLobby(lobby, message.clientId, "opponent");
+          return;
+        }
+
+        if (message.type === "set-time-limit") {
+          const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
+          const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
+          if (!lobby || member?.socket !== socket || duelCore?.hasActiveDuel(lobby.code)) {
+            sendCommandRejection(socket, message.type, "invalid-state");
+          } else if (member.role !== "host") {
+            sendCommandRejection(socket, message.type, "not-host");
+          } else {
+            if (lobby.timeLimitEnabled !== message.enabled) {
+              lobby.timeLimitEnabled = message.enabled;
+              for (const player of lobby.members.values()) player.ready = false;
+            }
+            broadcastLobby(lobby);
+          }
           return;
         }
 
@@ -458,6 +477,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
           const result = duelCore.startDuel({
             lobbyId: lobby.code,
+            timeLimitEnabled: lobby.timeLimitEnabled,
             actorId: session.memberId,
             players: Array.from(lobby.members.values(), ({ socket: _socket, ...player }) => player),
           });

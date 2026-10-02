@@ -32,13 +32,13 @@ function preparedDuel(clientId: string): PreparingDuelProjection {
     round: { id: 'round-1', number: 1, article: roundArticle, prompt: {
       id: 'prompt-1', start: roundArticle.identity, target: { pageId: 1002, title: 'Fixture Target One' },
     } },
-    self: { id: clientId, name: 'Host', role: 'host', hp: 100, path: [roundArticle.identity], clicks: 0 },
-    opponent: { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 100, clicks: 0, connected: true },
+    self: { arrived: false, arrivalElapsedMs: null, id: clientId, name: 'Host', role: 'host', hp: 100, path: [roundArticle.identity], clicks: 0 },
+    opponent: { arrived: false, id: 'opponent', name: 'Opponent', role: 'opponent', hp: 100, clicks: 0, connected: true },
   }
 }
 function hostLobby(clientId: string): Lobby {
   return {
-    code: '7G8KZ',
+    code: '7G8KZ', timeLimitEnabled: false,
     members: [{ id: clientId, name: 'host', role: 'host', connected: true, ready: false }],
   }
 }
@@ -46,25 +46,25 @@ function hostLobby(clientId: string): Lobby {
 function departureDuel(clientId: string, phase: DuelProjection['phase']): DuelProjection {
   const prepared = preparedDuel(clientId)
   if (phase === 'preparing') return prepared
-  const started = { ...prepared, startsAt: phase === 'countdown' ? 103_000 : 99_000,
+  const started = { ...prepared, expiresAt: null, startsAt: phase === 'countdown' ? 103_000 : 99_000,
     round: { ...prepared.round, article: roundArticle } }
   if (phase === 'active' || phase === 'countdown') return { ...started, phase }
   if (phase === 'post-duel') return { ...started, phase, rematchPlayerIds: [], summary: {
     winnerId: clientId, endReason: 'hp-depleted',
     players: [{ id: clientId, name: 'Host', role: 'host', hp: 100 },
       { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 0 }],
-    rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, damage: 22 }],
+    rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, winReason: 'fewer-clicks', damage: 22 }],
   } }
   return { ...started, phase, readyPlayerIds: [], outcome: {
-    roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: clientId,
+    roundId: 'round-1', roundNumber: 1, endReason: 'both-arrived', winReason: 'earlier-arrival', winnerId: clientId,
     startsAt: 99_000, endedAt: 100_000, final: phase === 'completed',
     players: [
-      { id: clientId, path: [roundArticle.identity, prepared.round.prompt.target], clicks: 1, activeElapsedMs: 1000, hp: 100 },
-      { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, hp: phase === 'completed' ? 0 : 78 },
+      { id: clientId, path: [roundArticle.identity, prepared.round.prompt.target], clicks: 1, activeElapsedMs: 1000, arrived: true, hpLoss: 0, hp: 100 },
+      { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, arrived: true, hpLoss: 25, hp: phase === 'completed' ? 0 : 75 },
     ],
-    damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
-      clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
-      minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+    damage: { kind: 'completed-routes', ruleId: 'click-scored-v2', winnerClicks: 1, loserClicks: 1, baseDamage: 25, clickDifferential: 0,
+      clickMultiplier: 3, multiplierContribution: 0, unclampedDamage: 25,
+      minimumDamage: 25, maximumDamage: 60, finalDamage: 25 },
   } }
 }
 
@@ -257,7 +257,7 @@ describe('Lobby client', () => {
     const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const prepared = preparedDuel(sentClientId(socket))
-    const duel = { ...prepared, phase: 'active' as const, startsAt: 99_000,
+    const duel = { ...prepared, phase: 'active' as const, expiresAt: null, startsAt: 99_000,
       round: { ...prepared.round, article: roundArticle } }
     act(() => socket.receive({ type: 'duel-state', duel }))
     act(() => screen.getByRole('button', { name: 'Leave Duel' }).click())
@@ -280,12 +280,12 @@ describe('Lobby client', () => {
     act(() => socket.receive({ type: 'lobby-state', lobby }))
     const prepared = preparedDuel(clientId)
     const duel: Extract<DuelProjection, { phase: 'post-duel' }> = {
-      ...prepared, phase: 'post-duel', startsAt: 99_000, rematchPlayerIds: [],
+      ...prepared, phase: 'post-duel', expiresAt: null, startsAt: 99_000, rematchPlayerIds: [],
       round: { ...prepared.round, article: roundArticle },
       summary: { winnerId: clientId, endReason: 'hp-depleted',
         players: [{ id: clientId, name: 'Host', role: 'host', hp: 100 },
           { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 0 }],
-        rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, damage: 60 }],
+        rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, winReason: 'fewer-clicks', damage: 60 }],
       },
     }
     act(() => socket.receive({ type: 'duel-state', duel }))
@@ -325,7 +325,7 @@ describe('Lobby client', () => {
     const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
     const prepared = preparedDuel(sentClientId(socket))
-    const duel = { ...prepared, phase: 'active' as const, startsAt: 99_000,
+    const duel = { ...prepared, phase: 'active' as const, expiresAt: null, startsAt: 99_000,
       round: { ...prepared.round, article: roundArticle } }
     act(() => socket.receive({ type: 'duel-state', duel }))
     const link = screen.getByRole('button', { name: 'Follow this link' })
@@ -361,21 +361,21 @@ describe('Lobby client', () => {
     act(() => socket.open())
     const duel = preparedDuel(sentClientId(socket))
     act(() => socket.receive({ type: 'duel-state', duel: {
-      ...duel, phase: 'active', startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+      ...duel, phase: 'active', expiresAt: null, startsAt: 99_000, round: { ...duel.round, article: roundArticle },
     } }))
     expect(screen.getByText(/Secret article content/)).toBeVisible()
     const ended: Extract<DuelProjection, { phase: 'post-round' | 'completed' }> = {
-      ...duel, phase, startsAt: 99_000, readyPlayerIds: [], round: { ...duel.round, article: roundArticle },
+      ...duel, phase, expiresAt: null, startsAt: 99_000, readyPlayerIds: [], round: { ...duel.round, article: roundArticle },
       outcome: {
-        roundId: 'round-1', roundNumber: 1, endReason: 'target-arrival', winnerId: duel.self.id,
+        roundId: 'round-1', roundNumber: 1, endReason: 'both-arrived', winReason: 'earlier-arrival', winnerId: duel.self.id,
         startsAt: 99_000, endedAt: 100_000, final: phase === 'completed',
         players: [
-          { id: duel.self.id, path: [roundArticle.identity, duel.round.prompt.target], clicks: 1, activeElapsedMs: 1000, hp: 100 },
-          { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, hp: phase === 'completed' ? 0 : 78 },
+          { id: duel.self.id, path: [roundArticle.identity, duel.round.prompt.target], clicks: 1, activeElapsedMs: 1000, arrived: true, hpLoss: 0, hp: 100 },
+          { id: 'opponent', path: [roundArticle.identity], clicks: 0, activeElapsedMs: 1000, arrived: true, hpLoss: 25, hp: phase === 'completed' ? 0 : 75 },
         ],
-        damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
-          clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
-          minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+        damage: { kind: 'completed-routes', ruleId: 'click-scored-v2', winnerClicks: 1, loserClicks: 1, baseDamage: 25, clickDifferential: 0,
+          clickMultiplier: 3, multiplierContribution: 0, unclampedDamage: 25,
+          minimumDamage: 25, maximumDamage: 60, finalDamage: 25 },
       },
     }
     act(() => socket.receive({ type: 'duel-state', duel: ended }))
@@ -387,9 +387,9 @@ describe('Lobby client', () => {
     const route = screen.getByRole('list', { name: 'Host frozen path' })
     expect(within(route).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Fixture Start One', 'Fixture Target One'])
     expect(within(route).queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Opponent Round Outcome')).toHaveTextContent(phase === 'completed' ? '0 HP' : '78 HP')
+    expect(screen.getByLabelText('Opponent Round Outcome')).toHaveTextContent(phase === 'completed' ? '0 HP' : '75 HP')
     expect(screen.getByLabelText('Host Round Outcome')).toHaveTextContent('1.000 s')
-    expect(screen.getByLabelText('Damage Rule')).toHaveTextContent('Final damage22')
+    expect(screen.getByLabelText('Damage Rule')).toHaveTextContent('Final damage25')
     const ready = screen.queryByRole('button', { name: 'Ready for Next Round' })
     if (phase === 'completed') {
       expect(ready).not.toBeInTheDocument()
@@ -404,12 +404,12 @@ describe('Lobby client', () => {
       expect(proceed).toBeEnabled()
       act(() => proceed.click())
       act(() => socket.receive({ type: 'duel-state', duel: {
-        ...duel, phase: 'post-duel', rematchPlayerIds: [], startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+        ...duel, phase: 'post-duel', rematchPlayerIds: [], expiresAt: null, startsAt: 99_000, round: { ...duel.round, article: roundArticle },
         summary: { winnerId: 'opponent', endReason: 'hp-depleted',
           players: [{ id: duel.self.id, name: 'Host', role: 'host', hp: 0 },
             { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 56 }],
-          rounds: [{ roundId: 'one', roundNumber: 1, winnerId: duel.self.id, damage: 44 },
-            { roundId: 'two', roundNumber: 2, winnerId: 'opponent', damage: 60 }],
+          rounds: [{ roundId: 'one', roundNumber: 1, winnerId: duel.self.id, winReason: 'fewer-clicks', damage: 44 },
+            { roundId: 'two', roundNumber: 2, winnerId: 'opponent', winReason: 'fewer-clicks', damage: 60 }],
         },
       } }))
       expect(screen.getByRole('heading', { name: 'Opponent won the Duel' })).toBeVisible()
@@ -417,7 +417,7 @@ describe('Lobby client', () => {
       expect(screen.getByLabelText('Final HP')).toHaveTextContent('Host: 0 HP')
       expect(screen.getByLabelText('Final HP')).toHaveTextContent('Opponent: 56 HP')
       const rounds = within(screen.getByRole('list', { name: 'Damage by Round' })).getAllByRole('listitem')
-      expect(rounds.map((item) => item.textContent)).toEqual(['Round 1: Host dealt 44 damage', 'Round 2: Opponent dealt 60 damage'])
+      expect(rounds.map((item) => item.textContent)).toEqual([expect.stringContaining('Round 1: Host dealt 44 damage'), expect.stringContaining('Round 2: Opponent dealt 60 damage')])
       expect(screen.queryByLabelText('Post-Round')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Continue to Post-Duel' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
@@ -465,7 +465,7 @@ describe('Lobby client', () => {
     act(() => socket.receive({ type: 'duel-state', duel }))
     expect(sentMessages(socket).filter((message) => message.type === 'round-rendered')).toHaveLength(1)
     act(() => socket.receive({ type: 'duel-state', duel: {
-      ...duel, phase: 'countdown', startsAt: 103_000,
+      ...duel, phase: 'countdown', expiresAt: null, startsAt: 103_000,
       round: { ...duel.round, article: roundArticle },
     } }))
     expect(screen.getByLabelText('Round countdown')).toHaveTextContent('3')
@@ -585,7 +585,7 @@ describe('Lobby client', () => {
             target: { pageId: 1002, title: 'Fixture Target One' },
           },
         },
-        self: {
+        self: { arrived: false, arrivalElapsedMs: null,
           id: clientId,
           name: 'host',
           role: 'host',
@@ -593,7 +593,7 @@ describe('Lobby client', () => {
           path: [{ pageId: 1001, title: 'Fixture Start One' }],
           clicks: 0,
         },
-        opponent: {
+        opponent: { arrived: false,
           clicks: 0, connected: true,
           id: 'opponent-id',
           name: 'Opponent',
@@ -632,7 +632,7 @@ describe('Lobby client', () => {
     act(() => socket.receive({
       type: 'lobby-state',
       lobby: {
-        code: '7G8KZ',
+        code: '7G8KZ', timeLimitEnabled: false,
         members: [
           { id: 'host-id', name: 'host', role: 'host', connected: true, ready: true },
           { id: clientId, name: 'Opponent', role: 'opponent', connected: true, ready: false },
@@ -684,4 +684,70 @@ describe('Lobby client', () => {
     expect(screen.getByText('Server disconnected')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create lobby/i })).toBeDisabled()
   })
+})
+
+it('keeps the target readable with locked Navigation and a frozen own arrival clock', () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+  const socket = renderApp('/lobby/7G8KZ'); act(() => socket.open())
+  const prepared = preparedDuel(sentClientId(socket))
+  const duel: DuelProjection = { ...prepared, phase: 'active', startsAt: 99_000, expiresAt: 399_000,
+    round: { ...prepared.round, article: { ...roundArticle, identity: prepared.round.prompt.target } },
+    self: { ...prepared.self, arrived: true, arrivalElapsedMs: 500, clicks: 1, path: [roundArticle.identity, prepared.round.prompt.target] } }
+  act(() => socket.receive({ type: 'duel-state', duel }))
+  expect(screen.getByText(/Secret article content/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Follow this link' })).toBeDisabled()
+  expect(screen.getByText('Your arrival time: 0.500 s')).toBeVisible()
+  expect(screen.getByLabelText('Remaining time')).toHaveTextContent('4:59')
+  act(() => vi.advanceTimersByTime(2000))
+  expect(screen.getByLabelText('Remaining time')).toHaveTextContent('4:57')
+  expect(screen.getByText('Your arrival time: 0.500 s')).toBeVisible()
+  expect(screen.getByLabelText('Your status')).toHaveTextContent('Target reached')
+  expect(screen.getByLabelText('Opponent status')).toHaveTextContent('Navigating')
+})
+
+it('shows the Host Time Limit toggle and sends a setting change', () => {
+  const socket = renderApp('/lobby/7G8KZ'); act(() => socket.open())
+  const lobby = hostLobby(sentClientId(socket))
+  act(() => socket.receive({ type: 'lobby-state', lobby }))
+  const toggle = screen.getByRole('checkbox', { name: 'Five-minute Time Limit' })
+  expect(toggle).not.toBeChecked()
+  act(() => toggle.click())
+  expect(sentMessages(socket)).toContainEqual({ type: 'set-time-limit', enabled: true })
+  act(() => socket.receive({ type: 'lobby-state', lobby: { ...lobby, timeLimitEnabled: true } }))
+  expect(toggle).toBeChecked()
+  act(() => socket.receive({ type: 'lobby-state', lobby: { ...lobby, timeLimitEnabled: true,
+    members: [{ ...lobby.members[0]!, role: 'opponent' }] } }))
+  expect(toggle).toBeDisabled()
+})
+
+it.each([false, true])('reviews unfinished routes without inventing a click differential, sole arrival = %s', (arrived) => {
+  const socket = renderApp('/lobby/7G8KZ'); act(() => socket.open())
+  const base = departureDuel(sentClientId(socket), 'post-round')
+  if (base.phase !== 'post-round') throw new Error('Expected Post-Round')
+  const common = { ...base.outcome, endReason: 'time-limit' as const, endedAt: 399_000,
+    players: [{ ...base.outcome.players[0]!, arrived, activeElapsedMs: arrived ? 1000 : 300_000, hpLoss: 0 },
+      { ...base.outcome.players[1]!, arrived: false, activeElapsedMs: 300_000, clicks: 12, hp: arrived ? 40 : 100, hpLoss: arrived ? 60 : 0 }] as const }
+  const outcome = arrived
+    ? { ...common, winReason: 'sole-arrival' as const, winnerId: base.self.id,
+        damage: { kind: 'sole-arrival' as const, ruleId: 'click-scored-v2' as const, finalDamage: 60 as const } }
+    : { ...common, winReason: 'neither-arrived' as const, winnerId: null, final: false as const,
+        damage: { kind: 'draw' as const, ruleId: 'click-scored-v2' as const, finalDamage: 0 as const } }
+  act(() => socket.receive({ type: 'duel-state', duel: { ...base, outcome } }))
+  expect(screen.getByRole('heading', { name: arrived ? 'Host won the Round' : 'Round drawn' })).toBeVisible()
+  expect(screen.getByLabelText('Opponent Round Outcome')).toHaveTextContent('Did not reach target')
+  expect(screen.getByLabelText('Opponent Round Outcome')).toHaveTextContent('Elapsed at expiry: 300.000 s')
+  expect(screen.getByLabelText('Host Round Outcome')).toHaveTextContent(arrived ? 'Arrival time: 1.000 s' : 'Elapsed at expiry: 300.000 s')
+  expect(screen.getByLabelText('Damage Rule')).not.toHaveTextContent('Click differential')
+  expect(screen.getByLabelText('Damage Rule')).toHaveTextContent(arrived ? 'Final damage60' : 'Final damage0')
+  expect(screen.getByRole('button', { name: 'Ready for Next Round' })).toBeEnabled()
+})
+
+it('shows a draw in the Post-Duel summary', () => {
+  const socket = renderApp('/lobby/7G8KZ'); act(() => socket.open())
+  const duel = departureDuel(sentClientId(socket), 'post-duel')
+  if (duel.phase !== 'post-duel') throw new Error('Expected Post-Duel')
+  act(() => socket.receive({ type: 'duel-state', duel: { ...duel, summary: { ...duel.summary,
+    rounds: [{ roundId: 'draw', roundNumber: 1, winnerId: null, winReason: 'neither-arrived', damage: 0 }, ...duel.summary.rounds] } } }))
+  expect(screen.getByLabelText('Damage by Round')).toHaveTextContent('Round 1: Draw, no damage')
+  expect(screen.getByLabelText('Damage by Round')).toHaveTextContent('Neither player reached the target before the Time Limit.')
 })

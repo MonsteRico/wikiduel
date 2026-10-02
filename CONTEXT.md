@@ -29,7 +29,7 @@ Termination of a Duel because the system cannot continue it, such as an exhauste
 _Avoid_: Forfeit, draw, technical loss
 
 **Round**:
-One race in a Duel where both players navigate from the same start article toward the same target article. A Target Arrival ends it immediately; the Time Limit can instead end it as a no-damage draw.
+One challenge in a Duel where both players navigate from the same start article toward the same target article. It ends when both players reach the target or an enabled Time Limit expires.
 _Avoid_: Race, level
 
 **Round Outcome**:
@@ -41,7 +41,7 @@ The synchronized Duel phase in which both players inspect the Round Outcome and,
 _Avoid_: Results screen, intermission
 
 **Target Arrival**:
-A player's valid navigation to the round's target article.
+A player's accepted Navigation to the Round's target article, completing and freezing that player's route.
 _Avoid_: Finish, completion
 
 **Navigation**:
@@ -69,7 +69,7 @@ A development-only surface for requesting, rendering, navigating, and manually i
 _Avoid_: Test page, article browser, debug page
 
 **Time Limit**:
-An MVP-optional fixed five-minute cap on an active Round. When enabled, reaching it creates a no-damage Round Outcome rather than selecting a winner by partial progress.
+A Host-enabled five-minute cap on an active Round. Expiry awards a win to the sole player with a Target Arrival, or a no-damage draw if neither player arrived.
 _Avoid_: Soft cap, Lobby timer, per-player timer
 
 **Prompt**:

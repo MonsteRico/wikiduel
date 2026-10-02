@@ -15,7 +15,7 @@ export function LobbyPage() {
   const [copied, setCopied] = useState(false)
   const normalizedLobbyCode = lobbyCode?.toUpperCase() ?? ''
   const isValidLobbyCode = /^[A-Z2-9]{5}$/.test(normalizedLobbyCode)
-  const { status, lobby, duel, error, notice, clientId, joinLobby, leaveLobby, setReady, startDuel } = useLobby()
+  const { status, lobby, duel, error, notice, clientId, joinLobby, leaveLobby, setReady, setTimeLimit, startDuel } = useLobby()
   const currentMember = lobby?.members.find((member) => member.id === clientId)
 
   useEffect(() => {
@@ -74,6 +74,15 @@ export function LobbyPage() {
             </div>
           </header>
 
+          {lobby && <div className="border-b border-line px-6 py-4">
+            <label className="flex items-center gap-3">
+              <input type="checkbox" checked={lobby.timeLimitEnabled}
+                disabled={currentMember?.role !== 'host' || status !== 'connected'}
+                onChange={(event) => setTimeLimit(event.target.checked)} />
+              Five-minute Time Limit
+            </label>
+            <p className="mt-2 text-sm text-ink-soft">{lobby.timeLimitEnabled ? 'Each Round ends after five minutes.' : 'Each Round waits for both players to reach the target.'} Changing this setting clears both players' readiness.</p>
+          </div>}
           <PlayerRoster
             lobby={lobby?.code === normalizedLobbyCode ? lobby : null}
             currentMember={currentMember}

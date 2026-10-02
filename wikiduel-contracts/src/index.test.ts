@@ -46,16 +46,16 @@ describe("Round preparation contracts", () => {
     const message = {
       type: "duel-state", sentAt: "2026-10-01T00:00:00Z",
       duel: {
-        id: "duel-1", phase: "countdown", serverNow: 100_000, startsAt: 103_000,
+        id: "duel-1", phase: "countdown", serverNow: 100_000, expiresAt: null, startsAt: 103_000,
         round: { id: "round-1", number: 1, article, prompt: {
           id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
         } },
-        self: { ...player, path: [article.identity], clicks: 0 },
-        opponent: { ...player, id: "opponent", role: "opponent", clicks: 0, connected: true },
+        self: { arrived: false, arrivalElapsedMs: null, ...player, path: [article.identity], clicks: 0 },
+        opponent: { arrived: false, ...player, id: "opponent", role: "opponent", clicks: 0, connected: true },
       },
     };
     expect(decodeServerMessage(message).ok).toBe(true);
-    for (const privateField of ["article", "currentArticle", "path", "distance", "estimatedDistance"]) {
+    for (const privateField of ["article", "currentArticle", "path", "distance", "estimatedDistance", "arrivalElapsedMs", "arrivalOrder"]) {
       expect(decodeServerMessage({ ...message, duel: { ...message.duel,
         opponent: { ...message.duel.opponent, [privateField]: article },
       } }).ok).toBe(false);
@@ -145,7 +145,7 @@ describe("decodeServerMessage", () => {
     {
       type: "lobby-state",
       lobby: {
-        code: "ABCDE",
+        code: "ABCDE", timeLimitEnabled: false,
         members: [{
           id: "player-1",
           name: "host",
@@ -173,7 +173,7 @@ describe("decodeServerMessage", () => {
             target: { pageId: 2, title: "Target" },
           },
         },
-        self: {
+        self: { arrived: false, arrivalElapsedMs: null,
           id: "player-1",
           name: "host",
           role: "host",
@@ -181,7 +181,7 @@ describe("decodeServerMessage", () => {
           path: [{ pageId: 1, title: "Start" }],
           clicks: 0,
         },
-        opponent: {
+        opponent: { arrived: false,
           clicks: 0, connected: true,
           id: "player-2",
           name: "Opponent",
@@ -247,7 +247,7 @@ describe("decodeServerMessage", () => {
     {
       type: "lobby-state",
       lobby: {
-        code: "ABCDE",
+        code: "ABCDE", timeLimitEnabled: false,
         members: [{
           id: "player-1",
           name: "host",
@@ -273,7 +273,7 @@ describe("decodeServerMessage", () => {
             target: { pageId: 2, title: "Target" },
           },
         },
-        self: {
+        self: { arrived: false, arrivalElapsedMs: null,
           id: "player-1",
           name: "host",
           role: "host",
@@ -281,7 +281,7 @@ describe("decodeServerMessage", () => {
           path: [{ pageId: 1, title: "Start" }],
           clicks: 0,
         },
-        opponent: {
+        opponent: { arrived: false,
           clicks: 0, connected: true,
           id: "player-2",
           name: "Opponent",
@@ -294,7 +294,7 @@ describe("decodeServerMessage", () => {
     },
     {
       type: "lobby-state",
-      lobby: { code: "ABCDE", members: [], unexpected: true },
+      lobby: { code: "ABCDE", timeLimitEnabled: false, members: [], unexpected: true },
       sentAt,
     },
     {
@@ -336,23 +336,23 @@ it("decodes scoped readiness, continuation and departure commands without client
 it("decodes only strict Round Outcomes in ended projections", () => {
   const player = { id: "host", name: "Host", role: "host", hp: 100 };
   const outcome = {
-    roundId: "round-1", roundNumber: 1, endReason: "target-arrival", winnerId: "host",
+    roundId: "round-1", roundNumber: 1, endReason: "both-arrived", winReason: "earlier-arrival", winnerId: "host",
     startsAt: 1000, endedAt: 5000, final: false,
     players: [
-      { id: "host", path: [article.identity], clicks: 1, activeElapsedMs: 4000, hp: 100 },
-      { id: "opponent", path: [article.identity], clicks: 0, activeElapsedMs: 4000, hp: 78 },
+      { id: "host", path: [article.identity], clicks: 1, activeElapsedMs: 4000, arrived: true, hpLoss: 0, hp: 100 },
+      { id: "opponent", path: [article.identity], clicks: 0, activeElapsedMs: 4000, arrived: true, hpLoss: 25, hp: 75 },
     ],
-    damage: { winnerClicks: 1, loserClicks: 0, baseDamage: 25, clickDifferential: -1,
-      clickMultiplier: 3, multiplierContribution: -3, unclampedDamage: 22,
-      minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
+    damage: { kind: "completed-routes", ruleId: "click-scored-v2", winnerClicks: 1, loserClicks: 1, baseDamage: 25, clickDifferential: 0,
+      clickMultiplier: 3, multiplierContribution: 0, unclampedDamage: 25,
+      minimumDamage: 25, maximumDamage: 60, finalDamage: 25 },
   };
   const duel = {
-    id: "duel-1", phase: "post-round", serverNow: 5000, startsAt: 1000, readyPlayerIds: [],
+    id: "duel-1", phase: "post-round", serverNow: 5000, expiresAt: null, startsAt: 1000, readyPlayerIds: [],
     round: { id: "round-1", number: 1, article, prompt: {
       id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
     } },
-    self: { ...player, path: [article.identity], clicks: 1 },
-    opponent: { ...player, id: "opponent", role: "opponent", hp: 78, clicks: 0, connected: true },
+    self: { arrived: false, arrivalElapsedMs: null, ...player, path: [article.identity], clicks: 1 },
+    opponent: { arrived: false, ...player, id: "opponent", role: "opponent", hp: 78, clicks: 0, connected: true },
     outcome,
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
@@ -372,6 +372,27 @@ it("decodes only strict Round Outcomes in ended projections", () => {
   ]) expect(decode({ ...duel, outcome: invalid }).ok).toBe(false);
   expect(decode({ ...duel, phase: "active" }).ok).toBe(false);
   expect(decodeClientMessage({ type: "end-round", outcome }).ok).toBe(false);
+  const timeout = { ...outcome, endReason: "time-limit", winReason: "sole-arrival",
+    players: [outcome.players[0], { ...outcome.players[1], arrived: false }],
+    damage: { kind: "sole-arrival", ruleId: "click-scored-v2", finalDamage: 60 } };
+  const draw = { ...timeout, winnerId: null, winReason: "neither-arrived", final: false,
+    players: outcome.players.map((player) => ({ ...player, arrived: false, hp: 100, hpLoss: 0 })),
+    damage: { kind: "draw", ruleId: "click-scored-v2", finalDamage: 0 } };
+  expect(decode({ ...duel, outcome: timeout }).ok).toBe(true);
+  expect(decode({ ...duel, outcome: draw }).ok).toBe(true);
+  for (const invalid of [
+    { ...timeout, damage: { ...timeout.damage, clickDifferential: 1 } },
+    { ...timeout, damage: { ...timeout.damage, finalDamage: 25 } },
+    { ...draw, winnerId: "host" }, { ...draw, final: true },
+    { ...draw, players: [{ ...draw.players[0], arrived: true }, draw.players[1]] },
+    { ...outcome, players: [{ ...outcome.players[0], arrived: false }, outcome.players[1]] },
+  ]) expect(decode({ ...duel, outcome: invalid }).ok).toBe(false);
+});
+
+it("accepts only boolean Time Limit settings without client authority", () => {
+  for (const enabled of [true, false]) expect(decodeClientMessage({ type: "set-time-limit", enabled }).ok).toBe(true);
+  for (const enabled of [null, undefined, 300, "true"]) expect(decodeClientMessage({ type: "set-time-limit", enabled }).ok).toBe(false);
+  expect(decodeClientMessage({ type: "set-time-limit", enabled: true, playerId: "host" }).ok).toBe(false);
 });
 
 
@@ -379,13 +400,13 @@ it("decodes only strict normal Post-Duel summaries and scoped continuation", () 
   const players = [{ id: "host", name: "Host", role: "host", hp: 100 },
     { id: "opponent", name: "Opponent", role: "opponent", hp: 0 }];
   const summary = { winnerId: "host", endReason: "hp-depleted", players,
-    rounds: [{ roundId: "round-5", roundNumber: 5, winnerId: "host", damage: 22 }] };
-  const duel = { id: "duel-1", phase: "post-duel", rematchPlayerIds: [], serverNow: 5000, startsAt: 1000,
+    rounds: [{ roundId: "round-5", roundNumber: 5, winnerId: "host", winReason: "fewer-clicks", damage: 22 }] };
+  const duel = { id: "duel-1", phase: "post-duel", rematchPlayerIds: [], serverNow: 5000, expiresAt: null, startsAt: 1000,
     round: { id: "round-5", number: 5, article, prompt: {
       id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
     } },
-    self: { ...players[0], path: [article.identity], clicks: 1 },
-    opponent: { ...players[1], clicks: 0, connected: true }, summary,
+    self: { arrived: false, arrivalElapsedMs: null, ...players[0], path: [article.identity], clicks: 1 },
+    opponent: { arrived: false, ...players[1], clicks: 0, connected: true }, summary,
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
   expect(decode(duel).ok).toBe(true);

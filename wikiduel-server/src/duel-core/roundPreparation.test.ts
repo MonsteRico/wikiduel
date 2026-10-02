@@ -31,7 +31,7 @@ it("waits for both covered renders, then activates at one shared start time", as
   core.acknowledgeRound({ ...command, playerId: "host", kind: "received" });
   core.acknowledgeRound({ ...command, playerId: "opponent", kind: "received" });
   core.acknowledgeRound({ ...command, playerId: "host", kind: "rendered" });
-  expect(core.canNavigate({ ...command, playerId: "host" })).toBe(false);
+  expect(core.checkNavigationEligibility({ ...command, playerId: "host" })).toBe(false);
   expect(events).toHaveLength(1);
   core.acknowledgeRound({ ...command, playerId: "opponent", kind: "rendered" });
   expect(events.at(-1)).toMatchObject({ type: "projections", projections: [
@@ -39,10 +39,10 @@ it("waits for both covered renders, then activates at one shared start time", as
     { duel: { phase: "countdown", startsAt: 103_000 } },
   ] });
   vi.advanceTimersByTime(2999);
-  expect(core.canNavigate({ ...command, playerId: "host" })).toBe(false);
+  expect(core.checkNavigationEligibility({ ...command, playerId: "host" })).toBe(false);
   expect(events).toHaveLength(2);
   vi.advanceTimersByTime(1);
-  expect(core.canNavigate({ ...command, playerId: "host" })).toBe(true);
+  expect(core.checkNavigationEligibility({ ...command, playerId: "host" })).toBe(true);
   expect(events.at(-1)).toMatchObject({ type: "projections", projections: [
     { duel: { phase: "active", startsAt: 103_000 } },
     { duel: { phase: "active", startsAt: 103_000 } },
@@ -113,7 +113,7 @@ it("reuses preparation for a later Round and rejects acknowledgements from the p
   if (active.type !== "projections") throw new Error("Expected active Round");
   core.recordNavigation({ ...command, playerId: "host", expectedClicks: 0,
     destination: active.projections[0]!.duel.round.prompt.target });
-  core.endRound({ ...command, playerId: "host", cause: { type: "target-arrival" } });
+  core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: active.projections[0]!.duel.round.prompt.target });
   for (const playerId of ["host", "opponent"]) core.readyForNextRound({ ...command, playerId });
   await core.prepareRound("lobby");
   const event = events.at(-1)!;
@@ -123,7 +123,7 @@ it("reuses preparation for a later Round and rejects acknowledgements from the p
   expect(duel.round.number).toBe(2);
   expect(duel.round.id).not.toBe(command.roundId);
   expect(duel.self).toMatchObject({ hp: 100, clicks: 0, path: [duel.round.prompt.start] });
-  expect(core.canNavigate({ ...command, roundId: duel.round.id, playerId: "host" })).toBe(false);
+  expect(core.checkNavigationEligibility({ ...command, roundId: duel.round.id, playerId: "host" })).toBe(false);
   expect(core.acknowledgeRound({ ...command, playerId: "host", kind: "rendered" })).toBe(false);
   for (const playerId of ["host", "opponent"]) {
     core.acknowledgeRound({ ...command, roundId: duel.round.id, playerId, kind: "received" });

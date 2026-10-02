@@ -10,7 +10,7 @@ Category: enhancement
 
 ## What to build
 
-Superseded by [duel-lifecycle/17](./17-refine-click-scored-rounds.md). The Host-toggleable Time Limit is now part of the required click-scored round redesign. Do not implement this older standalone proposal. The text below records the previous scope.
+Superseded by approved planning in [duel-lifecycle/17](./17-refine-click-scored-rounds.md) and implementation in [duel-lifecycle/18](./18-implement-click-scored-rounds.md). The Host-toggleable Time Limit is now required MVP work. Its expiry awards a sole arrival 60 damage or neither arrival a zero-damage draw. Do not implement this older standalone proposal. The text below records the previous scope.
 
 Add one server-authoritative fixed five-minute Time Limit to each active Round through the existing Round Outcome seam. When enabled in the deployed build, replace the elapsed stopwatch with remaining time and create a no-damage draw if no Target Arrival is accepted before expiry.
 
