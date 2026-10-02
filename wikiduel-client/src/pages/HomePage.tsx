@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { Navigate, useNavigate } from 'react-router'
 
 import { ConnectionBadge } from '../components/ConnectionBadge'
 import { AppShell } from '../components/ui/AppShell'
@@ -9,7 +9,7 @@ import { useLobby } from '../features/lobby/lobbyContext'
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { status, lobby, error, notice, createLobby, joinLobby, clearNotice } = useLobby()
+  const { status, lobby, duel, error, notice, createLobby, joinLobby, clearNotice } = useLobby()
   const [lobbyCode, setLobbyCode] = useState('')
   const [awaitingLobby, setAwaitingLobby] = useState(false)
   const canSubmit = status === 'connected' && !awaitingLobby
@@ -34,6 +34,8 @@ export function HomePage() {
     setAwaitingLobby(true)
     joinLobby(lobbyCode)
   }
+
+  if (duel && !notice) return <Navigate to={`/duel/${duel.id}`} replace />
 
   return (
     <AppShell headerAction={<ConnectionBadge status={status} />}>

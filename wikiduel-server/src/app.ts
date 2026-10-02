@@ -299,6 +299,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return;
         }
 
+        if (message.type === "leave-duel") {
+          const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
+          const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
+          const departure = member?.socket === socket && duelCore?.leaveDuel({
+            duelId: message.duelId, lobbyId: lobby!.code, playerId: member.id,
+          });
+          if (!departure) sendCommandRejection(socket, message.type, "invalid-state");
+          else {
+            lobbies.delete(lobby!.code);
+            for (const player of lobby!.members.values()) {
+              if (player.socket?.readyState === 1) player.socket.send(serializeMessage({
+                ...departure,
+                message: departure.type === "lobby-closed" ? "The completed Duel's Lobby has closed."
+                  : player.id === member!.id ? "You left the Duel. The Lobby has closed."
+                  : "Your opponent left. The Duel ended by Forfeit and the Lobby has closed.",
+              }));
+            }
+            session.lobbyCode = undefined;
+            session.memberId = undefined;
+          }
+          return;
+        }
+
+        if (message.type === "ready-next-round") {
+          const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
+          const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
+          const accepted = member?.socket === socket && duelCore?.readyForNextRound({
+            ...message, lobbyId: lobby!.code, playerId: member.id,
+          });
+          if (!accepted) sendCommandRejection(socket, message.type, "invalid-state");
+          else await duelCore!.prepareRound(lobby!.code);
+          return;
+        }
+
         if (message.type === "round-received" || message.type === "round-rendered"
           || message.type === "navigate") {
           const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;

@@ -157,6 +157,55 @@ test.each(["throw", "failure"])("two players serialize Navigation, keep routes p
     await reject(host, { requestId: "late", source: secret, expectedClicks: 1, destination: target });
     expect(hostStates.at(-1)).toEqual(outcomes[0]);
     expect(opponentStates.at(-1)).toEqual(outcomes[1]);
+    const rejectReady = async (overrides: object) => {
+      const rejected = nextMessage(host, "command-rejected");
+      host.send(JSON.stringify({ type: "ready-next-round", ...ids, ...overrides }));
+      await expect(rejected).resolves.toMatchObject({ command: "ready-next-round", reason: "invalid-state" });
+    };
+    for (const invalid of [{ duelId: "wrong" }, { roundId: "stale" }]) await rejectReady(invalid);
+    const oneReady = [nextRound(host, "post-round"), nextRound(opponent, "post-round")];
+    host.send(JSON.stringify({ type: "ready-next-round", ...ids }));
+    const waiting = await Promise.all(oneReady);
+    expect(waiting[0]).toMatchObject({ readyPlayerIds: [duel!.self.id] });
+    expect(waiting[1]).toMatchObject({ readyPlayerIds: [duel!.self.id] });
+    await rejectReady({});
+    expect(lookups).toHaveLength(3);
+    for (const state of waiting) {
+      if (state.phase !== "post-round" || outcomes[0]!.phase !== "post-round") throw new Error("Expected Post-Round");
+      expect(state.outcome).toEqual(outcomes[0]!.outcome);
+    }
+    if (failure === "throw") {
+      const rejected = nextMessage(host, "command-rejected");
+      host.send(JSON.stringify({ type: "leave-duel", duelId: "wrong" }));
+      await expect(rejected).resolves.toMatchObject({ command: "leave-duel", reason: "invalid-state" });
+      const left = [nextMessage(host, "duel-forfeited"), nextMessage(opponent, "duel-forfeited")];
+      host.send(JSON.stringify({ type: "leave-duel", duelId: duel!.id }));
+      for (const notice of await Promise.all(left)) {
+        expect(notice).toMatchObject({ duelId: duel!.id, winnerId: duel!.opponent.id, reason: "player-left" });
+        expect(decodeServerMessage(notice).ok).toBe(true);
+      }
+      await rejectReady({});
+      return;
+    }
+    const nextPrepared = [nextRound(host, "preparing"), nextRound(opponent, "preparing")];
+    opponent.send(JSON.stringify({ type: "ready-next-round", ...ids }));
+    await flush(opponent);
+    expect(lookups).toHaveLength(4);
+    const nextPrompt = deterministicPromptCatalog.prompts.find((prompt) => prompt.start.title === lookups[3]!.title)!;
+    expect(nextPrompt.enabled).toBe(true);
+    expect(nextPrompt.id).not.toBe(duel!.round.prompt.id);
+    lookups[3]!.resolve({ ...preparedArticle, identity: nextPrompt.start });
+    const [nextDuel] = await Promise.all(nextPrepared);
+    expect(nextDuel).toMatchObject({ phase: "preparing", round: { number: 2 },
+      self: { hp: 75, clicks: 0, path: [nextPrompt.start] }, opponent: { hp: 100, clicks: 0 } });
+    await rejectReady({});
+    const nextIds = { duelId: nextDuel!.id, roundId: nextDuel!.round.id };
+    const secondCountdown = nextRound(host, "countdown");
+    for (const socket of [host, opponent]) {
+      socket.send(JSON.stringify({ type: "round-received", ...nextIds }));
+      socket.send(JSON.stringify({ type: "round-rendered", ...nextIds }));
+    }
+    await expect(secondCountdown).resolves.toMatchObject({ startsAt: now + 3000 });
   } finally {
     host.terminate(); opponent.terminate(); await app.close();
   }

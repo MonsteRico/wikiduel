@@ -313,6 +313,19 @@ describe("decodeServerMessage", () => {
   });
 });
 
+it("decodes scoped readiness and departure commands without client authority fields", () => {
+  for (const command of [
+    { type: "ready-next-round", duelId: "duel-1", roundId: "round-1" },
+    { type: "leave-duel", duelId: "duel-1" },
+  ]) {
+    expect(decodeClientMessage(command)).toEqual({ ok: true, message: command });
+    expect(decodeClientMessage({ ...command, duelId: "" }).ok).toBe(false);
+    expect(decodeClientMessage({ ...command, playerId: "opponent" }).ok).toBe(false);
+  }
+  expect(decodeClientMessage({ type: "ready-next-round", duelId: "duel-1" }).ok).toBe(false);
+  expect(decodeClientMessage({ type: "ready-next-round", duelId: "duel-1", roundId: "round-1", ready: false }).ok).toBe(false);
+});
+
 it("decodes only strict Round Outcomes in ended projections", () => {
   const player = { id: "host", name: "Host", role: "host", hp: 100 };
   const outcome = {
@@ -327,7 +340,7 @@ it("decodes only strict Round Outcomes in ended projections", () => {
       minimumDamage: 15, maximumDamage: 60, finalDamage: 22 },
   };
   const duel = {
-    id: "duel-1", phase: "post-round", serverNow: 5000, startsAt: 1000,
+    id: "duel-1", phase: "post-round", serverNow: 5000, startsAt: 1000, readyPlayerIds: [],
     round: { id: "round-1", number: 1, article, prompt: {
       id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
     } },
