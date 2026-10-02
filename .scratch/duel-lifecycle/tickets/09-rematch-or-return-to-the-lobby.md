@@ -1,7 +1,7 @@
 # Rematch or Return to the Lobby
 
 Status: completed
-Completed: 2026-10-01 10:30 PM
+Completed: 2026-10-01 10:30 PM via [PR #24](https://github.com/MonsteRico/wikiduel/pull/24)
 Scope: MVP required
 Category: enhancement
 
