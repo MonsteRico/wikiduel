@@ -2,14 +2,13 @@ import { Navigate, useParams } from 'react-router'
 import { Component, useEffect, useState, type ReactNode } from 'react'
 import type { DuelProjection } from '@wikiduel/contracts'
 
-import { AppShell } from '../components/ui/AppShell'
+import { DuelDeparture } from '../features/lobby/DuelDeparture'
 import { Panel } from '../components/ui/Panel'
 import { PlayerAvatar } from '../components/ui/PlayerAvatar'
 import { useLobby } from '../features/lobby/lobbyContext'
 import { PlayableArticleArea } from '../features/playable-articles/PlayableArticleArea'
 import { PostDuel } from '../features/lobby/PostDuel'
 import { PostRound } from '../features/lobby/PostRound'
-import { Button } from '../components/ui/Button'
 
 class ArticleRenderBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -38,19 +37,12 @@ function RoundArticle({ duel, active }: { duel: DuelProjection, active: boolean 
 
 export function DuelPage() {
   const { duelId } = useParams()
-  const { duel, lobby, notice, error, getServerTime, leaveDuel, status } = useLobby()
-  const [confirmLeave, setConfirmLeave] = useState(false)
+  const { duel, lobby, notice, error, getServerTime } = useLobby()
   const [, tick] = useState(0)
   useEffect(() => {
     const timer = window.setInterval(() => tick((value) => value + 1), 50)
     return () => window.clearInterval(timer)
   }, [])
-  useEffect(() => {
-    if (!duel || notice) return
-    const confirmUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', confirmUnload)
-    return () => window.removeEventListener('beforeunload', confirmUnload)
-  }, [duel, notice])
 
   if (notice) return <Navigate to="/" replace />
   if (!duel) return <Navigate to={lobby ? `/lobby/${lobby.code}` : '/'} replace />
@@ -62,16 +54,7 @@ export function DuelPage() {
   const stopwatch = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
   return (
-    <AppShell onHomeClick={(event) => { event.preventDefault(); setConfirmLeave(true) }}
-      headerAction={<Button variant="ghost" onClick={() => setConfirmLeave(true)}>Leave Duel</Button>}>
-      {confirmLeave && <section role="dialog" aria-label="Leave Duel?" className="rounded-control border border-line bg-surface p-6">
-        <h2 className="font-display text-xl">Leave Duel?</h2>
-        <p>Leaving ends the Duel and closes the Lobby for both players.</p>
-        <div className="mt-4 flex gap-3">
-          <Button variant="secondary" autoFocus onClick={() => setConfirmLeave(false)}>Keep playing</Button>
-          <Button variant="danger" disabled={status !== 'connected'} onClick={leaveDuel}>Confirm Leave Duel</Button>
-        </div>
-      </section>}
+    <DuelDeparture key={duel.id} duelId={duel.id}>
       <section className="grid min-h-[calc(100vh-120px)] place-items-center py-8">
         <Panel as="div" className="w-full max-w-[760px] overflow-hidden motion-safe:animate-arrive">
           <header className="flex items-center justify-between gap-5 border-b border-line px-6 py-5 max-[560px]:px-5">
@@ -136,6 +119,6 @@ export function DuelPage() {
           </ArticleRenderBoundary>
         </Panel>
       </section>
-    </AppShell>
+    </DuelDeparture>
   )
 }
