@@ -1,6 +1,7 @@
 # Verify Firefox
 
-Status: needs-triage
+Status: completed
+Completed: 2026-10-02 12:49 PM
 Scope: MVP required
 Category: enhancement
 
@@ -10,10 +11,11 @@ Verify and correct the complete first-test desktop Duel flow in current Firefox,
 
 ## Acceptance criteria
 
-- [ ] Lobby creation, joining, readiness, and Host start work in current Firefox.
-- [ ] Playable Article content, images, and Navigation render and behave correctly.
-- [ ] Round preparation, countdown, Time Limit, live status, path comparison, Duel completion, and Rematch work in Firefox.
-- [ ] Firefox-specific failures receive focused regression coverage where practical.
+- [x] Lobby creation, joining, readiness, and Host start work in current Firefox.
+- [x] Playable Article content, images, and Navigation render and behave correctly.
+- [x] Round preparation, countdown, elapsed stopwatch, live status, path comparison, Duel completion, and Rematch work in Firefox.
+- [x] Departure confirmation and disconnect warning behavior are verified in Firefox.
+- [x] Firefox-specific failures receive focused regression coverage where practical; no unresolved Firefox-specific failure was reported in this verification.
 
 ## Blocked by
 
@@ -22,3 +24,4 @@ Verify and correct the complete first-test desktop Duel flow in current Firefox,
 ## Comments
 
 - 2026-07-03: Firefox is MVP required because it is the primary development and playtest browser.
+- 2026-10-02: The maintainer confirmed a completed two-browser manual Firefox playthrough, followed by verification of disconnect warning behavior after the departure work. Completion records that manual verification; it does not claim an agent-run browser test. Replaced the obsolete Time Limit criterion with the required elapsed stopwatch; the optional Time Limit remains tracked in duel-lifecycle/11.
