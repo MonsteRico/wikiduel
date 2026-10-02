@@ -322,14 +322,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return;
         }
 
-        if (message.type === "ready-next-round") {
+        if (message.type === "ready-next-round" || message.type === "continue-post-duel") {
           const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
           const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
-          const accepted = member?.socket === socket && duelCore?.readyForNextRound({
-            ...message, lobbyId: lobby!.code, playerId: member.id,
-          });
+          const command = member && lobby ? { ...message, lobbyId: lobby.code, playerId: member.id } : undefined;
+          const accepted = member?.socket === socket && command && (message.type === "continue-post-duel"
+            ? duelCore?.continueToPostDuel(command) : duelCore?.readyForNextRound(command));
           if (!accepted) sendCommandRejection(socket, message.type, "invalid-state");
-          else await duelCore!.prepareRound(lobby!.code);
+          else if (message.type === "ready-next-round") await duelCore!.prepareRound(lobby!.code);
           return;
         }
 

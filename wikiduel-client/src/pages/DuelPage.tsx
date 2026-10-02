@@ -7,6 +7,7 @@ import { Panel } from '../components/ui/Panel'
 import { PlayerAvatar } from '../components/ui/PlayerAvatar'
 import { useLobby } from '../features/lobby/lobbyContext'
 import { PlayableArticleArea } from '../features/playable-articles/PlayableArticleArea'
+import { PostDuel } from '../features/lobby/PostDuel'
 import { PostRound } from '../features/lobby/PostRound'
 import { Button } from '../components/ui/Button'
 
@@ -52,7 +53,7 @@ export function DuelPage() {
   }, [duel, notice])
 
   if (!duel || duel.id !== duelId || notice) return <Navigate to="/" replace />
-  const ended = duel.phase === 'post-round' || duel.phase === 'completed'
+  const ended = duel.phase === 'post-round' || duel.phase === 'completed' || duel.phase === 'post-duel'
   const elapsed = duel.phase === 'preparing' ? null : getServerTime() - duel.startsAt
   const active = !ended && elapsed !== null && elapsed >= 0
   const seconds = Math.floor(Math.max(0, elapsed ?? 0) / 1000)
@@ -75,7 +76,7 @@ export function DuelPage() {
             <div>
               <p className="ds-label mb-2 text-host">Round {duel.round.number}</p>
               <h1 className="m-0 font-display text-2xl font-extrabold tracking-[0.01em] text-ink">
-                {ended ? 'Round ended' : duel.phase === 'preparing' ? 'Preparing the duel' : active ? 'Round in progress' : 'Get ready'}
+                {duel.phase === 'post-duel' ? 'Duel complete' : ended ? 'Round ended' : duel.phase === 'preparing' ? 'Preparing the duel' : active ? 'Round in progress' : 'Get ready'}
               </h1>
             </div>
             <span className="rounded-control border border-warning/35 bg-warning/10 px-3 py-2 font-display text-[10px] font-bold tracking-[0.05em] text-warning uppercase">
@@ -99,6 +100,7 @@ export function DuelPage() {
             ))}
           </div>}
 
+          {duel.phase === 'post-duel' && <PostDuel duel={duel} />}
           {(duel.phase === 'post-round' || duel.phase === 'completed') && <PostRound duel={duel} />}
 
           {error && <p role="alert" className="px-6 text-danger">{error}</p>}

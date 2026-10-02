@@ -118,6 +118,8 @@ type DuelState = {
   id: string;
   phase: "preparing" | "countdown" | "active" | "post-round" | "completed";
   outcome?: RoundOutcome;
+  outcomes: RoundOutcome[];
+  continued: Set<string>;
   roundId: string;
   roundNumber: number;
   article?: PlayableArticle;
@@ -182,6 +184,18 @@ function projectDuel(
       connected: true,
     },
   };
+  if (duel.phase === "completed" && duel.continued.has(self.id)) {
+    const identity = (player: DuelPlayerState) => ({ id: player.id, name: player.name, role: player.role, hp: player.hp });
+    return { ...projection, phase: "post-duel", startsAt: duel.startsAt!,
+      round: { ...projection.round, article: article! },
+      summary: {
+        winnerId: duel.outcome!.winnerId, endReason: "hp-depleted",
+        players: [identity(duel.players[0]), identity(duel.players[1])],
+        rounds: duel.outcomes.map((outcome) => ({ roundId: outcome.roundId,
+          roundNumber: outcome.roundNumber, winnerId: outcome.winnerId, damage: outcome.damage.finalDamage })),
+      },
+    };
+  }
   if (duel.phase === "post-round" || duel.phase === "completed") {
     return { ...projection, phase: duel.phase, startsAt: duel.startsAt!,
       round: { ...projection.round, article: article! }, outcome: duel.outcome!, readyPlayerIds: [...duel.ready] };
@@ -265,6 +279,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         phase: "preparing",
         roundId: randomUUID(), roundNumber: 1, loading: false,
         received: new Set(), rendered: new Set(), ready: new Set(),
+        outcomes: [], continued: new Set(),
         prompt: selection.prompt,
         players,
       };
@@ -321,6 +336,14 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       } catch {
         interrupt(lobbyId, duel, "article-unavailable");
       }
+    },
+
+    continueToPostDuel(command: RoundCommand): boolean {
+      const duel = currentRound(command);
+      if (!duel || duel.phase !== "completed" || duel.continued.has(command.playerId)) return false;
+      duel.continued.add(command.playerId);
+      publish(command.lobbyId, duel);
+      return true;
     },
 
     readyForNextRound(command: RoundCommand): boolean {
@@ -452,6 +475,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       });
       duel.players = [{ ...duel.players[0], hp: players[0].hp }, { ...duel.players[1], hp: players[1].hp }];
       duel.outcome = outcome;
+      duel.outcomes.push(outcome);
       duel.phase = outcome.final ? "completed" : "post-round";
       duel.cancelTimer?.();
       publish(command.lobbyId, duel);

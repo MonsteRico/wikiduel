@@ -195,3 +195,70 @@ it("requires distinct current-Round readiness before preparing again", async () 
   expect(latest()[0]!.duel.round.prompt.id).not.toBe(ended.round.prompt.id);
   expect(core.readyForNextRound(command)).toBe(false);
 });
+
+
+it.each([0, 1])("continues independently after overkill or exact-zero completion with %s loser clicks", async (loserClicks) => {
+  const { core, latest, activate, events, command: first } = await activeRound();
+  let command = first;
+  expect(core.continueToPostDuel(command)).toBe(false);
+  const count = loserClicks ? 4 : 5;
+  for (let round = 1; round <= count; round++) {
+    const target = latest()[0]!.duel.round.prompt.target;
+    core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
+    if (loserClicks) core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target });
+    core.endRound({ ...command, cause: { type: "target-arrival" } });
+    if (round < count) {
+      expect(core.continueToPostDuel(command)).toBe(false);
+      command = await activate();
+    }
+  }
+  const final = latest()[1]!.duel;
+  expect(final).toMatchObject({ phase: "completed", outcome: { final: true } });
+  for (const invalid of [{ roundId: "stale" }, { duelId: "wrong" }, { playerId: "outsider" }]) {
+    expect(core.continueToPostDuel({ ...command, ...invalid })).toBe(false);
+  }
+  expect(core.continueToPostDuel(command)).toBe(true);
+  const summary = latest()[0]!.duel;
+  expect(summary).toMatchObject({ phase: "post-duel", summary: {
+    winnerId: "host", endReason: "hp-depleted",
+    players: [{ id: "host", hp: 100 }, { id: "opponent", hp: 0 }],
+    rounds: Array.from({ length: count }, (_, index) => ({ roundNumber: index + 1, winnerId: "host", damage: loserClicks ? 25 : 22 })),
+  } });
+  expect(latest()[1]!.duel).toEqual(final);
+  expect(decodeServerMessage({ type: "duel-state", duel: summary, sentAt: "now" }).ok).toBe(true);
+  const before = events.length;
+  expect(core.continueToPostDuel(command)).toBe(false);
+  expect(core.readyForNextRound(command)).toBe(false);
+  expect(core.acknowledgeRound({ ...command, kind: "rendered" })).toBe(false);
+  expect(core.recordNavigation({ ...command, expectedClicks: 1, destination: final.round.prompt.target })).toBe(false);
+  expect(await core.navigate({ ...command, requestId: "late", source: final.round.prompt.start,
+    expectedClicks: 1, destination: final.round.prompt.target })).toBe(false);
+  await core.prepareRound("lobby");
+  expect(events).toHaveLength(before);
+  expect(core.continueToPostDuel({ ...command, playerId: "opponent" })).toBe(true);
+  expect(latest()[0]!.duel).toEqual(summary);
+  expect(latest()[1]!.duel).toMatchObject({ phase: "post-duel", summary: summary.phase === "post-duel" ? summary.summary : null });
+});
+
+
+it.each(["forfeit", "interruption"])("never continues a %s into normal Post-Duel", async (reason) => {
+  const { core, command, latest, events } = await activeRound();
+  if (reason === "forfeit") {
+    expect(core.disconnectPlayer({ lobbyId: "lobby", playerId: "host" })).toMatchObject({ winnerId: "opponent" });
+  } else {
+    core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
+    core.endRound({ ...command, cause: { type: "target-arrival" } });
+    core.readyForNextRound(command);
+    core.readyForNextRound({ ...command, playerId: "opponent" });
+    await core.prepareRound("lobby");
+    const next = { ...command, roundId: latest()[0]!.duel.round.id };
+    for (const playerId of ["host", "opponent"]) core.acknowledgeRound({ ...next, playerId, kind: "received" });
+    vi.advanceTimersByTime(30_000);
+    expect(events.at(-1)).toMatchObject({ type: "interruption" });
+    expect(core.continueToPostDuel(next)).toBe(false);
+  }
+  const before = events.length;
+  expect(core.continueToPostDuel(command)).toBe(false);
+  expect(core.hasActiveDuel("lobby")).toBe(false);
+  expect(events).toHaveLength(before);
+});

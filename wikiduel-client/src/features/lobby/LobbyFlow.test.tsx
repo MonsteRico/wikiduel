@@ -148,7 +148,37 @@ describe('Lobby client', () => {
     expect(screen.getByLabelText('Host Round Outcome')).toHaveTextContent('1.000 s')
     expect(screen.getByLabelText('Damage Rule')).toHaveTextContent('Final damage22')
     const ready = screen.queryByRole('button', { name: 'Ready for Next Round' })
-    if (phase === 'completed') expect(ready).not.toBeInTheDocument()
+    if (phase === 'completed') {
+      expect(ready).not.toBeInTheDocument()
+      const proceed = screen.getByRole('button', { name: 'Continue to Post-Duel' })
+      act(() => { proceed.click(); proceed.click() })
+      expect(proceed).toBeDisabled()
+      expect(sentMessages(socket).filter((message) => message.type === 'continue-post-duel')).toEqual([
+        { type: 'continue-post-duel', duelId: 'duel-1', roundId: 'round-1' },
+      ])
+      expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+      act(() => socket.receive({ type: 'command-rejected', command: 'continue-post-duel', reason: 'invalid-state' }))
+      expect(proceed).toBeEnabled()
+      act(() => proceed.click())
+      act(() => socket.receive({ type: 'duel-state', duel: {
+        ...duel, phase: 'post-duel', startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+        summary: { winnerId: 'opponent', endReason: 'hp-depleted',
+          players: [{ id: duel.self.id, name: 'Host', role: 'host', hp: 0 },
+            { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 56 }],
+          rounds: [{ roundId: 'one', roundNumber: 1, winnerId: duel.self.id, damage: 44 },
+            { roundId: 'two', roundNumber: 2, winnerId: 'opponent', damage: 60 }],
+        },
+      } }))
+      expect(screen.getByRole('heading', { name: 'Opponent won the Duel' })).toBeVisible()
+      expect(screen.getByLabelText('Post-Duel')).toHaveTextContent('HP reached zero')
+      expect(screen.getByLabelText('Final HP')).toHaveTextContent('Host: 0 HP')
+      expect(screen.getByLabelText('Final HP')).toHaveTextContent('Opponent: 56 HP')
+      const rounds = within(screen.getByRole('list', { name: 'Damage by Round' })).getAllByRole('listitem')
+      expect(rounds.map((item) => item.textContent)).toEqual(['Round 1: Host dealt 44 damage', 'Round 2: Opponent dealt 60 damage'])
+      expect(screen.queryByLabelText('Post-Round')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Continue to Post-Duel' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Follow this link' })).not.toBeInTheDocument()
+    }
     else {
       act(() => socket.receive({ type: 'duel-state', duel: { ...ended, readyPlayerIds: ['opponent'] } }))
       expect(screen.getByRole('status')).toHaveTextContent('Your opponent is ready.')

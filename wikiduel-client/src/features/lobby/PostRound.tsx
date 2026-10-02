@@ -5,7 +5,7 @@ import { useLobby } from './lobbyContext'
 type EndedDuel = Extract<DuelProjection, { phase: 'post-round' | 'completed' }>
 
 export function PostRound({ duel }: { duel: EndedDuel }) {
-  const { readyForNextRound, readyPending, status } = useLobby()
+  const { readyForNextRound, readyPending, continueToPostDuel, continuePending, status } = useLobby()
   const { outcome } = duel
   const identities = [duel.self, duel.opponent]
   const winner = identities.find((player) => player.id === outcome.winnerId)!
@@ -47,6 +47,9 @@ export function PostRound({ duel }: { duel: EndedDuel }) {
         </div>)}
       </dl>
     </section>
+    {duel.phase === 'completed' && <Button disabled={continuePending || status !== 'connected'} onClick={continueToPostDuel}>
+      Continue to Post-Duel
+    </Button>}
     {!outcome.final && <div className="space-y-3">
       <p role="status">{ready || readyPending ? 'You are ready. Waiting for the next Round.' : 'Compare your routes, then ready up.'}
         {' '}{duel.readyPlayerIds.includes(duel.opponent.id) ? 'Your opponent is ready.' : 'Your opponent is not ready yet.'}</p>
