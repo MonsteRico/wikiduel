@@ -1,7 +1,7 @@
 // Keep tests here focused on whole-application loading and composition: root providers,
 // routing, and wiring between application-level pieces. Feature behavior belongs with its feature.
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
@@ -20,9 +20,7 @@ afterEach(() => {
 describe('App wiring', () => {
   it('loads the root route with the shared WebSocket connected to application state', () => {
     render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+      <RouterProvider router={createMemoryRouter([{ path: '*', element: <App /> }])} />,
     )
 
     expect(screen.getByRole('heading', { name: 'Create or join a duel' })).toBeInTheDocument()

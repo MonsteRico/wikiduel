@@ -34,6 +34,112 @@ function navigationResult(socket: WebSocket, requestId: string): Promise<{ accep
   });
 }
 
+test.each(
+  (["preparing", "countdown", "active", "post-round"] as const).flatMap((phase) =>
+    (["leave", "disconnect"] as const).flatMap((ending) =>
+      (["host", "opponent"] as const).map((actor) => ({ phase, ending, actor })))),
+)("$actor $ending during $phase disbands once with no later Duel projections", async ({ phase, ending, actor }) => {
+  let now = 100_000;
+  const timers = new Set<{ at: number; callback: () => void }>();
+  const advance = (milliseconds: number) => {
+    now += milliseconds;
+    for (const timer of timers) if (timer.at <= now) {
+      timers.delete(timer);
+      timer.callback();
+    }
+  };
+  const target = deterministicPromptCatalog.prompts[0]!.target;
+  const start: PlayableArticle = { ...preparedArticle, document: { ...preparedArticle.document,
+    blocks: [{ type: "paragraph", children: [{ type: "navigation", destination: target,
+      children: [{ type: "text", value: "Target" }] }] }],
+  } };
+  const app = await buildApp({ promptRandom: () => 0, now: () => now,
+    repository: { getByTitle: async (title) => ({ ok: true,
+      article: title === start.identity.title ? start : { ...preparedArticle, identity: target } }) },
+    schedule: (callback, delay) => {
+      const timer = { at: now + delay, callback };
+      timers.add(timer);
+      return () => { timers.delete(timer); };
+    },
+  });
+  await app.ready();
+  const host = await app.injectWS("/ws");
+  const opponent = await app.injectWS("/ws");
+  const departing = actor === "host" ? host : opponent;
+  const remaining = actor === "host" ? opponent : host;
+  const flush = async (socket: WebSocket) => {
+    const pong = nextMessage(socket, "pong");
+    socket.send(JSON.stringify({ type: "ping" }));
+    await pong;
+  };
+  try {
+    const lobby = await createLobby(host);
+    await joinLobby(host, opponent, lobby.lobby.code);
+    await setReady(host, opponent, true);
+    await setReady(opponent, host, true);
+    const prepared = nextRound(host, "preparing");
+    host.send(JSON.stringify({ type: "start-duel" }));
+    const duel = await prepared;
+    const ids = { duelId: duel.id, roundId: duel.round.id };
+    // Receiving without rendering arms the preparation deadline too.
+    for (const socket of [host, opponent]) {
+      socket.send(JSON.stringify({ type: "round-received", ...ids }));
+      await flush(socket);
+    }
+    if (phase !== "preparing") {
+      const countdown = nextRound(host, "countdown");
+      for (const socket of [host, opponent]) socket.send(JSON.stringify({ type: "round-rendered", ...ids }));
+      await countdown;
+    }
+    if (phase === "active" || phase === "post-round") {
+      const active = nextRound(host, "active");
+      advance(3000);
+      await active;
+    }
+    if (phase === "post-round") {
+      const ended = nextRound(host, "post-round");
+      host.send(JSON.stringify({ type: "navigate", ...ids, requestId: "arrival", source: start.identity,
+        destination: target, expectedClicks: 0 }));
+      await ended;
+    }
+    await flush(host);
+    await flush(opponent);
+    const messages: Array<Record<string, unknown>> = [];
+    remaining.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+    const terminal = nextMessage(remaining, "duel-forfeited");
+    if (ending === "leave") {
+      const stale = nextMessage(departing, "command-rejected");
+      departing.send(JSON.stringify({ type: "leave-duel", duelId: "old-duel" }));
+      await expect(stale).resolves.toMatchObject({ command: "leave-duel", reason: "invalid-state" });
+      const selfNotice = nextMessage(departing, "duel-forfeited");
+      departing.send(JSON.stringify({ type: "leave-duel", duelId: duel.id }));
+      await expect(selfNotice).resolves.toMatchObject({ message: "You left the Duel. The Lobby has closed." });
+      const duplicate = nextMessage(departing, "command-rejected");
+      departing.send(JSON.stringify({ type: "leave-duel", duelId: duel.id }));
+      await expect(duplicate).resolves.toMatchObject({ reason: "invalid-state" });
+    }
+    departing.terminate();
+    departing.terminate();
+    await expect(terminal).resolves.toMatchObject({ duelId: duel.id,
+      reason: ending === "leave" ? "player-left" : "player-disconnected" });
+    advance(60_000);
+    const late = nextMessage(remaining, "command-rejected");
+    remaining.send(JSON.stringify({ type: "ready-next-round", ...ids }));
+    await expect(late).resolves.toMatchObject({ reason: "invalid-state" });
+    const missing = nextMessage(remaining, "lobby-error");
+    remaining.send(JSON.stringify({ type: "join-lobby", clientId: "replacement", lobbyCode: lobby.lobby.code }));
+    await expect(missing).resolves.toMatchObject({ message: "Lobby not found" });
+    await flush(remaining);
+    expect(messages.filter((message) => message.type === "duel-forfeited")).toHaveLength(1);
+    expect(messages.filter((message) => ["lobby-closed", "duel-interrupted", "duel-state"].includes(String(message.type)))).toEqual([]);
+    expect(timers.size).toBe(0);
+    const fresh = await createLobby(remaining, "fresh-player");
+    expect(fresh.lobby.members).toHaveLength(1);
+  } finally {
+    host.terminate(); opponent.terminate(); await app.close();
+  }
+});
+
 test.each(["throw", "failure"])("two players serialize Navigation, keep routes private and resolve the first Target Arrival with lookup %s", async (failure) => {
   const alias = { pageId: 42, title: "Linked redirect" };
   const secret = { pageId: 43, title: "Private canonical destination" };

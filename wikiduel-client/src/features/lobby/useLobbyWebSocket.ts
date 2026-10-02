@@ -11,6 +11,9 @@ export function useLobbyWebSocket() {
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [lobby, setLobby] = useState<Lobby | null>(null)
   const [duel, setDuel] = useState<DuelProjection | null>(null)
+  const currentDuel = useRef<DuelProjection | null>(null)
+  const departure = useRef<string | null>(null)
+  const [leaving, setLeaving] = useState(false)
   const pendingNavigation = useRef<{ requestId: string; duelId: string; roundId: string } | null>(null)
   const [navigating, setNavigating] = useState(false)
   const readyRequest = useRef<string | null>(null)
@@ -26,14 +29,30 @@ export function useLobbyWebSocket() {
   const renderedRounds = useRef(new Set<string>())
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Readonly<{
-    title: 'Lobby closed' | 'Forfeit' | 'Interruption'
+    title: 'Lobby closed' | 'Forfeit' | 'Interruption' | 'Opponent left'
     message: string
   }> | null>(null)
 
-  useEffect(() => webSocket.subscribeStatus(setStatus), [webSocket])
+  useEffect(() => webSocket.subscribeStatus((nextStatus) => {
+    setStatus(nextStatus)
+    if (nextStatus === 'disconnected' && currentDuel.current) {
+      departure.current = currentDuel.current.id
+      currentDuel.current = null
+      pendingNavigation.current = null
+      setNavigating(false)
+      setLeaving(false)
+      setDuel(null)
+      setLobby(null)
+      setError(null)
+      setNotice({ title: 'Forfeit', message: 'Connection lost. The Duel ended and the Lobby has closed.' })
+    }
+  }), [webSocket])
 
   useEffect(() => {
     const unsubscribeLobbyState = webSocket.subscribe('lobby-state', (message) => {
+      currentDuel.current = null
+      departure.current = null
+      setLeaving(false)
       setLobby(message.lobby)
       setDuel(null)
       rematchRequest.current = null
@@ -52,12 +71,24 @@ export function useLobbyWebSocket() {
       setError(message.message)
     })
     const unsubscribeLobbyClosed = webSocket.subscribe('lobby-closed', (message) => {
+      departure.current = currentDuel.current?.id ?? departure.current
+      currentDuel.current = null
+      pendingNavigation.current = null
+      setNavigating(false)
+      setLeaving(false)
       setLobby(null)
       setDuel(null)
       setError(null)
       setNotice({ title: 'Lobby closed', message: message.message })
     })
     const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
+      if (departure.current) {
+        // A Rematch may commit before the server sees departure for the old Duel.
+        if (!currentDuel.current || message.duel.id === departure.current) return
+        departure.current = null
+        setLeaving(false)
+      }
+      currentDuel.current = message.duel
       const pending = pendingNavigation.current
       if (pending && (pending.duelId !== message.duel.id || pending.roundId !== message.duel.round.id
         || message.duel.phase === 'post-round' || message.duel.phase === 'completed' || message.duel.phase === 'post-duel')) {
@@ -74,6 +105,11 @@ export function useLobbyWebSocket() {
       setError(null)
     })
     const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
+      if (message.command === 'leave-duel') {
+        if (!currentDuel.current || !departure.current) return
+        departure.current = null
+        setLeaving(false)
+      }
       if (message.command === 'request-rematch') {
         rematchRequest.current = null
         setRematchPending(null)
@@ -101,12 +137,24 @@ export function useLobbyWebSocket() {
       if (!message.accepted) setError('Navigation failed. Choose a link to try again.')
     })
     const unsubscribeDuelForfeited = webSocket.subscribe('duel-forfeited', (message) => {
+      if (currentDuel.current?.id !== message.duelId) return
+      departure.current = message.duelId
+      currentDuel.current = null
+      pendingNavigation.current = null
+      setNavigating(false)
+      setLeaving(false)
       setLobby(null)
       setDuel(null)
       setError(null)
-      setNotice({ title: 'Forfeit', message: message.message })
+      setNotice({ title: message.winnerId === clientId ? 'Opponent left' : 'Forfeit', message: message.message })
     })
     const unsubscribeDuelInterrupted = webSocket.subscribe('duel-interrupted', (message) => {
+      if (currentDuel.current?.id !== message.duelId) return
+      departure.current = message.duelId
+      currentDuel.current = null
+      pendingNavigation.current = null
+      setNavigating(false)
+      setLeaving(false)
       setLobby(null)
       setDuel(null)
       setError(null)
@@ -157,7 +205,7 @@ export function useLobbyWebSocket() {
 
   const clearNotice = useCallback(() => setNotice(null), [])
   const readyForNextRound = useCallback(() => {
-    if (!duel || duel.phase !== 'post-round' || duel.outcome.final
+    if (departure.current || !duel || duel.phase !== 'post-round' || duel.outcome.final
       || duel.readyPlayerIds.includes(duel.self.id) || readyRequest.current === duel.round.id) return
     if (webSocket.send({ type: 'ready-next-round', duelId: duel.id, roundId: duel.round.id })) {
       readyRequest.current = duel.round.id
@@ -165,17 +213,22 @@ export function useLobbyWebSocket() {
     }
   }, [duel, webSocket])
   const continueToPostDuel = useCallback(() => {
-    if (!duel || duel.phase !== 'completed' || continueRequest.current === duel.id) return
+    if (departure.current || !duel || duel.phase !== 'completed' || continueRequest.current === duel.id) return
     if (webSocket.send({ type: 'continue-post-duel', duelId: duel.id, roundId: duel.round.id })) {
       continueRequest.current = duel.id
       setContinuePending(duel.id)
     }
   }, [duel, webSocket])
-  const leaveDuel = useCallback(() => {
-    if (duel) webSocket.send({ type: 'leave-duel', duelId: duel.id })
-  }, [duel, webSocket])
+  const leaveDuel = useCallback((duelId: string) => {
+    if (departure.current || currentDuel.current?.id !== duelId) return
+    if (webSocket.send({ type: 'leave-duel', duelId })) {
+      departure.current = duelId
+      setLeaving(true)
+      setError(null)
+    }
+  }, [webSocket])
   const requestRematch = useCallback(() => {
-    if (!duel || duel.phase !== 'post-duel' || duel.rematchPlayerIds.includes(duel.self.id)
+    if (departure.current || !duel || duel.phase !== 'post-duel' || duel.rematchPlayerIds.includes(duel.self.id)
       || rematchRequest.current === duel.id || backRequest.current === duel.id) return
     if (webSocket.send({ type: 'request-rematch', duelId: duel.id, roundId: duel.round.id })) {
       rematchRequest.current = duel.id
@@ -183,21 +236,21 @@ export function useLobbyWebSocket() {
     }
   }, [duel, webSocket])
   const backToLobby = useCallback(() => {
-    if (!duel || duel.phase !== 'post-duel' || backRequest.current === duel.id) return
+    if (departure.current || !duel || duel.phase !== 'post-duel' || backRequest.current === duel.id) return
     if (webSocket.send({ type: 'back-to-lobby', duelId: duel.id, roundId: duel.round.id })) {
       backRequest.current = duel.id
       setBackPending(duel.id)
     }
   }, [duel, webSocket])
   const acknowledgeRendered = useCallback((duelId: string, roundId: string) => {
-    if (renderedRounds.current.has(roundId)) return
+    if (departure.current || renderedRounds.current.has(roundId)) return
     renderedRounds.current.add(roundId)
     webSocket.send({ type: 'round-rendered', duelId, roundId })
   }, [webSocket])
   const getServerTime = useCallback(() => serverClock.current.serverNow
     + performance.now() - serverClock.current.receivedAt, [])
   const navigate = useCallback((destination: NavigationDestination) => {
-    if (pendingNavigation.current || !duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
+    if (departure.current || pendingNavigation.current || !duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
     const pending = { requestId: crypto.randomUUID(), duelId: duel.id, roundId: duel.round.id }
     pendingNavigation.current = pending
     if (webSocket.send({ type: 'navigate', ...pending, destination,
@@ -232,6 +285,7 @@ export function useLobbyWebSocket() {
     continueToPostDuel,
     continuePending: continuePending === duel?.id,
     leaveDuel,
+    leaving,
     requestRematch,
     rematchPending: rematchPending === duel?.id,
     backToLobby,
