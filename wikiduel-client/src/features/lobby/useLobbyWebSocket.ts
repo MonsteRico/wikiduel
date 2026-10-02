@@ -15,6 +15,8 @@ export function useLobbyWebSocket() {
   const [navigating, setNavigating] = useState(false)
   const readyRequest = useRef<string | null>(null)
   const [readyPending, setReadyPending] = useState<string | null>(null)
+  const continueRequest = useRef<string | null>(null)
+  const [continuePending, setContinuePending] = useState<string | null>(null)
   const serverClock = useRef({ serverNow: 0, receivedAt: 0 })
   const receivedRounds = useRef(new Set<string>())
   const renderedRounds = useRef(new Set<string>())
@@ -43,7 +45,7 @@ export function useLobbyWebSocket() {
     const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
       const pending = pendingNavigation.current
       if (pending && (pending.duelId !== message.duel.id || pending.roundId !== message.duel.round.id
-        || message.duel.phase === 'post-round' || message.duel.phase === 'completed')) {
+        || message.duel.phase === 'post-round' || message.duel.phase === 'completed' || message.duel.phase === 'post-duel')) {
         pendingNavigation.current = null
         setNavigating(false)
       }
@@ -57,6 +59,10 @@ export function useLobbyWebSocket() {
       setError(null)
     })
     const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
+      if (message.command === 'continue-post-duel') {
+        continueRequest.current = null
+        setContinuePending(null)
+      }
       if (message.command === 'ready-next-round') {
         readyRequest.current = null
         setReadyPending(null)
@@ -135,6 +141,13 @@ export function useLobbyWebSocket() {
       setReadyPending(duel.round.id)
     }
   }, [duel, webSocket])
+  const continueToPostDuel = useCallback(() => {
+    if (!duel || duel.phase !== 'completed' || continueRequest.current === duel.id) return
+    if (webSocket.send({ type: 'continue-post-duel', duelId: duel.id, roundId: duel.round.id })) {
+      continueRequest.current = duel.id
+      setContinuePending(duel.id)
+    }
+  }, [duel, webSocket])
   const leaveDuel = useCallback(() => {
     if (duel) webSocket.send({ type: 'leave-duel', duelId: duel.id })
   }, [duel, webSocket])
@@ -178,6 +191,8 @@ export function useLobbyWebSocket() {
     navigating,
     readyForNextRound,
     readyPending: readyPending === duel?.round.id,
+    continueToPostDuel,
+    continuePending: continuePending === duel?.id,
     leaveDuel,
   }
 }

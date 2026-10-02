@@ -323,8 +323,22 @@ const EndedDuelProjectionSchema = TimedDuelProjectionSchema.extend({
   outcome: RoundOutcomeSchema,
   readyPlayerIds: z.array(z.string()).max(2),
 });
+const PostDuelProjectionSchema = TimedDuelProjectionSchema.extend({
+  phase: z.literal("post-duel"),
+  summary: z.strictObject({
+    winnerId: z.string(),
+    endReason: z.literal("hp-depleted"),
+    players: z.tuple([DuelPlayerIdentitySchema, DuelPlayerIdentitySchema]),
+    rounds: z.array(z.strictObject({
+      roundId: z.string().min(1),
+      roundNumber: z.number().int().positive(),
+      winnerId: z.string(),
+      damage: z.number().nonnegative(),
+    })).min(1),
+  }),
+});
 const DuelProjectionSchema = z.union([
-  PreparingDuelProjectionSchema, TimedDuelProjectionSchema, EndedDuelProjectionSchema,
+  PreparingDuelProjectionSchema, TimedDuelProjectionSchema, EndedDuelProjectionSchema, PostDuelProjectionSchema,
 ]);
 const RoundCommandFields = {
   duelId: z.string().min(1),
@@ -351,6 +365,7 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("round-received"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("round-rendered"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("ready-next-round"), ...RoundCommandFields }),
+  z.strictObject({ type: z.literal("continue-post-duel"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("leave-duel"), duelId: z.string().min(1) }),
   z.strictObject({
     type: z.literal("navigate"), ...RoundCommandFields,
@@ -418,6 +433,7 @@ const ServerMessageSchema = z.union([
       "round-received",
       "round-rendered",
       "ready-next-round",
+      "continue-post-duel",
       "leave-duel",
       "navigate",
     ]),

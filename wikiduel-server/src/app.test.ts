@@ -742,3 +742,80 @@ test("the Host is notified when the Opponent explicitly departs", async () => {
   hostSocket.terminate();
   await app.close();
 });
+
+
+test("completes a multi-round Duel and continues each socket independently", async () => {
+  let now = 100_000;
+  let activate = () => {};
+  const app = await buildApp({ promptRandom: () => 0, now: () => now,
+    schedule: (callback, delay) => { if (delay === 3000) activate = callback; return () => {}; },
+    repository: { getByTitle: async (title) => {
+      const prompt = deterministicPromptCatalog.prompts.find((entry) => entry.start.title === title);
+      const identity = prompt?.start ?? deterministicPromptCatalog.prompts.find((entry) => entry.target.title === title)!.target;
+      return { ok: true, article: { ...preparedArticle, identity, document: { ...preparedArticle.document,
+        blocks: prompt ? [{ type: "paragraph", children: [{ type: "navigation", destination: prompt.target,
+          children: [{ type: "text", value: "Target" }] }] }] : [],
+      } } };
+    } },
+  });
+  await app.ready();
+  const host = await app.injectWS("/ws");
+  const opponent = await app.injectWS("/ws");
+  try {
+    const lobby = await createLobby(host);
+    await joinLobby(host, opponent, lobby.lobby.code);
+    await setReady(host, opponent, true);
+    await setReady(opponent, host, true);
+    let prepared = nextRound(host, "preparing");
+    host.send(JSON.stringify({ type: "start-duel" }));
+    let final: DuelProjection | undefined;
+    for (let round = 1; round <= 5; round++) {
+      const duel = await prepared;
+      const ids = { duelId: duel.id, roundId: duel.round.id };
+      const countdown = nextRound(host, "countdown");
+      for (const socket of [host, opponent]) {
+        socket.send(JSON.stringify({ type: "round-received", ...ids }));
+        socket.send(JSON.stringify({ type: "round-rendered", ...ids }));
+      }
+      await countdown;
+      const active = nextRound(host, "active");
+      now += 3000;
+      activate();
+      await active;
+      const ended = nextRound(host, round === 5 ? "completed" : "post-round");
+      host.send(JSON.stringify({ type: "navigate", ...ids, requestId: `arrival-${round}`,
+        source: duel.round.prompt.start, destination: duel.round.prompt.target, expectedClicks: 0 }));
+      final = await ended;
+      if (round < 5) {
+        prepared = nextRound(host, "preparing");
+        for (const socket of [host, opponent]) socket.send(JSON.stringify({ type: "ready-next-round", ...ids }));
+      }
+    }
+    expect(final).toMatchObject({ phase: "completed", self: { hp: 100 }, opponent: { hp: 0 } });
+    const ids = { duelId: final!.id, roundId: final!.round.id };
+    const continued = [nextRound(host, "post-duel"), nextRound(opponent, "completed")];
+    host.send(JSON.stringify({ type: "continue-post-duel", ...ids }));
+    const [summary, comparison] = await Promise.all(continued);
+    expect(summary).toMatchObject({ summary: { winnerId: final!.self.id, endReason: "hp-depleted",
+      rounds: [1, 2, 3, 4, 5].map((roundNumber) => ({ roundNumber, damage: 22 })) } });
+    expect(comparison).toMatchObject({ phase: "completed", outcome: { final: true } });
+    for (const command of [
+      { type: "continue-post-duel", ...ids }, { type: "ready-next-round", ...ids },
+      { type: "round-rendered", ...ids }, { type: "start-duel" },
+      { type: "continue-post-duel", ...ids, roundId: "stale" },
+    ]) {
+      const rejected = nextMessage(host, "command-rejected");
+      host.send(JSON.stringify(command));
+      await expect(rejected).resolves.toMatchObject({ command: command.type, reason: "invalid-state" });
+    }
+    const late = navigationResult(host, "late");
+    host.send(JSON.stringify({ type: "navigate", ...ids, requestId: "late",
+      source: final!.round.prompt.target, destination: final!.round.prompt.start, expectedClicks: 1 }));
+    await expect(late).resolves.toEqual(expect.objectContaining({ accepted: false }));
+    const other = nextRound(opponent, "post-duel");
+    opponent.send(JSON.stringify({ type: "continue-post-duel", ...ids }));
+    expect(await other).toMatchObject({ phase: "post-duel", summary: summary!.phase === "post-duel" ? summary!.summary : null });
+  } finally {
+    host.terminate(); opponent.terminate(); await app.close();
+  }
+});

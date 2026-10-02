@@ -313,9 +313,10 @@ describe("decodeServerMessage", () => {
   });
 });
 
-it("decodes scoped readiness and departure commands without client authority fields", () => {
+it("decodes scoped readiness, continuation and departure commands without client authority fields", () => {
   for (const command of [
     { type: "ready-next-round", duelId: "duel-1", roundId: "round-1" },
+    { type: "continue-post-duel", duelId: "duel-1", roundId: "round-1" },
     { type: "leave-duel", duelId: "duel-1" },
   ]) {
     expect(decodeClientMessage(command)).toEqual({ ok: true, message: command });
@@ -365,4 +366,31 @@ it("decodes only strict Round Outcomes in ended projections", () => {
   ]) expect(decode({ ...duel, outcome: invalid }).ok).toBe(false);
   expect(decode({ ...duel, phase: "active" }).ok).toBe(false);
   expect(decodeClientMessage({ type: "end-round", outcome }).ok).toBe(false);
+});
+
+
+it("decodes only strict normal Post-Duel summaries and scoped continuation", () => {
+  const players = [{ id: "host", name: "Host", role: "host", hp: 100 },
+    { id: "opponent", name: "Opponent", role: "opponent", hp: 0 }];
+  const summary = { winnerId: "host", endReason: "hp-depleted", players,
+    rounds: [{ roundId: "round-5", roundNumber: 5, winnerId: "host", damage: 22 }] };
+  const duel = { id: "duel-1", phase: "post-duel", serverNow: 5000, startsAt: 1000,
+    round: { id: "round-5", number: 5, article, prompt: {
+      id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
+    } },
+    self: { ...players[0], path: [article.identity], clicks: 1 },
+    opponent: { ...players[1], clicks: 0, connected: true }, summary,
+  };
+  const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
+  expect(decode(duel).ok).toBe(true);
+  for (const invalid of [undefined, { ...summary, endReason: "forfeit" }, { ...summary, endReason: "interruption" },
+    { ...summary, privateState: {} }, { ...summary, players: [players[0]] },
+    { ...summary, players: [{ ...players[0], hp: -1 }, players[1]] }, { ...summary, rounds: [] },
+    { ...summary, rounds: [{ ...summary.rounds[0], damage: -1 }] },
+    { ...summary, rounds: [{ ...summary.rounds[0], privateState: {} }] },
+  ]) expect(decode({ ...duel, summary: invalid }).ok).toBe(false);
+  for (const extra of [{ playerId: "opponent" }, { hp: 100 }, { summary }, { roundId: "" }]) {
+    expect(decodeClientMessage({ type: "continue-post-duel", duelId: "duel-1", roundId: "round-5", ...extra }).ok).toBe(false);
+  }
+  expect(decodeClientMessage({ type: "continue-post-duel", duelId: "duel-1" }).ok).toBe(false);
 });
