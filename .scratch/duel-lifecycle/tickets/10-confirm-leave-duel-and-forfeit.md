@@ -1,7 +1,7 @@
 # Confirm Leave Duel and Forfeit
 
 Status: completed
-Completed: 2026-10-02 12:30 PM
+Completed: 2026-10-02 12:30 PM via [PR #25](https://github.com/MonsteRico/wikiduel/pull/25)
 Scope: MVP required
 Category: enhancement
 
