@@ -12,7 +12,7 @@ Planning stubs begin at `needs-triage`. Before assigning one to an implementatio
 
 ## MVP required
 
-Next after deployment setup: [`duel-lifecycle/18`](../duel-lifecycle/tickets/18-implement-click-scored-rounds.md). Implement both-player completion, click-based damage, and the Host-toggleable five-minute Time Limit before the first MVP playtest. [Ticket 17](../duel-lifecycle/tickets/17-refine-click-scored-rounds.md) records the approved rules and completed planning. The timer setting defaults off, but delivering the toggle and expiry behavior is required.
+Completed: [`duel-lifecycle/18`](../duel-lifecycle/tickets/18-implement-click-scored-rounds.md) adds both-player completion, click-based damage, and the Host-toggleable five-minute Time Limit, default off. The maintainer approved closure with this PR after automated and local browser validation. Deployed acceptance remains outstanding under deployment/01.
 
 - [`lobby/01`](../lobby/tickets/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language
 - [`test-automation/03`](../test-automation/tickets/03-standardize-tests-on-vitest.md) — establish Vitest across client and server

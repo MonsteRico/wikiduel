@@ -3,7 +3,7 @@
 Status: ready-for-agent
 Source: [Duel Lifecycle spec](./spec.md)
 
-This is the canonical progress and dependency index for direct Duel behavior. After deployment setup, the next required gameplay work is [duel-lifecycle/18](./tickets/18-implement-click-scored-rounds.md), implementing the rules approved in [duel-lifecycle/17](./tickets/17-refine-click-scored-rounds.md). Earlier completed tickets record the original gameplay model.
+This is the canonical progress and dependency index for direct Duel behavior. [duel-lifecycle/18](./tickets/18-implement-click-scored-rounds.md) completes the gameplay rules approved in [duel-lifecycle/17](./tickets/17-refine-click-scored-rounds.md). Earlier completed tickets record the original gameplay model.
 
 ## External prerequisites and checkpoints
 
@@ -13,7 +13,7 @@ This is the canonical progress and dependency index for direct Duel behavior. Af
 
 ## MVP required
 
-Next: [`duel-lifecycle/18`](./tickets/18-implement-click-scored-rounds.md), implement both-player completion, click-based damage, the Host-toggleable five-minute Time Limit, waiting privacy, and outcome review. [Ticket 17](./tickets/17-refine-click-scored-rounds.md) records completed planning; ticket 18 remains open for implementation.
+Completed: [`duel-lifecycle/18`](./tickets/18-implement-click-scored-rounds.md) implements both-player completion, click-based damage, the Host-toggleable five-minute Time Limit, waiting privacy, and outcome review. The maintainer approved closure with this PR; deployed acceptance remains outstanding under deployment/01.
 
 1. [`duel-lifecycle/01`](./tickets/01-establish-the-prompt-catalog.md) — establish the Prompt format, validation, selection, fixtures, and Lobby history
 2. [`duel-lifecycle/02`](./tickets/02-enter-the-first-duel.md) — cross the Lobby seam into the minimal authoritative Duel core
