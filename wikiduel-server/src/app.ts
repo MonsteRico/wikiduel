@@ -1,5 +1,8 @@
 import { randomInt } from "node:crypto";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
@@ -22,6 +25,7 @@ import { deterministicPromptCatalog } from "./prompt-catalog/fixtures.js";
 export type BuildAppOptions = Readonly<{
   repository?: PlayableArticleRepository;
   production?: boolean;
+  clientRoot?: string;
   promptCatalog?: PromptCatalog;
   promptRandom?: () => number;
   createDuelId?: () => string;
@@ -165,6 +169,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       "base-uri 'none'",
       "object-src 'none'",
       "frame-ancestors 'none'",
+      "connect-src 'self' ws: wss:",
+      "style-src 'self' 'unsafe-inline'",
       "img-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org",
     ].join("; "));
     return payload;
@@ -172,8 +178,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   await app.register(websocket);
 
-  app.get("/", async () => ({ name: "wikiduel-server", status: "ok" }));
+  if (options.clientRoot) {
+    await access(join(options.clientRoot, "index.html"));
+    await app.register(fastifyStatic, { root: options.clientRoot, wildcard: false, index: false });
+    for (const route of ["/", "/lobby/:lobbyCode", "/duel/:duelId"]) {
+      app.get(route, async (_request, reply) => reply.sendFile("index.html", { maxAge: 0 }));
+    }
+  } else {
+    app.get("/", async () => ({ name: "wikiduel-server", status: "ok" }));
+  }
   app.get("/health", async () => ({ status: "ok" }));
+  app.get("/ready", async (_request, reply) => {
+    if (!options.repository || !promptCatalog) {
+      return reply.code(503).send({ status: "not-ready" });
+    }
+    return { status: "ready" };
+  });
 
   app.get("/ws", { websocket: true }, (socket) => {
     const session: SocketSession = {};

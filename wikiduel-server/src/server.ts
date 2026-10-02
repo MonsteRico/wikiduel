@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { createLivePlayableArticleRepository } from "./playable-articles/index.js";
 import { validatePromptCatalogFile } from "./prompt-catalog/validation.js";
@@ -21,6 +22,9 @@ const app = await buildApp({
   repository,
   promptCatalog: promptCatalogResult.catalog,
   production: process.env.NODE_ENV === "production",
+  clientRoot: process.env.NODE_ENV === "production"
+    ? fileURLToPath(new URL("../../wikiduel-client/dist/", import.meta.url))
+    : undefined,
 });
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";

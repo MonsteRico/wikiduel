@@ -30,6 +30,8 @@ containing spaces. See the [Prompt Catalog guide](docs/prompt-catalog.md) for th
 
 ## Commands
 
+For the Docker image and Dokploy setup, see the [deployment walkthrough](docs/deployment.md).
+
 - `npm run dev` starts the client and server in watch mode.
 - `npm test` runs both Vitest projects once.
 - `npm run test:ui` opens the Vitest UI for both projects.
