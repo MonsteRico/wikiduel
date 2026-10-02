@@ -100,6 +100,8 @@ test.each(
       const ended = nextRound(host, "post-round");
       host.send(JSON.stringify({ type: "navigate", ...ids, requestId: "arrival", source: start.identity,
         destination: target, expectedClicks: 0 }));
+      await flush(host);
+      opponent.send(JSON.stringify({ type: "navigate", ...ids, requestId: "second-arrival", source: start.identity, destination: target, expectedClicks: 0 }));
       await ended;
     }
     await flush(host);
@@ -251,14 +253,15 @@ test.each(["throw", "failure"])("two players serialize Navigation, keep routes p
     const ended = [nextRound(host, "post-round"), nextRound(opponent, "post-round")];
     now += 1500;
     lookups[2]!.resolve({ ...preparedArticle, identity: target });
-    const outcomes = await Promise.all(ended);
     await expect(opponentResult).resolves.toMatchObject({ accepted: true });
+    expect(opponentStates.at(-1)).toMatchObject({ phase: "active", self: { arrived: true }, opponent: { arrived: false } });
     lookups[1]!.resolve({ ...preparedArticle, identity: target });
-    await expect(hostResult).resolves.toMatchObject({ accepted: false });
+    const outcomes = await Promise.all(ended);
+    await expect(hostResult).resolves.toMatchObject({ accepted: true });
     for (const state of outcomes) {
       if (state.phase !== "post-round") throw new Error("Expected Round Outcome");
       expect(state.outcome.winnerId).toBe(duel!.opponent.id);
-      expect(state.outcome.players.map((player) => player.clicks)).toEqual([1, 1]);
+      expect(state.outcome.players.map((player) => player.clicks)).toEqual([2, 1]);
     }
     await reject(host, { requestId: "late", source: secret, expectedClicks: 1, destination: target });
     expect(hostStates.at(-1)).toEqual(outcomes[0]);
@@ -303,7 +306,7 @@ test.each(["throw", "failure"])("two players serialize Navigation, keep routes p
     lookups[3]!.resolve({ ...preparedArticle, identity: nextPrompt.start });
     const [nextDuel] = await Promise.all(nextPrepared);
     expect(nextDuel).toMatchObject({ phase: "preparing", round: { number: 2 },
-      self: { hp: 75, clicks: 0, path: [nextPrompt.start] }, opponent: { hp: 100, clicks: 0 } });
+      self: { hp: 72, clicks: 0, path: [nextPrompt.start] }, opponent: { hp: 100, clicks: 0 } });
     await rejectReady({});
     const nextIds = { duelId: nextDuel!.id, roundId: nextDuel!.round.id };
     const secondCountdown = nextRound(host, "countdown");
@@ -870,13 +873,16 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
   try {
     const lobby = await createLobby(host);
     await joinLobby(host, opponent, lobby.lobby.code);
+    const setting = nextMessage(host, "lobby-state");
+    host.send(JSON.stringify({ type: "set-time-limit", enabled: true }));
+    await setting;
     await setReady(host, opponent, true);
     await setReady(opponent, host, true);
     let prepared = nextRound(host, "preparing");
     host.send(JSON.stringify({ type: "start-duel" }));
     let final: DuelProjection | undefined;
     const prompts: string[] = [];
-    for (let round = 1; round <= 5; round++) {
+    for (let round = 1; round <= 4; round++) {
       const duel = await prepared;
       prompts.push(duel.round.prompt.id);
       const ids = { duelId: duel.id, roundId: duel.round.id };
@@ -890,11 +896,14 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
       now += 3000;
       activate();
       await active;
-      const ended = nextRound(host, round === 5 ? "completed" : "post-round");
+      const ended = nextRound(host, round === 4 ? "completed" : "post-round");
+      const arrival = navigationResult(host, `arrival-${round}`);
       host.send(JSON.stringify({ type: "navigate", ...ids, requestId: `arrival-${round}`,
         source: duel.round.prompt.start, destination: duel.round.prompt.target, expectedClicks: 0 }));
+      await arrival;
+      opponent.send(JSON.stringify({ type: "navigate", ...ids, requestId: `second-${round}`, source: duel.round.prompt.start, destination: duel.round.prompt.target, expectedClicks: 0 }));
       final = await ended;
-      if (round < 5) {
+      if (round < 4) {
         prepared = nextRound(host, "preparing");
         for (const socket of [host, opponent]) socket.send(JSON.stringify({ type: "ready-next-round", ...ids }));
       }
@@ -905,11 +914,11 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
     host.send(JSON.stringify({ type: "continue-post-duel", ...ids }));
     const [summary, comparison] = await Promise.all(continued);
     expect(summary).toMatchObject({ summary: { winnerId: final!.self.id, endReason: "hp-depleted",
-      rounds: [1, 2, 3, 4, 5].map((roundNumber) => ({ roundNumber, damage: 22 })) } });
+      rounds: [1, 2, 3, 4].map((roundNumber) => ({ roundNumber, damage: 25 })) } });
     expect(comparison).toMatchObject({ phase: "completed", outcome: { final: true } });
     for (const command of [
       { type: "continue-post-duel", ...ids }, { type: "ready-next-round", ...ids },
-      { type: "round-rendered", ...ids }, { type: "start-duel" },
+      { type: "round-rendered", ...ids }, { type: "start-duel" }, { type: "set-time-limit", enabled: false },
       { type: "continue-post-duel", ...ids, roundId: "stale" },
     ]) {
       const rejected = nextMessage(host, "command-rejected");
@@ -940,9 +949,9 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
       expect(rematches[1]!.id).toBe(rematches[0]!.id);
       for (const duel of rematches) {
         expect(duel).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100, clicks: 0 }, opponent: { hp: 100, clicks: 0 } });
-        expect(duel.round.prompt.id).toBe("fixture-third");
+        expect(duel.round.prompt.id).toBe("fixture-second");
       }
-      expect(prompts).toEqual(["fixture-first", "fixture-second", "fixture-third", "fixture-first", "fixture-second"]);
+      expect(prompts).toEqual(["fixture-first", "fixture-second", "fixture-third", "fixture-first"]);
     } else {
       const actor = choice === "host-back" ? host : opponent;
       const restored = [nextMessage<LobbyStateMessage>(host, "lobby-state"), nextMessage<LobbyStateMessage>(opponent, "lobby-state")];
@@ -951,7 +960,7 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
       actor.send(JSON.stringify({ type: "request-rematch", ...ids }));
       const states = await Promise.all(restored);
       expect(states[0]!.lobby).toEqual(states[1]!.lobby);
-      expect(states[0]!.lobby).toMatchObject({ code: lobby.lobby.code, members: [{ ready: false }, { ready: false }] });
+      expect(states[0]!.lobby).toMatchObject({ code: lobby.lobby.code, timeLimitEnabled: true, members: [{ ready: false }, { ready: false }] });
       await expect(stale).resolves.toMatchObject({ command: "request-rematch", reason: "invalid-state" });
       let rejected = nextMessage(host, "command-rejected");
       host.send(JSON.stringify({ type: "start-duel" }));
@@ -965,10 +974,101 @@ test.each(["rematch", "host-back", "opponent-back"])("completes a multi-round Du
       host.send(JSON.stringify({ type: "start-duel" }));
       for (const duel of await Promise.all(fresh)) {
         expect(duel.id).not.toBe(ids.duelId);
-        expect(duel).toMatchObject({ round: { number: 1, prompt: { id: "fixture-third" } }, self: { hp: 100 }, opponent: { hp: 100 } });
+        expect(duel).toMatchObject({ round: { number: 1, prompt: { id: "fixture-second" } }, self: { hp: 100 }, opponent: { hp: 100 } });
       }
     }
   } finally {
     host.terminate(); opponent.terminate(); await app.close();
   }
+});
+
+test("only the waiting Host changes the Time Limit and a changed setting clears readiness", async () => {
+  const app = await buildApp(); await app.ready();
+  const host = await app.injectWS("/ws"); const opponent = await app.injectWS("/ws");
+  try {
+    const created = await createLobby(host);
+    expect(created).toMatchObject({ lobby: { timeLimitEnabled: false } });
+    await joinLobby(host, opponent, created.lobby.code);
+    await setReady(host, opponent, true); await setReady(opponent, host, true);
+    const rejected = nextMessage(opponent, "command-rejected");
+    opponent.send(JSON.stringify({ type: "set-time-limit", enabled: true }));
+    await expect(rejected).resolves.toMatchObject({ command: "set-time-limit", reason: "not-host" });
+    const states = [nextMessage(host, "lobby-state"), nextMessage(opponent, "lobby-state")];
+    host.send(JSON.stringify({ type: "set-time-limit", enabled: true }));
+    for (const state of await Promise.all(states)) expect(state).toMatchObject({ lobby: {
+      timeLimitEnabled: true, members: [{ ready: false }, { ready: false }],
+    } });
+    await setReady(host, opponent, true);
+    const unchanged = nextMessage(host, "lobby-state");
+    host.send(JSON.stringify({ type: "set-time-limit", enabled: true }));
+    await expect(unchanged).resolves.toMatchObject({ lobby: { members: [{ ready: true }, { ready: false }] } });
+  } finally { host.terminate(); opponent.terminate(); await app.close(); }
+});
+
+test.each(["draw", "sole-arrival", "both-before", "second-at-deadline"])("publishes one private WebSocket outcome for %s", async (scenario) => {
+  let now = 100_000;
+  const timers: { callback: () => void; cancelled: boolean }[] = [];
+  const target = deterministicPromptCatalog.prompts[0]!.target;
+  const start = { ...preparedArticle, document: { ...preparedArticle.document, blocks: [{ type: "paragraph" as const,
+    children: [{ type: "navigation" as const, destination: target, children: [{ type: "text" as const, value: "Target" }] }] }] } };
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  let targetRequests = 0;
+  const app = await buildApp({ promptRandom: () => 0, now: () => now,
+    schedule: (callback) => { const timer = { callback, cancelled: false }; timers.push(timer); return () => { timer.cancelled = true; }; },
+    repository: { getByTitle: async (title) => {
+      if (title === start.identity.title) return { ok: true, article: start };
+      if (++targetRequests === 2) await pending;
+      return { ok: true, article: { ...preparedArticle, identity: target } };
+    } },
+  });
+  await app.ready(); const host = await app.injectWS("/ws"); const opponent = await app.injectWS("/ws");
+  const states: DuelProjection[][] = [[], []];
+  [host, opponent].forEach((socket, index) => socket.on("message", (raw) => {
+    const message = JSON.parse(raw.toString());
+    expect(decodeServerMessage(message).ok).toBe(true);
+    if (message.type === "duel-state") states[index]!.push(message.duel);
+  }));
+  const flush = async (socket: WebSocket) => { const pong = nextMessage(socket, "pong"); socket.send(JSON.stringify({ type: "ping" })); await pong; };
+  try {
+    const lobby = await createLobby(host); await joinLobby(host, opponent, lobby.lobby.code);
+    const changed = nextMessage(host, "lobby-state");
+    host.send(JSON.stringify({ type: "set-time-limit", enabled: true })); await changed;
+    await setReady(host, opponent, true); await setReady(opponent, host, true);
+    const prepared = nextRound(host, "preparing"); host.send(JSON.stringify({ type: "start-duel" })); const duel = await prepared;
+    const ids = { duelId: duel.id, roundId: duel.round.id };
+    const countdown = nextRound(host, "countdown");
+    for (const socket of [host, opponent]) {
+      socket.send(JSON.stringify({ type: "round-received", ...ids }));
+      socket.send(JSON.stringify({ type: "round-rendered", ...ids }));
+    }
+    expect(await countdown).toMatchObject({ startsAt: 103_000, expiresAt: 403_000 });
+    now = 103_000; timers.at(-1)!.callback(); await flush(host); await flush(opponent);
+    const deadline = timers.at(-1)!;
+    const rejected = nextMessage(host, "command-rejected"); host.send(JSON.stringify({ type: "set-time-limit", enabled: false }));
+    await expect(rejected).resolves.toMatchObject({ reason: "invalid-state" });
+    const command = { type: "navigate", ...ids, requestId: "arrival", source: start.identity, destination: target, expectedClicks: 0 };
+    if (scenario !== "draw") {
+      now = 104_000; const result = navigationResult(host, "arrival"); host.send(JSON.stringify(command)); await result; await flush(opponent);
+      expect(states[0]!.at(-1)).toMatchObject({ phase: "active", self: { arrived: true, arrivalElapsedMs: 1000 }, round: { article: { identity: target } } });
+      expect(states[1]!.at(-1)!.opponent).toEqual({ id: "host-id", name: "host", role: "host", hp: 100, clicks: 1, connected: true, arrived: true });
+      const duplicate = navigationResult(host, "arrival"); host.send(JSON.stringify(command)); await expect(duplicate).resolves.toMatchObject({ accepted: false });
+    }
+    const ended = [nextRound(host, "post-round"), nextRound(opponent, "post-round")];
+    if (scenario === "both-before" || scenario === "second-at-deadline") {
+      now = 402_998; const result = navigationResult(opponent, "second"); opponent.send(JSON.stringify({ ...command, requestId: "second" })); await flush(opponent);
+      now = scenario === "both-before" ? 402_999 : 403_000; release();
+      await expect(result).resolves.toMatchObject({ accepted: scenario === "both-before" });
+    } else { now = 410_000; deadline.callback(); }
+    const outcomes = await Promise.all(ended);
+    expect(outcomes[0]).toMatchObject({ phase: "post-round", outcome: {
+      winReason: scenario === "draw" ? "neither-arrived" : scenario === "both-before" ? "earlier-arrival" : "sole-arrival",
+      damage: { finalDamage: scenario === "draw" ? 0 : scenario === "both-before" ? 25 : 60 },
+    } });
+    if (outcomes[0]!.phase !== "post-round" || outcomes[1]!.phase !== "post-round") throw new Error("Expected outcome");
+    expect(outcomes[0]!.outcome).toEqual(outcomes[1]!.outcome);
+    deadline.callback(); deadline.callback(); await flush(host); await flush(opponent);
+    for (const projections of states) expect(projections.filter((state) => state.phase === "post-round")).toHaveLength(1);
+  } finally { release(); host.terminate(); opponent.terminate(); await app.close(); }
+  expect(timers.at(-1)!.cancelled).toBe(true);
 });

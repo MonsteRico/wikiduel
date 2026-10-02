@@ -185,6 +185,10 @@ export function useLobbyWebSocket() {
     webSocket.send({ type: 'set-ready', ready })
   }, [webSocket])
 
+  const setTimeLimit = useCallback((enabled: boolean) => {
+    webSocket.send({ type: 'set-time-limit', enabled })
+  }, [webSocket])
+
   const startDuel = useCallback(() => {
     webSocket.send({ type: 'start-duel' })
   }, [webSocket])
@@ -236,7 +240,9 @@ export function useLobbyWebSocket() {
   const getServerTime = useCallback(() => serverClock.current.serverNow
     + performance.now() - serverClock.current.receivedAt, [])
   const navigate = useCallback((destination: NavigationDestination) => {
-    if (departure.current || pendingNavigation.current || !duel || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt) return
+    if (departure.current || pendingNavigation.current || !duel || duel.self.arrived
+      || (duel.phase !== 'active' && duel.phase !== 'countdown') || getServerTime() < duel.startsAt
+      || (duel.expiresAt !== null && getServerTime() >= duel.expiresAt)) return
     const pending = { requestId: crypto.randomUUID(), duelId: duel.id, roundId: duel.round.id }
     pendingNavigation.current = pending
     if (webSocket.send({ type: 'navigate', ...pending, destination,
@@ -260,6 +266,7 @@ export function useLobbyWebSocket() {
     joinLobby,
     leaveLobby,
     setReady,
+    setTimeLimit,
     startDuel,
     clearNotice,
     acknowledgeRendered,

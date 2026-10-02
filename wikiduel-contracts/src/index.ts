@@ -247,6 +247,7 @@ const LobbyMemberSchema = z.strictObject({
 
 const LobbySchema = z.strictObject({
   code: z.string(),
+  timeLimitEnabled: z.boolean(),
   members: z.array(LobbyMemberSchema),
 });
 
@@ -274,10 +275,13 @@ const PreparingDuelProjectionSchema = z.strictObject({
     article: PlayableArticleSchema.optional(),
   }),
   self: DuelPlayerIdentitySchema.extend({
+    arrived: z.boolean(),
+    arrivalElapsedMs: z.number().nonnegative().nullable(),
     path: z.array(NavigationDestinationSchema),
     clicks: z.number().int().nonnegative(),
-  }),
+  }).refine((player) => player.arrived === (player.arrivalElapsedMs !== null)),
   opponent: DuelPlayerIdentitySchema.extend({
+    arrived: z.boolean(),
     clicks: z.number().int().nonnegative(),
     connected: z.boolean(),
   }),
@@ -286,13 +290,16 @@ const PreparingDuelProjectionSchema = z.strictObject({
 const TimedDuelProjectionSchema = PreparingDuelProjectionSchema.extend({
   phase: z.enum(["countdown", "active"]),
   startsAt: z.number().nonnegative(),
+  expiresAt: z.number().nonnegative().nullable(),
   round: PreparingDuelProjectionSchema.shape.round.extend({ article: PlayableArticleSchema }),
 });
-const DamageBreakdownSchema = z.strictObject({
+const CompletedRouteDamageSchema = z.strictObject({
+  kind: z.literal("completed-routes"),
+  ruleId: z.literal("click-scored-v2"),
   winnerClicks: z.number().int().nonnegative(),
   loserClicks: z.number().int().nonnegative(),
   baseDamage: z.number().nonnegative(),
-  clickDifferential: z.number().int(),
+  clickDifferential: z.number().int().nonnegative(),
   clickMultiplier: z.number().nonnegative(),
   multiplierContribution: z.number(),
   unclampedDamage: z.number(),
@@ -300,24 +307,38 @@ const DamageBreakdownSchema = z.strictObject({
   maximumDamage: z.number().nonnegative(),
   finalDamage: z.number().nonnegative(),
 });
+const SoleArrivalDamageSchema = z.strictObject({
+  kind: z.literal("sole-arrival"), ruleId: z.literal("click-scored-v2"), finalDamage: z.literal(60),
+});
+const DrawDamageSchema = z.strictObject({
+  kind: z.literal("draw"), ruleId: z.literal("click-scored-v2"), finalDamage: z.literal(0),
+});
+const DamageBreakdownSchema = z.discriminatedUnion("kind", [CompletedRouteDamageSchema, SoleArrivalDamageSchema, DrawDamageSchema]);
 const RoundOutcomePlayerSchema = z.strictObject({
   id: z.string(),
   path: z.array(NavigationDestinationSchema).min(1),
   clicks: z.number().int().nonnegative(),
   activeElapsedMs: z.number().nonnegative(),
+  arrived: z.boolean(),
+  hpLoss: z.number().int().min(0).max(100),
   hp: z.number().int().min(0).max(100),
 });
-const RoundOutcomeSchema = z.strictObject({
+const OutcomeFields = {
   roundId: z.string().min(1),
   roundNumber: z.number().int().positive(),
-  endReason: z.literal("target-arrival"),
-  winnerId: z.string(),
   startsAt: z.number().nonnegative(),
   endedAt: z.number().nonnegative(),
   players: z.tuple([RoundOutcomePlayerSchema, RoundOutcomePlayerSchema]),
-  damage: DamageBreakdownSchema,
   final: z.boolean(),
-});
+};
+const RoundOutcomeSchema = z.union([
+  z.strictObject({ ...OutcomeFields, endReason: z.literal("both-arrived"),
+    winReason: z.enum(["fewer-clicks", "earlier-arrival"]), winnerId: z.string(), damage: CompletedRouteDamageSchema }).refine((outcome) => outcome.players.every((player) => player.arrived)),
+  z.strictObject({ ...OutcomeFields, endReason: z.literal("time-limit"),
+    winReason: z.literal("sole-arrival"), winnerId: z.string(), damage: SoleArrivalDamageSchema }).refine((outcome) => outcome.players.filter((player) => player.arrived).length === 1),
+  z.strictObject({ ...OutcomeFields, endReason: z.literal("time-limit"),
+    winReason: z.literal("neither-arrived"), winnerId: z.null(), damage: DrawDamageSchema, final: z.literal(false) }).refine((outcome) => outcome.players.every((player) => !player.arrived)),
+]);
 const EndedDuelProjectionSchema = TimedDuelProjectionSchema.extend({
   phase: z.enum(["post-round", "completed"]),
   outcome: RoundOutcomeSchema,
@@ -333,7 +354,8 @@ const PostDuelProjectionSchema = TimedDuelProjectionSchema.extend({
     rounds: z.array(z.strictObject({
       roundId: z.string().min(1),
       roundNumber: z.number().int().positive(),
-      winnerId: z.string(),
+      winnerId: z.string().nullable(),
+      winReason: z.enum(["fewer-clicks", "earlier-arrival", "sole-arrival", "neither-arrived"]),
       damage: z.number().nonnegative(),
     })).min(1),
   }),
@@ -362,6 +384,7 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
     lobbyCode: z.string(),
   }),
   z.strictObject({ type: z.literal("set-ready"), ready: z.boolean() }),
+  z.strictObject({ type: z.literal("set-time-limit"), enabled: z.boolean() }),
   z.strictObject({ type: z.literal("start-duel") }),
   z.strictObject({ type: z.literal("round-received"), ...RoundCommandFields }),
   z.strictObject({ type: z.literal("round-rendered"), ...RoundCommandFields }),
@@ -431,6 +454,7 @@ const ServerMessageSchema = z.union([
       "create-lobby",
       "join-lobby",
       "set-ready",
+      "set-time-limit",
       "start-duel",
       "leave-lobby",
       "round-received",

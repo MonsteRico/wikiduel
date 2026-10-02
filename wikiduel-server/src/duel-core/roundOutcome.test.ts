@@ -1,41 +1,29 @@
-import { afterEach, expect, it, vi } from "vitest";
-import { decodeServerMessage } from "@wikiduel/contracts";
+import { expect, it } from "vitest";
 import { createDuelCore, type DuelEvent } from "./duelCore.js";
 import { preparedArticle } from "./fixtures.js";
 import { deterministicPromptCatalog } from "../prompt-catalog/fixtures.js";
 
-const players = [
-  { id: "host", name: "Host", role: "host", connected: true, ready: true },
-  { id: "opponent", name: "Opponent", role: "opponent", connected: true, ready: true },
-] as const;
-afterEach(() => vi.useRealTimers());
-
-async function activeRound() {
-  vi.useFakeTimers();
-  vi.setSystemTime(100_000);
+export async function roundFixture(timeLimitEnabled = false) {
+  let time = 100_000;
+  const timers: { callback: () => void; delay: number; cancelled: boolean }[] = [];
   const events: DuelEvent[] = [];
-  const core = createDuelCore({
-    promptCatalog: deterministicPromptCatalog, random: () => 0,
-    repository: { getByTitle: async (title) => {
-      const prompt = deterministicPromptCatalog.prompts.find((entry) => entry.start.title === title)!;
-      return { ok: true, article: { ...preparedArticle, identity: prompt.start } };
-    } },
-    onEvent: (_lobby, event) => events.push(event),
+  const players = ["host", "opponent"].map((id, index) => ({ id, name: id,
+    role: index === 0 ? "host" as const : "opponent" as const, connected: true, ready: true }));
+  const core = createDuelCore({ promptCatalog: deterministicPromptCatalog, random: () => 0,
+    now: () => time, schedule: (callback, delay) => {
+      const timer = { callback, delay, cancelled: false }; timers.push(timer);
+      return () => { timer.cancelled = true; };
+    }, repository: { getByTitle: async (title) => ({ ok: true, article: { ...preparedArticle,
+      identity: deterministicPromptCatalog.prompts.find((p) => p.start.title === title)!.start } }) },
+    onEvent: (_, event) => events.push(event),
   });
-  core.startDuel({ lobbyId: "lobby", actorId: "host", players });
+  core.startDuel({ lobbyId: "lobby", actorId: "host", players, timeLimitEnabled });
   const latest = () => {
     const event = events.at(-1)!;
     if (event.type !== "projections") throw new Error("Expected projections");
     return event.projections;
   };
   const activate = async () => {
-    const previous = events.at(-1);
-    if (previous?.type === "projections" && previous.projections[0]!.duel.phase === "post-round") {
-      const duel = previous.projections[0]!.duel;
-      for (const playerId of ["host", "opponent"]) {
-        core.readyForNextRound({ lobbyId: "lobby", duelId: duel.id, roundId: duel.round.id, playerId });
-      }
-    }
     await core.prepareRound("lobby");
     const duel = latest()[0]!.duel;
     const command = { lobbyId: "lobby", duelId: duel.id, roundId: duel.round.id, playerId: "host" };
@@ -43,278 +31,184 @@ async function activeRound() {
       core.acknowledgeRound({ ...command, playerId, kind: "received" });
       core.acknowledgeRound({ ...command, playerId, kind: "rendered" });
     }
-    vi.advanceTimersByTime(3000);
+    time += 3000;
+    timers.at(-1)!.callback();
     return command;
   };
   const command = await activate();
-  return { core, events, latest, activate, command };
+  return { core, events, timers, latest, activate, command, players, setTime: (value: number) => { time = value; } };
 }
 
-it("freezes authoritative routes, timing, damage and HP into the same public Round Outcome", async () => {
-  const { core, latest, command } = await activeRound();
-  const prompt = latest()[0]!.duel.round.prompt;
-  expect(latest()[0]!.duel.opponent).not.toHaveProperty("path");
-  expect(core.recordNavigation({ ...command, expectedClicks: 0, destination: prompt.target })).toBe(true);
-  expect(core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0,
-    destination: { pageId: 42, title: "Other article" } })).toBe(true);
-  vi.advanceTimersByTime(12_345);
-  const result = core.endRound({ ...command, cause: { type: "target-arrival" } });
-  expect(result).toMatchObject({ ok: true, outcome: {
-    roundId: command.roundId, roundNumber: 1, endReason: "target-arrival", winnerId: "host",
-    startsAt: 103_000, endedAt: 115_345, final: false,
-    players: [
-      { id: "host", path: [prompt.start, prompt.target], clicks: 1, activeElapsedMs: 12_345, hp: 100 },
-      { id: "opponent", path: [prompt.start, { pageId: 42, title: "Other article" }], clicks: 1, activeElapsedMs: 12_345, hp: 75 },
-    ],
-    damage: { winnerClicks: 1, loserClicks: 1, baseDamage: 25, clickDifferential: 0,
-      clickMultiplier: 3, multiplierContribution: 0, unclampedDamage: 25,
-      minimumDamage: 15, maximumDamage: 60, finalDamage: 25 },
-  } });
-  if (!result.ok) throw new Error("Expected Round Outcome");
-  for (const { duel } of latest()) {
-    expect(duel).toMatchObject({ phase: "post-round", outcome: result.outcome });
-    expect(decodeServerMessage({ type: "duel-state", duel, sentAt: "now" }).ok).toBe(true);
-  }
-});
-
-it("rejects duplicate arrivals, stale commands and late Navigation without changing the outcome", async () => {
-  const { core, latest, command, events } = await activeRound();
+it("freezes the first arrival and lets the later fewer-click route win", async () => {
+  const { core, latest, command, setTime } = await roundFixture();
   const target = latest()[0]!.duel.round.prompt.target;
-  expect(core.endRound({ ...command, cause: { type: "target-arrival" } }).ok).toBe(false);
-  expect(core.recordNavigation({ ...command, expectedClicks: 0, destination: target })).toBe(true);
-  expect(core.recordNavigation({ ...command, expectedClicks: 0, destination: target })).toBe(false);
-  for (const invalid of [{ roundId: "stale" }, { duelId: "stale" }, { playerId: "outsider" }]) {
-    expect(core.endRound({ ...command, ...invalid, cause: { type: "target-arrival" } }).ok).toBe(false);
-  }
-  const result = core.endRound({ ...command, cause: { type: "target-arrival" } });
-  if (!result.ok) throw new Error("Expected Round Outcome");
-  const saved = structuredClone(result.outcome);
-  const eventCount = events.length;
-  vi.advanceTimersByTime(1000);
-  expect(core.endRound({ ...command, cause: { type: "target-arrival" } }).ok).toBe(false);
-  expect(core.endRound({ ...command, playerId: "opponent", cause: { type: "target-arrival" } }).ok).toBe(false);
+  core.recordNavigation({ ...command, expectedClicks: 0, destination: { pageId: 42, title: "Detour" } });
+  setTime(104_000);
+  core.recordNavigation({ ...command, expectedClicks: 1, destination: target });
+  expect(latest()[0]!.duel).toMatchObject({ phase: "active", self: { arrived: true, arrivalElapsedMs: 1000, clicks: 2 } });
   expect(core.canNavigate(command)).toBe(false);
-  expect(core.recordNavigation({ ...command, expectedClicks: 1, destination: target })).toBe(false);
-  expect(events).toHaveLength(eventCount);
-  expect(result.outcome).toEqual(saved);
-  expect(() => Object.assign(result.outcome.players[0]!.path[0]!, { title: "Changed" })).toThrow();
-  expect(() => Object.assign(result.outcome.damage, { finalDamage: 999 })).toThrow();
-  expect(() => Object.assign(result.outcome.players[1]!, { hp: 999 })).toThrow();
-  expect(() => Object.assign(latest()[0]!.duel.self.path[0]!, { title: "Changed" })).toThrow();
+  expect(core.recordNavigation({ ...command, expectedClicks: 2, destination: target })).toBe(false);
+  expect(latest()[1]!.duel.opponent).toEqual({ id: "host", name: "host", role: "host", hp: 100, clicks: 2, connected: true, arrived: true });
+  setTime(106_000);
+  core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target });
+  expect(latest()[0]!.duel).toMatchObject({ phase: "post-round", outcome: {
+    winnerId: "opponent", winReason: "fewer-clicks", damage: { finalDamage: 28 },
+    players: [{ arrived: true, activeElapsedMs: 1000, hp: 72, hpLoss: 28 }, { arrived: true, activeElapsedMs: 3000, hp: 100, hpLoss: 0 }],
+  } });
 });
 
-it("preserves HP across Rounds, clamps at zero and retains the final Round Outcome", async () => {
-  const { core, latest, activate, command: firstCommand } = await activeRound();
-  let command = firstCommand;
-  const outcomes = [];
-  for (const expectedHp of [78, 56, 34, 12, 0]) {
-    const target = latest()[0]!.duel.round.prompt.target;
+
+it.each(["host", "opponent"])("uses acceptance order for equal clicks and identical timestamps, with %s first", async (first) => {
+  const { core, latest, command } = await roundFixture();
+  const target = latest()[0]!.duel.round.prompt.target;
+  const second = first === "host" ? "opponent" : "host";
+  core.recordNavigation({ ...command, playerId: first, expectedClicks: 0, destination: target });
+  core.recordNavigation({ ...command, playerId: second, expectedClicks: 0, destination: target });
+  expect(latest()[0]!.duel).toMatchObject({ outcome: { winnerId: first, winReason: "earlier-arrival", damage: { finalDamage: 25 } } });
+});
+
+it.each([false, true])("expires once at the deadline with one arrival = %s even when the callback is late", async (arrived) => {
+  const { core, latest, command, setTime, timers, events } = await roundFixture(true);
+  expect(latest()[0]!.duel).toMatchObject({ startsAt: 103_000, expiresAt: 403_000 });
+  const target = latest()[0]!.duel.round.prompt.target;
+  if (arrived) {
+    setTime(105_000);
     core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
-    vi.advanceTimersByTime(4000);
-    const result = core.endRound({ ...command, cause: { type: "target-arrival" } });
-    if (!result.ok) throw new Error("Expected Round Outcome");
-    outcomes.push(result.outcome);
-    expect(result.outcome.players.map((player) => player.hp)).toEqual([100, expectedHp]);
-    expect(result.outcome.damage.finalDamage).toBe(22);
-    expect(result.outcome.final).toBe(expectedHp === 0);
-    expect(result.outcome.players[0]!.activeElapsedMs).toBe(4000);
-    expect(latest()[0]!.duel.phase).toBe(expectedHp === 0 ? "completed" : "post-round");
-    if (expectedHp > 0) {
-      const old = command;
-      command = await activate();
-      expect(command.roundId).not.toBe(old.roundId);
-      expect(core.endRound({ ...old, cause: { type: "target-arrival" } }).ok).toBe(false);
-      expect(core.recordNavigation({ ...old, expectedClicks: 0, destination: target })).toBe(false);
-      expect(latest()[0]!.duel.self.clicks).toBe(0);
-      expect(latest()[0]!.duel.opponent.hp).toBe(expectedHp);
-    }
   }
-  await core.prepareRound("lobby");
-  expect(latest()[0]!.duel).toMatchObject({ phase: "completed", outcome: outcomes[4] });
-  expect(outcomes[0]!.players[1]!.hp).toBe(78);
-  expect(core.endRound({ ...command, cause: { type: "target-arrival" } }).ok).toBe(false);
-  expect(core.canNavigate(command)).toBe(false);
-  expect(core.readyForNextRound(command)).toBe(false);
-  expect(core.leaveDuel(command)).toEqual({ type: "lobby-closed" });
-  expect(core.hasActiveDuel("lobby")).toBe(false);
-  expect(outcomes[4]).toMatchObject({ winnerId: "host", final: true, players: [{ hp: 100 }, { hp: 0 }] });
-});
-
-it("cannot replace an active Round with preparation", async () => {
-  const { core, latest, command, events } = await activeRound();
+  setTime(410_000);
+  const timer = timers.at(-1)!;
+  timer.callback();
+  const state = latest()[0]!.duel;
+  expect(state).toMatchObject({ phase: "post-round", outcome: { endReason: "time-limit", endedAt: 403_000,
+    winnerId: arrived ? "host" : null, winReason: arrived ? "sole-arrival" : "neither-arrived",
+    damage: { finalDamage: arrived ? 60 : 0 }, players: [
+      { arrived, activeElapsedMs: arrived ? 2000 : 300_000, hp: 100, hpLoss: 0 },
+      { arrived: false, activeElapsedMs: 300_000, hp: arrived ? 40 : 100, hpLoss: arrived ? 60 : 0 },
+    ] } });
   const count = events.length;
-  await core.prepareRound("lobby");
+  timer.callback();
+  expect(core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target })).toBe(false);
   expect(events).toHaveLength(count);
-  expect(latest()[0]!.duel).toMatchObject({ phase: "active", round: { id: command.roundId } });
+  expect(timer.cancelled).toBe(true);
+  expect(latest()[0]!.duel).toEqual(state);
 });
 
-it("rejects outcomes before activation and accepts a due start even before its timer fires", async () => {
-  const { core, activate, latest, command } = await activeRound();
-  core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
-  core.endRound({ ...command, cause: { type: "target-arrival" } });
-  core.readyForNextRound(command);
-  core.readyForNextRound({ ...command, playerId: "opponent" });
-  await core.prepareRound("lobby");
-  const duel = latest()[0]!.duel;
-  const next = { ...command, roundId: duel.round.id };
-  expect(core.endRound({ ...next, cause: { type: "target-arrival" } }).ok).toBe(false);
-  expect(core.recordNavigation({ ...next, expectedClicks: 0, destination: duel.round.prompt.target })).toBe(false);
-  for (const playerId of ["host", "opponent"]) {
-    core.acknowledgeRound({ ...next, playerId, kind: "received" });
-    core.acknowledgeRound({ ...next, playerId, kind: "rendered" });
-  }
-  expect(core.endRound({ ...next, cause: { type: "target-arrival" } }).ok).toBe(false);
-  expect(core.recordNavigation({ ...next, expectedClicks: 0, destination: duel.round.prompt.target })).toBe(false);
-  vi.setSystemTime(106_000);
-  expect(core.recordNavigation({ ...next, expectedClicks: 0, destination: duel.round.prompt.target })).toBe(true);
-  expect(core.endRound({ ...next, cause: { type: "target-arrival" } })).toMatchObject({ ok: true, outcome: {
-    startsAt: 106_000, endedAt: 106_000,
+it.each([402_999, 403_000, 403_001])("checks acceptance at %i without relying on the scheduled callback", async (time) => {
+  const { core, latest, command, setTime } = await roundFixture(true);
+  const target = latest()[0]!.duel.round.prompt.target;
+  core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
+  setTime(time);
+  expect(core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target })).toBe(time < 403_000);
+  expect(latest()[0]!.duel).toMatchObject({ outcome: {
+    winReason: time < 403_000 ? "earlier-arrival" : "sole-arrival",
+    players: [{ clicks: 1 }, { clicks: time < 403_000 ? 1 : 0 }],
   } });
-  await activate();
-  expect(latest()[0]!.duel.phase).toBe("active");
 });
 
-it("requires distinct current-Round readiness before preparing again", async () => {
-  const { core, latest, command } = await activeRound();
-  expect(core.readyForNextRound(command)).toBe(false);
+it("has no deadline when disabled and still needs both arrivals after five minutes", async () => {
+  const { core, latest, command, setTime, timers } = await roundFixture();
+  expect(latest()[0]!.duel).toMatchObject({ expiresAt: null });
   core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
-  core.endRound({ ...command, cause: { type: "target-arrival" } });
-  const ended = latest()[0]!.duel;
-  await core.prepareRound("lobby");
-  expect(latest()[0]!.duel).toEqual(ended);
-  for (const invalid of [{ roundId: "stale" }, { duelId: "wrong" }, { playerId: "outsider" }]) {
-    expect(core.readyForNextRound({ ...command, ...invalid })).toBe(false);
-  }
-  expect(core.readyForNextRound(command)).toBe(true);
-  expect(core.readyForNextRound(command)).toBe(false);
-  await core.prepareRound("lobby");
-  expect(latest()[0]!.duel).toMatchObject({ phase: "post-round", readyPlayerIds: ["host"] });
-  expect(core.readyForNextRound({ ...command, playerId: "opponent" })).toBe(true);
-  await core.prepareRound("lobby");
-  expect(latest()[0]!.duel).toMatchObject({ phase: "preparing", round: { number: 2 }, self: { hp: 100 }, opponent: { hp: 78 } });
-  expect(latest()[0]!.duel.round.prompt.id).not.toBe(ended.round.prompt.id);
-  expect(core.readyForNextRound(command)).toBe(false);
+  setTime(900_000);
+  expect(core.canNavigate({ ...command, playerId: "opponent" })).toBe(true);
+  expect(latest()[0]!.duel.phase).toBe("active");
+  expect(timers.filter((timer) => timer.delay === 300_000)).toHaveLength(0);
 });
 
-
-it.each([0, 1])("continues independently after overkill or exact-zero completion with %s loser clicks", async (loserClicks) => {
-  const { core, latest, activate, events, command: first } = await activeRound();
+it.each([false, true])("plays to zero HP, retains final review and resets a Rematch with timer enabled = %s", async (timed) => {
+  const { core, latest, command: first, activate, timers, setTime, events } = await roundFixture(timed);
   let command = first;
-  expect(core.continueToPostDuel(command)).toBe(false);
-  const count = loserClicks ? 4 : 5;
-  for (let round = 1; round <= count; round++) {
+  let time = 103_000;
+  const outcomes = [];
+  const hps = timed ? [100, 40, 0] : [75, 50, 25, 0];
+  for (const [index, hp] of hps.entries()) {
     const target = latest()[0]!.duel.round.prompt.target;
-    core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
-    if (loserClicks) core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target });
-    core.endRound({ ...command, cause: { type: "target-arrival" } });
-    if (round < count) {
+    if (!timed || index > 0) core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
+    if (timed) { time += 300_000; setTime(time); timers.at(-1)!.callback(); }
+    else core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target });
+    const state = latest()[0]!.duel;
+    if (state.phase !== "post-round" && state.phase !== "completed") throw new Error("Expected outcome");
+    outcomes.push(state.outcome);
+    expect(state.outcome.players[1]!.hp).toBe(hp);
+    expect(state.outcome.final).toBe(hp === 0);
+    if (hp !== 0) {
       expect(core.continueToPostDuel(command)).toBe(false);
-      command = await activate();
+      expect(core.readyForNextRound({ ...command, roundId: "stale" })).toBe(false);
+      expect(core.readyForNextRound(command)).toBe(true);
+      expect(core.readyForNextRound(command)).toBe(false);
+      await core.prepareRound("lobby");
+      expect(latest()[0]!.duel.phase).toBe("post-round");
+      core.readyForNextRound({ ...command, playerId: "opponent" });
+      const old = command;
+      const oldTimers = [...timers];
+      command = await activate(); time += 3000;
+      const count = events.length;
+      oldTimers.forEach((timer) => timer.callback());
+      expect(events).toHaveLength(count);
+      expect(core.recordNavigation({ ...old, expectedClicks: 0, destination: target })).toBe(false);
+      expect(latest()[0]!.duel).toMatchObject({ self: { clicks: 0, arrived: false, arrivalElapsedMs: null } });
     }
   }
-  const final = latest()[1]!.duel;
-  expect(final).toMatchObject({ phase: "completed", outcome: { final: true } });
-  for (const invalid of [{ roundId: "stale" }, { duelId: "wrong" }, { playerId: "outsider" }]) {
-    expect(core.continueToPostDuel({ ...command, ...invalid })).toBe(false);
-  }
-  expect(core.continueToPostDuel(command)).toBe(true);
-  const summary = latest()[0]!.duel;
-  expect(summary).toMatchObject({ phase: "post-duel", summary: {
-    winnerId: "host", endReason: "hp-depleted",
-    players: [{ id: "host", hp: 100 }, { id: "opponent", hp: 0 }],
-    rounds: Array.from({ length: count }, (_, index) => ({ roundNumber: index + 1, winnerId: "host", damage: loserClicks ? 25 : 22 })),
-  } });
-  expect(latest()[1]!.duel).toEqual(final);
-  expect(decodeServerMessage({ type: "duel-state", duel: summary, sentAt: "now" }).ok).toBe(true);
-  const before = events.length;
-  expect(core.continueToPostDuel(command)).toBe(false);
+  if (timed) expect(outcomes.at(-1)!).toMatchObject({ damage: { finalDamage: 60 }, players: [{ hpLoss: 0 }, { hpLoss: 40 }] });
+  const finalReview = latest()[1]!.duel;
   expect(core.readyForNextRound(command)).toBe(false);
-  expect(core.acknowledgeRound({ ...command, kind: "rendered" })).toBe(false);
-  expect(core.recordNavigation({ ...command, expectedClicks: 1, destination: final.round.prompt.target })).toBe(false);
-  expect(await core.navigate({ ...command, requestId: "late", source: final.round.prompt.start,
-    expectedClicks: 1, destination: final.round.prompt.target })).toBe(false);
-  await core.prepareRound("lobby");
-  expect(events).toHaveLength(before);
-  expect(core.continueToPostDuel({ ...command, playerId: "opponent" })).toBe(true);
-  expect(latest()[0]!.duel).toEqual(summary);
-  expect(latest()[1]!.duel).toMatchObject({ phase: "post-duel", summary: summary.phase === "post-duel" ? summary.summary : null });
-});
-
-
-async function completedDuel() {
-  const fixture = await activeRound();
-  let command = fixture.command;
-  for (let round = 1; round <= 5; round++) {
-    fixture.core.recordNavigation({ ...command, expectedClicks: 0, destination: fixture.latest()[0]!.duel.round.prompt.target });
-    fixture.core.endRound({ ...command, cause: { type: "target-arrival" } });
-    if (round < 5) command = await fixture.activate();
-  }
-  return { ...fixture, command };
-}
-
-it("requires two Post-Duel requests for one fresh Duel and retains Prompt history", async () => {
-  const { core, latest, command, activate } = await completedDuel();
   expect(core.requestRematch(command)).toBe(false);
   core.continueToPostDuel(command);
+  expect(core.continueToPostDuel(command)).toBe(false);
+  expect(latest()[1]!.duel).toEqual(finalReview);
+  const summary = latest()[0]!.duel;
+  expect(summary).toMatchObject({ phase: "post-duel", summary: { winnerId: "host", players: [{ hp: 100 }, { hp: 0 }] } });
+  if (timed) expect(summary).toMatchObject({ summary: { rounds: [{ winnerId: null, damage: 0, winReason: "neither-arrived" },
+    { winnerId: "host", damage: 60, winReason: "sole-arrival" }, { winnerId: "host", damage: 60, winReason: "sole-arrival" }] } });
   const history = core.getLobbyPromptHistory("lobby");
-  expect(core.requestRematch(command)).toBe(true);
-  expect(latest()[0]!.duel).toMatchObject({ id: command.duelId, phase: "post-duel", rematchPlayerIds: ["host"] });
-  expect(core.requestRematch(command)).toBe(false);
+  core.requestRematch(command);
   expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(false);
-  for (const invalid of [{ roundId: "stale" }, { duelId: "stale" }, { playerId: "outsider" }]) {
-    expect(core.requestRematch({ ...command, ...invalid })).toBe(false);
-  }
   core.continueToPostDuel({ ...command, playerId: "opponent" });
-  expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(true);
+  const oldTimers = [...timers];
+  core.requestRematch({ ...command, playerId: "opponent" });
   const rematch = latest()[0]!.duel;
   expect(rematch.id).not.toBe(command.duelId);
-  expect(rematch).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100, clicks: 0 }, opponent: { hp: 100, clicks: 0 } });
-  expect(rematch).not.toHaveProperty("outcome");
-  expect(core.getLobbyPromptHistory("lobby").usedPromptIds).toEqual([...history.usedPromptIds, rematch.round.prompt.id]);
-  expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(false);
-  expect(core.backToLobby(command)).toBe(false);
+  expect(rematch).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100, clicks: 0, arrived: false }, opponent: { hp: 100 } });
+  expect(core.getLobbyPromptHistory("lobby").usedPromptIds).toEqual(timed ? ["fixture-first"] : [...history.usedPromptIds, rematch.round.prompt.id]);
   await activate();
-  expect(latest()[0]!.duel).toMatchObject({ id: rematch.id, phase: "active", round: { number: 1 } });
+  const count = events.length;
+  oldTimers.forEach((timer) => timer.callback());
+  expect(events).toHaveLength(count);
+  expect(latest()[0]!.duel).toMatchObject({ expiresAt: timed ? time + 303_000 : null });
 });
 
-it.each(["host", "opponent"])("lets %s return both players while retaining history and clearing intent", async (playerId) => {
-  const { core, command, latest } = await completedDuel();
-  expect(core.backToLobby({ ...command, playerId })).toBe(false);
-  core.continueToPostDuel({ ...command, playerId });
-  core.requestRematch({ ...command, playerId });
-  const history = core.getLobbyPromptHistory("lobby");
-  for (const invalid of [{ roundId: "stale" }, { duelId: "stale" }, { playerId: "outsider" }]) {
-    expect(core.backToLobby({ ...command, playerId, ...invalid })).toBe(false);
-  }
-  expect(core.backToLobby({ ...command, playerId })).toBe(true);
+it.each(["leave", "disconnect", "disband", "dispose"])("invalidates timers and waiting routes on %s", async (action) => {
+  const { core, latest, command, timers, events, setTime } = await roundFixture(true);
+  core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
+  if (action === "leave") expect(core.leaveDuel(command)).toMatchObject({ type: "duel-forfeited", winnerId: "opponent" });
+  else if (action === "disconnect") expect(core.disconnectPlayer(command)).toMatchObject({ winnerId: "opponent" });
+  else if (action === "disband") core.disbandLobby("lobby");
+  else core.dispose();
+  const count = events.length;
+  setTime(500_000); timers.forEach((timer) => timer.callback());
+  expect(events).toHaveLength(count);
+  expect(core.canNavigate(command)).toBe(false);
   expect(core.hasActiveDuel("lobby")).toBe(false);
-  expect(core.getLobbyPromptHistory("lobby")).toEqual(history);
-  expect(core.requestRematch(command)).toBe(false);
-  expect(core.backToLobby({ ...command, playerId })).toBe(false);
-  expect(core.startDuel({ lobbyId: "lobby", actorId: "host", players }).ok).toBe(true);
-  await core.prepareRound("lobby");
-  expect(latest()[0]!.duel).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100 }, opponent: { hp: 100 } });
-  expect(latest()[0]!.duel).not.toHaveProperty("rematchPlayerIds");
-});
-
-it.each(["forfeit", "interruption"])("never continues a %s into normal Post-Duel", async (reason) => {
-  const { core, command, latest, events } = await activeRound();
-  if (reason === "forfeit") {
-    expect(core.disconnectPlayer({ lobbyId: "lobby", playerId: "host" })).toMatchObject({ winnerId: "opponent" });
-  } else {
-    core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
-    core.endRound({ ...command, cause: { type: "target-arrival" } });
-    core.readyForNextRound(command);
-    core.readyForNextRound({ ...command, playerId: "opponent" });
-    await core.prepareRound("lobby");
-    const next = { ...command, roundId: latest()[0]!.duel.round.id };
-    for (const playerId of ["host", "opponent"]) core.acknowledgeRound({ ...next, playerId, kind: "received" });
-    vi.advanceTimersByTime(30_000);
-    expect(events.at(-1)).toMatchObject({ type: "interruption" });
-    expect(core.continueToPostDuel(next)).toBe(false);
-  }
-  const before = events.length;
   expect(core.continueToPostDuel(command)).toBe(false);
-  expect(core.hasActiveDuel("lobby")).toBe(false);
-  expect(events).toHaveLength(before);
+});
+
+it("publishes an immutable outcome and rejects duplicate or stale Navigation", async () => {
+  const { core, latest, command, events } = await roundFixture();
+  const target = latest()[0]!.duel.round.prompt.target;
+  for (const invalid of [{ playerId: "outsider" }, { roundId: "stale" }, { duelId: "stale" }]) {
+    expect(core.recordNavigation({ ...command, ...invalid, expectedClicks: 0, destination: target })).toBe(false);
+  }
+  core.recordNavigation({ ...command, expectedClicks: 0, destination: target });
+  core.recordNavigation({ ...command, playerId: "opponent", expectedClicks: 0, destination: target });
+  const duel = latest()[0]!.duel;
+  if (duel.phase !== "post-round") throw new Error("Expected outcome");
+  const saved = structuredClone(duel.outcome);
+  const count = events.length;
+  expect(core.recordNavigation({ ...command, expectedClicks: 1, destination: target })).toBe(false);
+  expect(core.canNavigate(command)).toBe(false);
+  expect(events).toHaveLength(count);
+  expect(() => Object.assign(duel.outcome.players[0]!.path[0]!, { title: "Changed" })).toThrow();
+  expect(() => Object.assign(duel.outcome.damage, { finalDamage: 999 })).toThrow();
+  expect(() => Object.assign(duel.outcome.players[1]!, { hp: 999 })).toThrow();
+  expect(duel.outcome).toEqual(saved);
 });

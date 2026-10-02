@@ -46,7 +46,7 @@ describe("Duel core", () => {
                 target: { pageId: 1002, title: "Fixture Target One" },
               },
             },
-            self: {
+            self: { arrived: false, arrivalElapsedMs: null,
               id: "host-id",
               name: "host",
               role: "host",
@@ -54,7 +54,7 @@ describe("Duel core", () => {
               path: [{ pageId: 1001, title: "Fixture Start One" }],
               clicks: 0,
             },
-            opponent: {
+            opponent: { arrived: false,
               clicks: 0, connected: true,
               id: "opponent-id",
               name: "Opponent",
@@ -78,7 +78,7 @@ describe("Duel core", () => {
                 target: { pageId: 1002, title: "Fixture Target One" },
               },
             },
-            self: {
+            self: { arrived: false, arrivalElapsedMs: null,
               id: "opponent-id",
               name: "Opponent",
               role: "opponent",
@@ -86,7 +86,7 @@ describe("Duel core", () => {
               path: [{ pageId: 1001, title: "Fixture Start One" }],
               clicks: 0,
             },
-            opponent: {
+            opponent: { arrived: false,
               clicks: 0, connected: true,
               id: "host-id",
               name: "host",

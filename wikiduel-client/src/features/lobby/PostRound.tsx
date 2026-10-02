@@ -1,6 +1,7 @@
 import type { DuelProjection } from '@wikiduel/contracts'
 import { Button } from '../../components/ui/Button'
 import { useLobby } from './lobbyContext'
+import { outcomeExplanation } from './outcomeExplanation'
 
 type EndedDuel = Extract<DuelProjection, { phase: 'post-round' | 'completed' }>
 
@@ -8,20 +9,21 @@ export function PostRound({ duel }: { duel: EndedDuel }) {
   const { readyForNextRound, readyPending, continueToPostDuel, continuePending, status } = useLobby()
   const { outcome } = duel
   const identities = [duel.self, duel.opponent]
-  const winner = identities.find((player) => player.id === outcome.winnerId)!
+  const winner = identities.find((player) => player.id === outcome.winnerId)
   const ready = duel.readyPlayerIds.includes(duel.self.id)
   const damage = outcome.damage
-  const breakdown = [
+  const breakdown = damage.kind === 'completed-routes' ? [
     ['Winner clicks', damage.winnerClicks], ['Loser clicks', damage.loserClicks],
     ['Base damage', damage.baseDamage], ['Click differential', damage.clickDifferential],
     ['Click multiplier', damage.clickMultiplier], ['Multiplier contribution', damage.multiplierContribution],
     ['Unclamped damage', damage.unclampedDamage], ['Minimum damage', damage.minimumDamage],
     ['Maximum damage', damage.maximumDamage], ['Final damage', damage.finalDamage],
-  ] as const
+  ] as const : [['Final damage', damage.finalDamage]] as const
 
   return <section className="space-y-6 px-6 py-5" aria-label="Post-Round">
     <div>
-      <h2 className="font-display text-xl font-extrabold">{winner.name} won the Round</h2>
+      <h2 className="font-display text-xl font-extrabold">{winner ? `${winner.name} won the Round` : 'Round drawn'}</h2>
+      <p>{outcomeExplanation[outcome.winReason]}</p>
       <p>Start: {duel.round.prompt.start.title}</p>
       <p>Target: {duel.round.prompt.target.title}</p>
       {outcome.final && <p>The Duel is complete. Compare the final routes below.</p>}
@@ -31,8 +33,10 @@ export function PostRound({ duel }: { duel: EndedDuel }) {
         const identity = identities.find((entry) => entry.id === player.id)!
         return <article key={player.id} aria-label={`${identity.name} Round Outcome`} className="min-w-0 rounded-control border border-line p-4">
           <h3 className="font-display font-bold">{identity.name}{player.id === duel.self.id ? ' · You' : ''}</h3>
-          <p>{player.clicks} clicks · {(player.activeElapsedMs / 1000).toFixed(3)} s</p>
+          <p>{player.arrived ? 'Target reached' : 'Did not reach target'}</p>
+          <p>{player.clicks} clicks · {player.arrived ? 'Arrival time' : 'Elapsed at expiry'}: {(player.activeElapsedMs / 1000).toFixed(3)} s</p>
           <p className="font-display text-lg">{player.hp} HP</p>
+          <p>{player.hpLoss} HP lost</p>
           <ol aria-label={`${identity.name} frozen path`} className="list-inside list-decimal space-y-2 break-words">
             {player.path.map((article, index) => <li key={index}>{article.title}</li>)}
           </ol>
