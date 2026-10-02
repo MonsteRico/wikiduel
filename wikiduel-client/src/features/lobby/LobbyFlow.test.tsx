@@ -78,6 +78,56 @@ afterEach(() => {
 })
 
 describe('Lobby client', () => {
+  it.each(['rematch', 'back', 'opponent-back'])('handles Post-Duel intent and the authoritative %s transition', (choice) => {
+    const socket = renderApp('/lobby/7G8KZ')
+    act(() => socket.open())
+    const clientId = sentClientId(socket)
+    const lobby: Lobby = { ...hostLobby(clientId), members: [...hostLobby(clientId).members,
+      { id: 'opponent', name: 'Opponent', role: 'opponent', connected: true, ready: false }] }
+    act(() => socket.receive({ type: 'lobby-state', lobby }))
+    const prepared = preparedDuel(clientId)
+    const duel: Extract<DuelProjection, { phase: 'post-duel' }> = {
+      ...prepared, phase: 'post-duel', startsAt: 99_000, rematchPlayerIds: [],
+      round: { ...prepared.round, article: roundArticle },
+      summary: { winnerId: clientId, endReason: 'hp-depleted',
+        players: [{ id: clientId, name: 'Host', role: 'host', hp: 100 },
+          { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 0 }],
+        rounds: [{ roundId: 'round-1', roundNumber: 1, winnerId: clientId, damage: 60 }],
+      },
+    }
+    act(() => socket.receive({ type: 'duel-state', duel }))
+    const rematch = screen.getByRole('button', { name: 'Rematch' })
+    act(() => { rematch.click(); rematch.click() })
+    expect(rematch).toBeDisabled()
+    expect(sentMessages(socket).filter((message) => message.type === 'request-rematch')).toEqual([
+      { type: 'request-rematch', duelId: 'duel-1', roundId: 'round-1' },
+    ])
+    expect(screen.getByLabelText('Post-Duel')).toBeVisible()
+    act(() => socket.receive({ type: 'command-rejected', command: 'request-rematch', reason: 'invalid-state' }))
+    expect(rematch).toBeEnabled()
+    act(() => rematch.click())
+    act(() => socket.receive({ type: 'duel-state', duel: { ...duel, rematchPlayerIds: [clientId] } }))
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting for Opponent')
+    expect(rematch).toBeDisabled()
+    if (choice === 'rematch') {
+      act(() => socket.receive({ type: 'duel-state', duel: { ...prepared, id: 'duel-2', round: { ...prepared.round, id: 'round-2' } } }))
+      expect(screen.getByRole('heading', { name: 'Preparing the duel' })).toBeVisible()
+      expect(screen.getByLabelText('Your status')).toHaveTextContent('100 HP')
+      expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+    } else {
+      if (choice === 'back') {
+        const back = screen.getByRole('button', { name: 'Back to Lobby' })
+        act(() => { back.click(); back.click() })
+        expect(sentMessages(socket).filter((message) => message.type === 'back-to-lobby')).toHaveLength(1)
+        expect(screen.getByLabelText('Post-Duel')).toBeVisible()
+      }
+      act(() => socket.receive({ type: 'lobby-state', lobby }))
+      expect(screen.getByRole('heading', { name: 'Waiting for the duel' })).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Start duel' })).toBeDisabled()
+      expect(screen.queryByLabelText('Post-Duel')).not.toBeInTheDocument()
+      expect(sentMessages(socket).filter((message) => message.type === 'join-lobby')).toHaveLength(1)
+    }
+  })
   it('locks Navigation until its result and displays only authoritative route and opponent status', () => {
     const socket = renderApp('/lobby/7G8KZ')
     act(() => socket.open())
@@ -161,7 +211,7 @@ describe('Lobby client', () => {
       expect(proceed).toBeEnabled()
       act(() => proceed.click())
       act(() => socket.receive({ type: 'duel-state', duel: {
-        ...duel, phase: 'post-duel', startsAt: 99_000, round: { ...duel.round, article: roundArticle },
+        ...duel, phase: 'post-duel', rematchPlayerIds: [], startsAt: 99_000, round: { ...duel.round, article: roundArticle },
         summary: { winnerId: 'opponent', endReason: 'hp-depleted',
           players: [{ id: duel.self.id, name: 'Host', role: 'host', hp: 0 },
             { id: 'opponent', name: 'Opponent', role: 'opponent', hp: 56 }],

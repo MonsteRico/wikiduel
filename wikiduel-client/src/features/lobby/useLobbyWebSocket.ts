@@ -17,6 +17,10 @@ export function useLobbyWebSocket() {
   const [readyPending, setReadyPending] = useState<string | null>(null)
   const continueRequest = useRef<string | null>(null)
   const [continuePending, setContinuePending] = useState<string | null>(null)
+  const rematchRequest = useRef<string | null>(null)
+  const [rematchPending, setRematchPending] = useState<string | null>(null)
+  const backRequest = useRef<string | null>(null)
+  const [backPending, setBackPending] = useState<string | null>(null)
   const serverClock = useRef({ serverNow: 0, receivedAt: 0 })
   const receivedRounds = useRef(new Set<string>())
   const renderedRounds = useRef(new Set<string>())
@@ -31,6 +35,17 @@ export function useLobbyWebSocket() {
   useEffect(() => {
     const unsubscribeLobbyState = webSocket.subscribe('lobby-state', (message) => {
       setLobby(message.lobby)
+      setDuel(null)
+      rematchRequest.current = null
+      setRematchPending(null)
+      backRequest.current = null
+      setBackPending(null)
+      continueRequest.current = null
+      setContinuePending(null)
+      readyRequest.current = null
+      setReadyPending(null)
+      receivedRounds.current.clear()
+      renderedRounds.current.clear()
       setError(null)
     })
     const unsubscribeLobbyError = webSocket.subscribe('lobby-error', (message) => {
@@ -59,6 +74,14 @@ export function useLobbyWebSocket() {
       setError(null)
     })
     const unsubscribeCommandRejected = webSocket.subscribe('command-rejected', (message) => {
+      if (message.command === 'request-rematch') {
+        rematchRequest.current = null
+        setRematchPending(null)
+      }
+      if (message.command === 'back-to-lobby') {
+        backRequest.current = null
+        setBackPending(null)
+      }
       if (message.command === 'continue-post-duel') {
         continueRequest.current = null
         setContinuePending(null)
@@ -151,6 +174,21 @@ export function useLobbyWebSocket() {
   const leaveDuel = useCallback(() => {
     if (duel) webSocket.send({ type: 'leave-duel', duelId: duel.id })
   }, [duel, webSocket])
+  const requestRematch = useCallback(() => {
+    if (!duel || duel.phase !== 'post-duel' || duel.rematchPlayerIds.includes(duel.self.id)
+      || rematchRequest.current === duel.id || backRequest.current === duel.id) return
+    if (webSocket.send({ type: 'request-rematch', duelId: duel.id, roundId: duel.round.id })) {
+      rematchRequest.current = duel.id
+      setRematchPending(duel.id)
+    }
+  }, [duel, webSocket])
+  const backToLobby = useCallback(() => {
+    if (!duel || duel.phase !== 'post-duel' || backRequest.current === duel.id) return
+    if (webSocket.send({ type: 'back-to-lobby', duelId: duel.id, roundId: duel.round.id })) {
+      backRequest.current = duel.id
+      setBackPending(duel.id)
+    }
+  }, [duel, webSocket])
   const acknowledgeRendered = useCallback((duelId: string, roundId: string) => {
     if (renderedRounds.current.has(roundId)) return
     renderedRounds.current.add(roundId)
@@ -194,5 +232,9 @@ export function useLobbyWebSocket() {
     continueToPostDuel,
     continuePending: continuePending === duel?.id,
     leaveDuel,
+    requestRematch,
+    rematchPending: rematchPending === duel?.id,
+    backToLobby,
+    backPending: backPending === duel?.id,
   }
 }

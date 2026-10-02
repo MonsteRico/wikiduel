@@ -322,6 +322,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           return;
         }
 
+        if (message.type === "request-rematch" || message.type === "back-to-lobby") {
+          const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
+          const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;
+          const command = member && lobby ? { ...message, lobbyId: lobby.code, playerId: member.id } : undefined;
+          const accepted = member?.socket === socket && command && (message.type === "request-rematch"
+            ? duelCore?.requestRematch(command) : duelCore?.backToLobby(command));
+          if (!accepted) sendCommandRejection(socket, message.type, "invalid-state");
+          else if (message.type === "back-to-lobby") {
+            for (const player of lobby!.members.values()) player.ready = false;
+            broadcastLobby(lobby!);
+          } else await duelCore!.prepareRound(lobby!.code);
+          return;
+        }
+
         if (message.type === "ready-next-round" || message.type === "continue-post-duel") {
           const lobby = session.lobbyCode ? lobbies.get(session.lobbyCode) : undefined;
           const member = session.memberId ? lobby?.members.get(session.memberId) : undefined;

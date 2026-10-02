@@ -317,11 +317,17 @@ it("decodes scoped readiness, continuation and departure commands without client
   for (const command of [
     { type: "ready-next-round", duelId: "duel-1", roundId: "round-1" },
     { type: "continue-post-duel", duelId: "duel-1", roundId: "round-1" },
+    { type: "request-rematch", duelId: "duel-1", roundId: "round-1" },
+    { type: "back-to-lobby", duelId: "duel-1", roundId: "round-1" },
     { type: "leave-duel", duelId: "duel-1" },
   ]) {
     expect(decodeClientMessage(command)).toEqual({ ok: true, message: command });
     expect(decodeClientMessage({ ...command, duelId: "" }).ok).toBe(false);
     expect(decodeClientMessage({ ...command, playerId: "opponent" }).ok).toBe(false);
+    if ('roundId' in command) {
+      expect(decodeClientMessage({ ...command, roundId: "" }).ok).toBe(false);
+      expect(decodeClientMessage({ ...command, roundId: undefined }).ok).toBe(false);
+    }
   }
   expect(decodeClientMessage({ type: "ready-next-round", duelId: "duel-1" }).ok).toBe(false);
   expect(decodeClientMessage({ type: "ready-next-round", duelId: "duel-1", roundId: "round-1", ready: false }).ok).toBe(false);
@@ -351,6 +357,10 @@ it("decodes only strict Round Outcomes in ended projections", () => {
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
   expect(decode(duel).ok).toBe(true);
+  expect(decode({ ...duel, rematchPlayerIds: ["host"] }).ok).toBe(true);
+  for (const rematchPlayerIds of [undefined, [""], [1], ["host", "opponent", "third"], "host"]) {
+    expect(decode({ ...duel, rematchPlayerIds }).ok).toBe(false);
+  }
   expect(decode({ ...duel, phase: "completed", outcome: { ...outcome, final: true } }).ok).toBe(true);
   for (const invalid of [
     undefined,
@@ -374,7 +384,7 @@ it("decodes only strict normal Post-Duel summaries and scoped continuation", () 
     { id: "opponent", name: "Opponent", role: "opponent", hp: 0 }];
   const summary = { winnerId: "host", endReason: "hp-depleted", players,
     rounds: [{ roundId: "round-5", roundNumber: 5, winnerId: "host", damage: 22 }] };
-  const duel = { id: "duel-1", phase: "post-duel", serverNow: 5000, startsAt: 1000,
+  const duel = { id: "duel-1", phase: "post-duel", rematchPlayerIds: [], serverNow: 5000, startsAt: 1000,
     round: { id: "round-5", number: 5, article, prompt: {
       id: "prompt-1", start: article.identity, target: { pageId: 99, title: "Target" },
     } },

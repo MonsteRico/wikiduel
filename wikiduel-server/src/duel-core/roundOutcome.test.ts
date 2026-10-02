@@ -241,6 +241,62 @@ it.each([0, 1])("continues independently after overkill or exact-zero completion
 });
 
 
+async function completedDuel() {
+  const fixture = await activeRound();
+  let command = fixture.command;
+  for (let round = 1; round <= 5; round++) {
+    fixture.core.recordNavigation({ ...command, expectedClicks: 0, destination: fixture.latest()[0]!.duel.round.prompt.target });
+    fixture.core.endRound({ ...command, cause: { type: "target-arrival" } });
+    if (round < 5) command = await fixture.activate();
+  }
+  return { ...fixture, command };
+}
+
+it("requires two Post-Duel requests for one fresh Duel and retains Prompt history", async () => {
+  const { core, latest, command, activate } = await completedDuel();
+  expect(core.requestRematch(command)).toBe(false);
+  core.continueToPostDuel(command);
+  const history = core.getLobbyPromptHistory("lobby");
+  expect(core.requestRematch(command)).toBe(true);
+  expect(latest()[0]!.duel).toMatchObject({ id: command.duelId, phase: "post-duel", rematchPlayerIds: ["host"] });
+  expect(core.requestRematch(command)).toBe(false);
+  expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(false);
+  for (const invalid of [{ roundId: "stale" }, { duelId: "stale" }, { playerId: "outsider" }]) {
+    expect(core.requestRematch({ ...command, ...invalid })).toBe(false);
+  }
+  core.continueToPostDuel({ ...command, playerId: "opponent" });
+  expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(true);
+  const rematch = latest()[0]!.duel;
+  expect(rematch.id).not.toBe(command.duelId);
+  expect(rematch).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100, clicks: 0 }, opponent: { hp: 100, clicks: 0 } });
+  expect(rematch).not.toHaveProperty("outcome");
+  expect(core.getLobbyPromptHistory("lobby").usedPromptIds).toEqual([...history.usedPromptIds, rematch.round.prompt.id]);
+  expect(core.requestRematch({ ...command, playerId: "opponent" })).toBe(false);
+  expect(core.backToLobby(command)).toBe(false);
+  await activate();
+  expect(latest()[0]!.duel).toMatchObject({ id: rematch.id, phase: "active", round: { number: 1 } });
+});
+
+it.each(["host", "opponent"])("lets %s return both players while retaining history and clearing intent", async (playerId) => {
+  const { core, command, latest } = await completedDuel();
+  expect(core.backToLobby({ ...command, playerId })).toBe(false);
+  core.continueToPostDuel({ ...command, playerId });
+  core.requestRematch({ ...command, playerId });
+  const history = core.getLobbyPromptHistory("lobby");
+  for (const invalid of [{ roundId: "stale" }, { duelId: "stale" }, { playerId: "outsider" }]) {
+    expect(core.backToLobby({ ...command, playerId, ...invalid })).toBe(false);
+  }
+  expect(core.backToLobby({ ...command, playerId })).toBe(true);
+  expect(core.hasActiveDuel("lobby")).toBe(false);
+  expect(core.getLobbyPromptHistory("lobby")).toEqual(history);
+  expect(core.requestRematch(command)).toBe(false);
+  expect(core.backToLobby({ ...command, playerId })).toBe(false);
+  expect(core.startDuel({ lobbyId: "lobby", actorId: "host", players }).ok).toBe(true);
+  await core.prepareRound("lobby");
+  expect(latest()[0]!.duel).toMatchObject({ phase: "preparing", round: { number: 1 }, self: { hp: 100 }, opponent: { hp: 100 } });
+  expect(latest()[0]!.duel).not.toHaveProperty("rematchPlayerIds");
+});
+
 it.each(["forfeit", "interruption"])("never continues a %s into normal Post-Duel", async (reason) => {
   const { core, command, latest, events } = await activeRound();
   if (reason === "forfeit") {

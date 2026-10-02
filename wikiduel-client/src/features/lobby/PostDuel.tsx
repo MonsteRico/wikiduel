@@ -1,9 +1,14 @@
 import type { DuelProjection } from '@wikiduel/contracts'
+import { Button } from '../../components/ui/Button'
+import { useLobby } from './lobbyContext'
 
 type PostDuelProjection = Extract<DuelProjection, { phase: 'post-duel' }>
 
 export function PostDuel({ duel }: { duel: PostDuelProjection }) {
+  const { requestRematch, rematchPending, backToLobby, backPending, status } = useLobby()
   const { summary } = duel
+  const requested = duel.rematchPlayerIds.includes(duel.self.id)
+  const opponentRequested = duel.rematchPlayerIds.includes(duel.opponent.id)
   const name = (id: string) => summary.players.find((player) => player.id === id)!.name
 
   return <section aria-label="Post-Duel" className="space-y-6 px-6 py-5">
@@ -23,6 +28,14 @@ export function PostDuel({ duel }: { duel: PostDuelProjection }) {
           Round {round.roundNumber}: {name(round.winnerId)} dealt {round.damage} damage
         </li>)}
       </ol>
+    </div>
+    <div className="space-y-3">
+      <p role="status">{requested ? `Waiting for ${duel.opponent.name} to request a Rematch.`
+        : opponentRequested ? `${duel.opponent.name} wants a Rematch.` : 'Both players must request a Rematch to play again.'}</p>
+      <div className="flex flex-wrap gap-3">
+        <Button disabled={status !== 'connected' || requested || rematchPending || backPending} onClick={requestRematch}>Rematch</Button>
+        <Button variant="secondary" disabled={status !== 'connected' || backPending} onClick={backToLobby}>Back to Lobby</Button>
+      </div>
     </div>
   </section>
 }

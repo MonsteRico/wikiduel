@@ -120,6 +120,7 @@ type DuelState = {
   outcome?: RoundOutcome;
   outcomes: RoundOutcome[];
   continued: Set<string>;
+  rematch: Set<string>;
   roundId: string;
   roundNumber: number;
   article?: PlayableArticle;
@@ -187,6 +188,7 @@ function projectDuel(
   if (duel.phase === "completed" && duel.continued.has(self.id)) {
     const identity = (player: DuelPlayerState) => ({ id: player.id, name: player.name, role: player.role, hp: player.hp });
     return { ...projection, phase: "post-duel", startsAt: duel.startsAt!,
+      rematchPlayerIds: [...duel.rematch],
       round: { ...projection.round, article: article! },
       summary: {
         winnerId: duel.outcome!.winnerId, endReason: "hp-depleted",
@@ -279,7 +281,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
         phase: "preparing",
         roundId: randomUUID(), roundNumber: 1, loading: false,
         received: new Set(), rendered: new Set(), ready: new Set(),
-        outcomes: [], continued: new Set(),
+        outcomes: [], continued: new Set(), rematch: new Set(),
         prompt: selection.prompt,
         players,
       };
@@ -343,6 +345,31 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       if (!duel || duel.phase !== "completed" || duel.continued.has(command.playerId)) return false;
       duel.continued.add(command.playerId);
       publish(command.lobbyId, duel);
+      return true;
+    },
+
+    requestRematch(command: RoundCommand): boolean {
+      const duel = currentRound(command);
+      if (!duel || duel.phase !== "completed" || !duel.continued.has(command.playerId)
+        || duel.rematch.has(command.playerId)) return false;
+      duel.rematch.add(command.playerId);
+      if (duel.rematch.size === 2) {
+        duel.cancelTimer?.();
+        duels.delete(command.lobbyId);
+        const result = this.startDuel({ lobbyId: command.lobbyId,
+          actorId: duel.players.find((player) => player.role === "host")!.id,
+          players: duel.players.map((player) => ({ ...player, connected: true, ready: true })),
+        });
+        if (result.ok) options.onEvent?.(command.lobbyId, { type: "projections", projections: result.projections });
+      } else publish(command.lobbyId, duel);
+      return true;
+    },
+
+    backToLobby(command: RoundCommand): boolean {
+      const duel = currentRound(command);
+      if (!duel || duel.phase !== "completed" || !duel.continued.has(command.playerId)) return false;
+      duel.cancelTimer?.();
+      duels.delete(command.lobbyId);
       return true;
     },
 
