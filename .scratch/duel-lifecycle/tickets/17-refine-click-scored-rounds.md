@@ -1,8 +1,9 @@
 # Refine click-scored rounds where both players finish
 
-Status: needs-triage
+Status: completed
 Scope: MVP required
 Category: planning
+Completed: 2026-10-02 04:50 PM on `codex/17-refine-click-scored-rounds`
 
 ## Priority and outcome
 
@@ -56,11 +57,11 @@ The maintainer confirmed the consolidated rules and single-ticket breakdown. [Im
 
 ## Planning acceptance criteria
 
-- [ ] The maintainer confirms a complete outcome and damage decision table.
-- [ ] Timer settings, persistence, expiry ordering, waiting behavior, and information privacy are explicit.
-- [ ] Update MVP and Duel Lifecycle specs and review domain terminology and shared contracts for required changes.
-- [ ] Reconcile tickets 11, 13, 15, and 16 with the new rules so conflicting implementation instructions do not remain active.
-- [ ] Create linked implementation tickets with dependencies, acceptance criteria, and regression/manual validation covering later Rounds and Rematches. Include the timer work.
+- [x] The maintainer confirms a complete outcome and damage decision table.
+- [x] Timer settings, persistence, expiry ordering, waiting behavior, and information privacy are explicit.
+- [x] Update MVP and Duel Lifecycle specs and review domain terminology and shared contracts for required changes.
+- [x] Reconcile tickets 11, 13, 15, and 16 with the new rules so conflicting implementation instructions do not remain active.
+- [x] Create linked implementation tickets with dependencies, acceptance criteria, and regression/manual validation covering later Rounds and Rematches. Include the timer work.
 
 ## Out of scope
 
@@ -71,3 +72,4 @@ The maintainer confirmed the consolidated rules and single-ticket breakdown. [Im
 ## Comments
 
 - 2026-10-02: Maintainer made this an MVP requirement and the next gameplay task after deployment setup. Completed tickets remain historical records of the previous first-arrival-wins implementation. Specifications will be reconciled during grilling before implementation.
+- 2026-10-02: Planning complete after maintainer confirmation. Updated both specs, glossary, backlogs, and tickets 11, 13, 15, and 16; created implementation ticket 18. Standards and Spec reviews found no issues. Local Markdown links resolve and `git diff --check` passes. No runtime code changed, so application tests/build/lint were not run for this planning change. Ticket 18 owns those checks and the pending gameplay implementation.

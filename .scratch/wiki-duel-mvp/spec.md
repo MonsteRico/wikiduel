@@ -309,7 +309,7 @@ The following sequence records the original implementation plan. Completed ticke
 8. [`playable-articles/09`](../playable-articles/tickets/09-add-repository-caching-and-resilience.md) — make article retrieval bounded, coalesced, and process-cached.
 9. [`playable-articles/10`](../playable-articles/tickets/10-render-typed-article-documents.md) — render typed Article Documents through production React components.
 10. [`playable-articles/11`](../playable-articles/tickets/11-deliver-playable-article-lab.md) — deliver the development-only end-to-end acceptance surface.
-11. [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the Zod-validated client/server contract seam; this is the next task.
+11. [`shared-contracts/01`](../shared-contracts/tickets/01-establish-shared-client-server-contracts.md) — establish the existing Zod-validated client/server contract seam.
 12. [`duel-lifecycle/01`](../duel-lifecycle/tickets/01-establish-the-prompt-catalog.md) — establish the Prompt format, validation, fixtures, selection, and Lobby history.
 13. [`duel-lifecycle/02`](../duel-lifecycle/tickets/02-enter-the-first-duel.md) — cross the implemented Lobby seam into the minimal authoritative Duel core.
 14. [`duel-lifecycle/03`](../duel-lifecycle/tickets/03-prepare-and-start-every-round.md) — reuse fair preparation, acknowledgement, countdown, and stopwatch behavior.
