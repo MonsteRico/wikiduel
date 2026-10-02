@@ -1,7 +1,7 @@
 # Wiki Duel MVP spec
 
 Status: Scope-refined
-Date: 2026-07-03
+Date: 2026-10-02
 Historical source design: [`MVP-old.md`](../../MVP-old.md)
 Visual direction: [`aiUIMockups.png`](../../aiUIMockups.png)
 Focused Duel plan: [Duel Lifecycle spec](../duel-lifecycle/spec.md)
@@ -18,7 +18,7 @@ Scope is organized by test milestone. **MVP required** means necessary for the f
 
 ## Current Implementation Baseline
 
-The repository already has separate Vite/React and Fastify/TypeScript packages connected by a native WebSocket protocol. It implements server health, connection status, five-character Lobby creation/join, two fixed seats, readiness, Host-controlled start, copy-code UI, explicit Lobby departure, and Lobby closure when a paired player disconnects. The server emits `game-started`, but no Round, Playable Article, Navigation, HP, comparison, post-Duel, or Rematch flow exists yet.
+The repository has separate Vite/React and Fastify/TypeScript packages connected by a native WebSocket protocol and shared contracts. The implemented Duel loop currently ends each Round on the first Target Arrival. The required replacement rules below were agreed in [duel-lifecycle/17](../duel-lifecycle/tickets/17-refine-click-scored-rounds.md); [duel-lifecycle/18](../duel-lifecycle/tickets/18-implement-click-scored-rounds.md) implements them.
 
 New MVP work extends this baseline rather than restructuring it to match the original proposed stack.
 
@@ -61,17 +61,18 @@ Canonical terms live in [`CONTEXT.md`](../../CONTEXT.md).
 ### Round
 
 - Both players receive the same ordered start/target prompt.
-- The first valid Target Arrival processed by the authoritative server wins and ends the Round immediately.
+- The first Target Arrival freezes that player's route, click count, and arrival time, and locks further Navigation. The Round ends when both players arrive, or when an enabled Time Limit expires.
 - Client timestamps never determine the winner. Network latency is an accepted MVP limitation.
-- Both paths, click counts, and active elapsed times freeze at Round end.
-- The MVP Damage Rule is:
+- Completed routes retain their individual arrival times. Unfinished routes freeze at expiry, with elapsed time explicitly distinguished from an arrival time.
+- When both players arrive, fewer clicks wins. Equal clicks award the earlier server-accepted arrival the win, including when timestamps match. The MVP Damage Rule for two arrivals is:
 
 ```text
-damage = 25 + 3 * (loser_clicks - winner_clicks)
-damage = clamp(damage, 15, 60)
+damage = min(60, 25 + 3 * (loser_clicks - winner_clicks))
 ```
 
-- This formula is locked for the first small-group MVP test. Evidence-led tuning is MVP optional afterward.
+- Equal clicks deal 25 damage. Completed-route damage has a minimum of 25 and maximum of 60.
+- At expiry, a sole arrival wins and deals 60 damage regardless of unfinished clicks. Neither arrival means a draw and zero damage. HP remains clamped at zero.
+- These are the starting rules for the first small-group MVP test. Evidence-led tuning is MVP optional afterward.
 
 - The Damage Rule is global code, not a Lobby or per-Duel setting. If durable analytics are added, store a rule/build version so results from releases remain interpretable.
 - The server calculates damage and returns a labeled breakdown for display; the client never duplicates the formula.
@@ -80,10 +81,11 @@ damage = clamp(damage, 15, 60)
 
 ### Time Limit
 
-- Required-MVP Rounds have no Time Limit. The active Duel HUD shows elapsed stopwatch time derived from the authoritative Round start.
-- Repeated unfinished Rounds may continue indefinitely when both players keep choosing to continue; either player may use the confirmed Leave Duel flow.
-- A fixed five-minute Time Limit is MVP optional. When implemented, it replaces the stopwatch with remaining time and creates a no-damage draw if it expires before Target Arrival.
-- The official timer excludes pre-Round countdowns. The MVP-optional reconnect feature owns any later pause behavior.
+- The required MVP includes a Host-controlled five-minute on/off toggle, default off. Both players see the setting before readying. Changes are allowed only in the Lobby, clear both players' readiness, and persist through later Rounds, Rematches, and Back to Lobby.
+- Without a Time Limit, a Round waits indefinitely for both arrivals; either player may use the confirmed Leave Duel flow. The active HUD shows elapsed stopwatch time.
+- When enabled, the shared clock shows remaining time from the authoritative deadline, five minutes after active play starts. Preparation and countdown are excluded.
+- Navigation must complete server validation and be accepted strictly before the deadline. At the exact deadline, expiry wins, even when a request began earlier. Late timer callbacks must not allow late Navigation.
+- Existing departure, disconnect, Forfeit, and Interruption rules still apply while a player waits after arrival. The MVP-optional reconnect feature owns any later pause behavior.
 - Configurable durations are Future work that depends on the fixed Time Limit and evidence that one duration is insufficient.
 
 ### Navigation
@@ -124,6 +126,7 @@ damage = clamp(damage, 15, 60)
 - Round preparation begins; after both clients acknowledge rendering, the shared three-second countdown begins.
 - The start article remains covered before and during preparation. Reveal start/target titles at countdown start and enable article content/Navigation at zero.
 - The Lobby does not expose round count, difficulty, category, or arbitrary time settings.
+- The Host can toggle the fixed five-minute Time Limit; both players can see its current value.
 
 ### Leaving and Expiry
 
@@ -144,7 +147,7 @@ damage = clamp(damage, 15, 60)
 - Active Duel state is authoritative in one backend process.
 - The required MVP ends an active Duel immediately by Forfeit and disbands the Lobby when a player disconnects. The remaining player sees `Opponent left` rather than a post-Duel result.
 - One short, fixed same-browser reconnect window is an MVP-optional resilience feature tracked separately. It is not part of MVP completion.
-- Live projections must omit the opponent's current article, path, and estimated distance during an active Round.
+- Live projections must omit the opponent's current article, path, estimated distance, and exact arrival time during an active Round. Arrival status and existing opponent click counts remain visible. Each player can see their own frozen arrival time.
 - If the optional reconnect window is implemented, expiry causes the same terminal Forfeit behavior.
 - Both clients must acknowledge that the start article rendered before a Round countdown begins.
 - The connected player cannot read under preparation or disconnect overlays.
@@ -182,7 +185,8 @@ Use the mockup's general composition and visual language, corrected for this spe
 ### Duel
 
 - Current Round number, target, both HP values, your display-only click count/path, opponent click count/connection status, and active Round clock
-- The required clock shows elapsed stopwatch time; the MVP-optional fixed Time Limit replaces it with remaining time.
+- The clock shows elapsed stopwatch time when the Time Limit is off, or shared remaining time when enabled. After arrival, show the player's frozen arrival time separately from the Round clock.
+- A player who arrives can read the target article while waiting, but cannot navigate. Both clients show who has reached the target.
 - Never show the opponent's current article, live path, estimated distance, or a path-view action during a Round. These are intentionally hidden, not planned Future features.
 - A subtle opponent-Navigation pulse is MVP optional.
 - One-line rules reminder below the HUD
@@ -190,14 +194,16 @@ Use the mockup's general composition and visual language, corrected for this spe
 ### Post-Round
 
 - Winner/draw, damage and server-provided breakdown, start/target, both frozen paths through each player's final article, clicks, active elapsed times, and HP
+- Label each route "Target reached" or "Did not reach target." Show individual arrival times or elapsed time at expiry, and explain fewer clicks, earlier arrival on equal clicks, sole arrival before expiry, or neither-arrived draw. Preserve this comparison for the final Round.
 - Non-final action is `Ready for Next Round`; the only exit is confirmed `Leave Duel`
 - The route comparison is a primary product moment, not a generic stats table
 
 ### Post-Duel
 
 - Required: winner/outcome reason, final HP, damage by Round, `Rematch`, `Back to Lobby`, and explicit end/leave.
+- Round summaries support draws and each new win reason. Optional highlights are not part of ticket 18.
 - MVP optional: rounds won, each player's best completed path, fastest Target Arrival, and collapsible feedback that never blocks Rematch.
-- If implemented, best path means fewest Navigations among that player's completed targets, with elapsed time as tie-breaker; omit it if they never arrived.
+- If implemented, best path means fewest Navigations among that player's completed targets, with arrival time as tie-breaker; omit it if they never arrived. Best-path and fastest-arrival highlights include completed routes from lost Rounds and exclude unfinished routes.
 - Match history, route replay, shareable results, and profile statistics are Future.
 
 ## Architecture
@@ -284,14 +290,14 @@ Round records include prompt, winner/draw, paths, clicks, active duration, pause
 
 ## Test Strategy
 
-- Add focused tests for risky authoritative rules: core transitions, Damage Rule boundaries, serialized Navigation, readiness, forfeits, preparation Interruption, and Prompt selection. Timeout-draw coverage lands with the MVP-optional Time Limit.
+- Add focused tests for risky authoritative rules: core transitions, Damage Rule boundaries, serialized Navigation, readiness, forfeits, preparation Interruption, and Prompt selection. Required coverage includes both arrivals, one/no-arrival expiry, exact deadline ordering, waiting privacy, timer cleanup, later Rounds, and Rematches.
 - Integration-test Fastify WebSocket behavior, player-specific projections, in-memory cache behavior, and sanitization using the existing server test tooling. Persistence and migration tests land with optional durable storage.
 - Broader two-browser end-to-end and automated accessibility coverage is MVP optional before a larger-group test. Required slices may still add narrow regression tests for risky authoritative rules.
 - Live Wikipedia smoke tests are separate, minimal, and never required for deterministic CI.
 
 ## Required MVP Implementation Sequence
 
-The current private Lobby is the implemented baseline. Remaining work is split into narrow tickets that can be grilled and assigned independently:
+The following sequence records the original implementation plan. Completed tickets remain historical. After deployment setup, [duel-lifecycle/18](../duel-lifecycle/tickets/18-implement-click-scored-rounds.md) is the next required gameplay change, based on completed planning in ticket 17.
 
 1. [`lobby/01`](../lobby/tickets/01-align-room-vocabulary-to-lobby.md) — align the product and planning corpus with canonical Lobby language.
 2. [`test-automation/03`](../test-automation/tickets/03-standardize-tests-on-vitest.md) — establish Vitest across client and server.
@@ -322,4 +328,4 @@ Some tickets can overlap after their blockers land; dependency fields in the tic
 
 ## MVP Completion Criteria
 
-The MVP is ready for its first small-group test when two remote desktop Firefox/Chromium browsers can access the Dokploy deployment, create/join a private Lobby, complete and rematch a full HP Duel over ten maintainer-authored live English-Wikipedia Prompts, compare paths, and produce useful structured diagnostic logs. A Time Limit, durable analytics, feedback collection, a short reconnect window, and a larger Prompt pool improve a later larger-group test but do not block this milestone.
+The MVP is ready for its first small-group test when two remote desktop Firefox/Chromium browsers can access the Dokploy deployment, create/join a private Lobby, complete and rematch a full HP Duel over ten maintainer-authored live English-Wikipedia Prompts, compare paths, and produce useful structured diagnostic logs. Both-player completion, click-scored outcomes, and the Host-toggleable five-minute Time Limit are required. Durable analytics, feedback collection, a short reconnect window, and a larger Prompt pool remain optional for a later larger-group test.

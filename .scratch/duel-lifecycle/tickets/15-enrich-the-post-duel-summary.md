@@ -18,11 +18,13 @@ Add rounds-won totals, each player's best completed path, and fastest Target Arr
 - [ ] Fastest Target Arrival excludes Rounds where the player never arrived.
 - [ ] Missing highlights are omitted rather than displayed as misleading zero values.
 - [ ] All highlights derive from authoritative stored Round Outcomes.
+- [ ] Completed routes from lost Rounds remain eligible for that player's best-path and fastest-arrival highlights. Use individual arrival elapsed times, not whole-Round duration; exclude unfinished routes and do not count draws as wins.
 - [ ] Rematch remains the primary action and does not wait for optional summary work.
 
 ## Blocked by
 
 - [`duel-lifecycle/09`](./09-rematch-or-return-to-the-lobby.md)
+- [`duel-lifecycle/18`](./18-implement-click-scored-rounds.md)
 
 ## Out of scope
 
@@ -32,3 +34,4 @@ Add rounds-won totals, each player's best completed path, and fastest Target Arr
 ## Comments
 
 - 2026-07-12: Deferred summary polish for a larger-group test.
+- 2026-10-02: Remains optional and excluded from ticket 18. The required existing summary will support draws and new win reasons without these highlights.

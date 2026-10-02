@@ -10,7 +10,7 @@ Category: enhancement
 
 ## What to build
 
-If evidence shows one fixed Time Limit is insufficient, allow supported duration choices before a Duel while retaining one authoritative value for both players and the existing no-damage timeout outcome.
+If evidence shows the five-minute toggle delivered by [duel-lifecycle/18](./18-implement-click-scored-rounds.md) is insufficient, allow supported duration choices in the Lobby. Retain one authoritative value for both players and the approved expiry rules: a sole arrival wins for 60 damage, and neither arrival means a zero-damage draw.
 
 ## Acceptance criteria
 
@@ -21,7 +21,7 @@ If evidence shows one fixed Time Limit is insufficient, allow supported duration
 
 ## Blocked by
 
-- [`duel-lifecycle/11`](./11-add-the-fixed-time-limit.md)
+- [`duel-lifecycle/18`](./18-implement-click-scored-rounds.md)
 - Evidence that the fixed five-minute Time Limit is insufficient.
 
 ## Out of scope
@@ -33,3 +33,4 @@ If evidence shows one fixed Time Limit is insufficient, allow supported duration
 ## Comments
 
 - 2026-07-12: Future work only; required Duels have no Time Limit and optional fixed timing must exist first.
+- 2026-10-02: The earlier scope is historical. The fixed five-minute toggle is required under ticket 18; duration choices remain Future work based on usage evidence.

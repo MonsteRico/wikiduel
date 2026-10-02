@@ -10,7 +10,7 @@ Category: enhancement
 
 ## What to build
 
-Use first-test observations and Round Outcomes to decide whether the locked Damage Rule's base, click differential, or clamps should change before a larger-group test.
+Use first-test observations and Round Outcomes from [duel-lifecycle/18](./18-implement-click-scored-rounds.md) to decide whether the agreed Damage Rule should change before a larger-group test. Its starting policy is `min(60, 25 + 3 * click difference)` for two arrivals, 25 for equal clicks, 60 for a sole arrival at expiry, and zero for neither arrival. This ticket does not block the approved replacement of first-arrival scoring.
 
 ## Acceptance criteria
 
@@ -23,6 +23,7 @@ Use first-test observations and Round Outcomes to decide whether the locked Dama
 
 - [`duel-lifecycle/09`](./09-rematch-or-return-to-the-lobby.md)
 - Completed first small-group testing.
+- [`duel-lifecycle/18`](./18-implement-click-scored-rounds.md)
 
 ## Out of scope
 
@@ -32,3 +33,4 @@ Use first-test observations and Round Outcomes to decide whether the locked Dama
 ## Comments
 
 - 2026-07-12: Waiting for playtest evidence; the locked formula must not be pre-optimized.
+- 2026-10-02: The earlier lock is historical. Ticket 17 approves replacement rules; this ticket remains evidence-led tuning after ticket 18 and playtesting.
