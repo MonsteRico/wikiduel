@@ -357,10 +357,6 @@ it("decodes only strict Round Outcomes in ended projections", () => {
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
   expect(decode(duel).ok).toBe(true);
-  expect(decode({ ...duel, rematchPlayerIds: ["host"] }).ok).toBe(true);
-  for (const rematchPlayerIds of [undefined, [""], [1], ["host", "opponent", "third"], "host"]) {
-    expect(decode({ ...duel, rematchPlayerIds }).ok).toBe(false);
-  }
   expect(decode({ ...duel, phase: "completed", outcome: { ...outcome, final: true } }).ok).toBe(true);
   for (const invalid of [
     undefined,
@@ -393,6 +389,10 @@ it("decodes only strict normal Post-Duel summaries and scoped continuation", () 
   };
   const decode = (value: unknown) => decodeServerMessage({ type: "duel-state", duel: value, sentAt: "now" });
   expect(decode(duel).ok).toBe(true);
+  expect(decode({ ...duel, rematchPlayerIds: ["host"] }).ok).toBe(true);
+  for (const rematchPlayerIds of [undefined, [""], [1], ["host", "opponent", "third"], "host"]) {
+    expect(decode({ ...duel, rematchPlayerIds }).ok).toBe(false);
+  }
   for (const invalid of [undefined, { ...summary, endReason: "forfeit" }, { ...summary, endReason: "interruption" },
     { ...summary, privateState: {} }, { ...summary, players: [players[0]] },
     { ...summary, players: [{ ...players[0], hp: -1 }, players[1]] }, { ...summary, rounds: [] },
