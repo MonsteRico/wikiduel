@@ -18,6 +18,16 @@ npm run dev
 
 The client runs on Vite's default development URL and the server listens on `http://localhost:3000` by default.
 
+Development uses the five easier Prompts in `wikiduel-server/prompts/development.json`.
+Pass a JSON seed path to use another catalog, such as production:
+
+```sh
+npm run dev -- wikiduel-server/prompts/production.json
+```
+
+Paths are relative to the repository root. Absolute paths also work; quote paths
+containing spaces. See the [Prompt Catalog guide](docs/prompt-catalog.md) for the JSON format.
+
 ## Commands
 
 - `npm run dev` starts the client and server in watch mode.

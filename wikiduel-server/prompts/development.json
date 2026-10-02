@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "prompts": [
+    { "id": "dev-united-states-christianity", "start": "United States", "target": "Christianity", "enabled": true },
+    { "id": "dev-cat-dog", "start": "Cat", "target": "Dog", "enabled": true },
+    { "id": "dev-cow-milk", "start": "Cow", "target": "Milk", "enabled": true },
+    { "id": "dev-steam-nintendo", "start": "Steam (service)", "target": "Nintendo", "enabled": true },
+    { "id": "dev-github-microsoft", "start": "GitHub", "target": "Microsoft", "enabled": true }
+  ]
+}

@@ -70,7 +70,21 @@ editorial suitability. Those remain explicit maintainer responsibilities.
 
 ## Server integration
 
-Server startup loads the production seed relative to the server module and
+`npm run dev` loads `wikiduel-server/prompts/development.json`, containing the
+five maintainer-selected pairs for feature testing. To use production during
+development, run this from the repository root:
+
+```sh
+npm run dev -- wikiduel-server/prompts/production.json
+```
+
+The optional path is relative to the repository root, or may be absolute.
+Quote paths containing spaces. The launcher passes the absolute path to the
+server through `WIKIDUEL_PROMPT_FILE`. When running the server workspace directly,
+an optional positional path is relative to that workspace and takes precedence
+over this environment variable. Restart development after changing the seed file.
+
+`npm start` defaults to the production seed relative to the server module and
 validates its canonical identities and playability through Wikipedia's query API.
 It passes the catalog to the application before listening. Deployment must
 include `wikiduel-server/prompts/production.json`

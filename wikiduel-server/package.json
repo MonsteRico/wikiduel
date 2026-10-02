@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file=.env src/server.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts --development",
     "build": "tsc -p tsconfig.json",
     "check": "npm run typecheck && npm run lint",
     "lint": "oxlint",

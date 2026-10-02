@@ -15,9 +15,12 @@ The server listens on `http://localhost:3000` by default. Set `PORT` or `HOST` t
 
 The WebSocket endpoint is available at `ws://localhost:3000/ws`.
 
-Server startup loads `prompts/production.json` and validates its endpoints before
-accepting connections. Both development and production use this human-authored
-catalog. Invalid seeds or unavailable endpoints prevent startup. Tests can still
+`npm run dev` loads `prompts/development.json`; `npm start` loads
+`prompts/production.json`. To use another catalog with only the server running,
+run `npm run dev --workspace=wikiduel-server -- prompts/production.json` from
+the repository root. This path is relative to the server workspace.
+Server startup validates the selected catalog's endpoints before accepting
+connections. Invalid seeds or unavailable endpoints prevent startup. Tests can still
 inject deterministic catalogs without contacting Wikipedia.
 
 ## Scripts
