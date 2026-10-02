@@ -1,7 +1,7 @@
 # Complete the Duel and Show Post-Duel
 
 Status: completed
-Completed: 2026-10-01 08:25 PM
+Completed: 2026-10-01 08:25 PM via [PR #23](https://github.com/MonsteRico/wikiduel/pull/23)
 Scope: MVP required
 Category: enhancement
 
