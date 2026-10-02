@@ -1,6 +1,7 @@
 # Deploy the First-Test Build
 
-Status: ready-for-human
+Status: completed
+Completed: 2026-10-02 01:55 PM on master, live checks and automatic redeployment verified
 Scope: MVP required
 Category: enhancement
 
@@ -10,7 +11,7 @@ Prepare a Dockerfile and the application changes needed for Dokploy to build and
 
 The agent owns the deployment files, application changes, local validation, and setup walkthrough. The maintainer applies all Dokploy settings and manages the URL, domain, and DNS. After setup, the agent helps the maintainer verify the live deployment and automatic redeployment. Anyone with the URL can access the existing anonymous Lobby flow; no additional access gate is required.
 
-This ticket has a human setup and verification dependency, so its status is `ready-for-human`. The repository implementation is specified and can be assigned to an agent now. Keep the ticket open until the live checks pass.
+Repository implementation, maintainer setup, live verification and automatic redeployment are complete. The evidence is recorded below.
 
 ## Acceptance criteria
 
@@ -24,7 +25,7 @@ This ticket has a human setup and verification dependency, so its status is `rea
 - [x] A clean container build and local container smoke check pass. Relevant tests, typecheck, lint, and the workspace build pass. Record commands and results in the implementation PR.
 - [x] After the maintainer applies the settings, the deployed HTTPS page, secure WebSocket connection, direct-route refresh, and health endpoints are verified at the supplied URL.
 - [x] Two remote desktop browser sessions create/join a Lobby, start a Duel, navigate articles, resolve rounds, complete a Duel, and exercise rematch or return to Lobby. Verify the existing departure/disconnect behavior through the deployed proxy. Record who performed the checks and the result.
-- [ ] A subsequent commit to `master` triggers deployment without a manual deploy action. Record the deployed commit and successful post-deployment health and connection checks.
+- [x] A subsequent commit to `master` triggers deployment without a manual deploy action. Record the deployed commit and successful post-deployment health and connection checks.
 
 ## Implementation notes
 
@@ -37,8 +38,7 @@ This ticket has a human setup and verification dependency, so its status is `rea
 
 ## Blocked by
 
-- The required MVP critical flow and Firefox manual verification are complete.
-- Live verification requires the maintainer to apply Dokploy settings and provide a working URL. Repository implementation can proceed before those steps.
+None. The maintainer applied Dokploy settings and all deployment acceptance checks passed.
 
 ## Out of scope
 
@@ -50,6 +50,8 @@ This ticket has a human setup and verification dependency, so its status is `rea
 - Agent administration of Dokploy, DNS, or domain settings
 
 ## Comments
+
+- 2026-10-02 01:55 PM: Automatic redeployment verified for `4693c240697a61f82f11d11ccd107a76577fb6c8`. Matthew watched Dokploy immediately pick up the push without pressing Deploy. Codex observed both existing browser connections disconnect during the restart, then reran `node scripts/smoke-deployment.mjs https://wikiduel.matthewgardner.dev` successfully. Both reloaded browser sessions connected and created/joined fresh Lobby `823WP`, with two connected players. Test tabs were closed afterward. All acceptance criteria passed; ticket completed.
 
 - 2026-10-02: Live verification passed at `https://wikiduel.matthewgardner.dev`. Matthew confirmed Auto Deploy is enabled and Dokploy reports deployed commit `26167d641a006154151f9b17962eca2b29907ac2`. Codex ran `node scripts/smoke-deployment.mjs https://wikiduel.matthewgardner.dev`; HTTPS health/readiness, supported routes, missing assets/endpoints, disabled `/lab` and the secure WebSocket welcome all passed. Direct browser visits to Lobby and Duel routes loaded the SPA, and refresh loaded the client without a server 404. A discarded Player Session does not regain its previous Duel on refresh.
 - 2026-10-02: Codex operated two separate player tabs in the desktop in-app browser against the remote deployment. Lobby `J8EQW` and Duel `3001dbb6-525b-4965-a551-fa813fb2f41c` passed create/join, readiness, article loading, independent Navigation, synchronized Round Outcomes and Duel completion. Winning paths were Jack Black to Super Bowl XLIII to Super Bowl to Patrick Mahomes; Nintendo to Playing card to Paper to Hardwood to Oak; and YouTube to Nintendo to Kyoto. Damage was 16, 60 and 25, ending at Host 0 HP and Opponent 100 HP. The Host deliberately navigated Nintendo/Sony repeatedly in Round two to exercise Navigation and the damage cap. Both players requested a rematch, which created a fresh Duel with 100 HP each. Closing the opponent tab during the active rematch returned the survivor home with the disconnect Forfeit notice. Explicit departure from matched Lobby `7P87X` closed it for both players. No browser console warnings or errors were observed during the Duel. Automatic redeployment verification remains pending.
