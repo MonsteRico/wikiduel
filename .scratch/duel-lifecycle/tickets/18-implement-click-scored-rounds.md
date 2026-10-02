@@ -1,7 +1,7 @@
 # Implement click-scored Rounds and the Host-toggleable Time Limit
 
 Status: completed
-Completed: 2026-10-02 06:15 PM
+Completed: 2026-10-02 06:15 PM via [PR #26](https://github.com/MonsteRico/wikiduel/pull/26)
 Scope: MVP required
 Category: enhancement
 
