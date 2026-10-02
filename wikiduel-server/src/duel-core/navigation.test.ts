@@ -89,7 +89,7 @@ it.each(["before", "exact", "late", "forfeit", "next-round"])("checks a pending 
   time = ending === "before" ? 402_999 : ending === "exact" ? 403_000 : 410_000;
   if (ending === "forfeit") core.disconnectPlayer(ids);
   if (ending === "next-round") {
-    core.canNavigate(ids);
+    core.checkNavigationEligibility(ids);
     core.readyForNextRound(ids); core.readyForNextRound({ ...ids, playerId: "opponent" });
     await core.prepareRound("lobby");
     expect(latest().round.id).not.toBe(ids.roundId);

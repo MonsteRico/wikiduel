@@ -63,17 +63,17 @@ The contract review found current outcome schemas require a winner and target-ar
 
 ## Acceptance criteria
 
-- [ ] Every outcome-table row produces the correct winner or draw, damage, reason, and HP exactly once.
-- [ ] First arrival freezes only that player and leaves the Round active; a later arrival with fewer clicks wins. Equal-click ties use authoritative order even with identical timestamps.
-- [ ] Host toggle authorization, off default, readiness reset, setting visibility, and persistence match the rules above.
-- [ ] Timing excludes preparation/countdown, and strict acceptance ordering rejects Navigation at or after expiry, including pending asynchronous resolution.
-- [ ] Timers and pending work cannot mutate closed Rounds, later Rounds, or Rematches. Toggle-off Rounds have no expiry.
-- [ ] Waiting Navigation is locked on both server and client; arrived players retain readable target content and their own frozen time.
-- [ ] Live messages and UI expose arrival status and clicks while preserving opponent route and exact-time privacy until Post-Round.
-- [ ] Two-arrival, sole-arrival, and neither-arrival reviews display correct paths, labels, times, outcome explanations, and authoritative damage breakdowns.
-- [ ] Final-Round review and existing Post-Duel summaries handle the new outcomes without implementing optional highlights.
-- [ ] Later Rounds and Rematches reset per-Round arrivals, order, paths, clocks, and readiness while retaining the Lobby timer setting and existing Prompt-history behavior. Rematch resets HP to 100.
-- [ ] Existing departure/disconnect Forfeit and system Interruption behavior remains intact while waiting after arrival.
+- [x] Every outcome-table row produces the correct winner or draw, damage, reason, and HP exactly once.
+- [x] First arrival freezes only that player and leaves the Round active; a later arrival with fewer clicks wins. Equal-click ties use authoritative order even with identical timestamps.
+- [x] Host toggle authorization, off default, readiness reset, setting visibility, and persistence match the rules above.
+- [x] Timing excludes preparation/countdown, and strict acceptance ordering rejects Navigation at or after expiry, including pending asynchronous resolution.
+- [x] Timers and pending work cannot mutate closed Rounds, later Rounds, or Rematches. Toggle-off Rounds have no expiry.
+- [x] Waiting Navigation is locked on both server and client; arrived players retain readable target content and their own frozen time.
+- [x] Live messages and UI expose arrival status and clicks while preserving opponent route and exact-time privacy until Post-Round.
+- [x] Two-arrival, sole-arrival, and neither-arrival reviews display correct paths, labels, times, outcome explanations, and authoritative damage breakdowns.
+- [x] Final-Round review and existing Post-Duel summaries handle the new outcomes without implementing optional highlights.
+- [x] Later Rounds and Rematches reset per-Round arrivals, order, paths, clocks, and readiness while retaining the Lobby timer setting and existing Prompt-history behavior. Rematch resets HP to 100.
+- [x] Existing departure/disconnect Forfeit and system Interruption behavior remains intact while waiting after arrival.
 - [ ] Focused tests, typecheck, full test suite, build, lint, and the manual scenarios below pass; record results before completion.
 
 ## Regression and manual validation
@@ -105,3 +105,8 @@ Run the smallest relevant test file and `npm run typecheck` during implementatio
 ## Comments
 
 - 2026-10-02: Maintainer approved the complete rules and a single implementation ticket. Planning and implementation share the existing branch; this ticket remains open until gameplay changes and validation are complete.
+
+- 2026-10-02: Implemented on the requested current branch `codex/17-refine-click-scored-rounds`, starting at `49f975b`. The core freezes individual arrivals, resolves click scores and expiry once, and rejects late asynchronous Navigation. Strict contracts distinguish completed routes, sole arrivals, and draws. Lobby settings, waiting screens, Round reviews, and Post-Duel summaries use the server projections.
+- 2026-10-02: Automated validation passed: `npm test` with 335 passed and one existing opt-in live-Wikipedia test skipped; `npm run typecheck`; `npm run build`; `npm run lint`. Lint retains one existing `HomePage.tsx` warning. After review, renamed the side-effecting eligibility check and reran typecheck, all 49 core tests, the full suite, build, and lint successfully. Standards review has no remaining findings; Spec review has no code findings and records the known deployment validation gap.
+- 2026-10-02: Local browser checks use two independent player tabs in the Codex desktop browser against the built app at `http://127.0.0.1:4318`, with deterministic articles and the real server clock. Verified default-off and guest-disabled toggle, shared setting visibility, readiness reset, first-arrival waiting with readable locked content and frozen own time, private opponent details, later fewer-click win, equal-click earlier-arrival win, synchronized next-Round readiness, capped damage, zero-HP final review, independent Post-Duel continuation, Back to Lobby, Rematch with HP reset and the enabled Time Limit retained, new-Lobby reset to off, and confirmed departure and disconnect while one player waits. No browser console warnings or errors were observed. A real five-minute no-arrival Round produced a draw with both elapsed times exactly 300 seconds and no HP loss. Evidence: [fewer-click review](../validation/18-fewer-clicks.jpg), [five-minute draw](../validation/18-five-minute-draw.jpg), and [sole-arrival expiry](../validation/18-sole-arrival.jpg). A second real five-minute Round awarded 60 damage for the sole arrival, preserving the winner's 13.090-second arrival and freezing the unfinished route at 300.000 seconds.
+- 2026-10-02: Ticket remains `ready-for-agent`. The required deployed five-minute run and two-desktop-browser acceptance with the production Prompt seed remain outstanding. Deployment/01 still awaits Dokploy setup and a supplied HTTPS URL. Local fixture checks do not satisfy those requirements, so the final validation criterion remains unchecked.

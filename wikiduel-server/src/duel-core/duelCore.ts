@@ -479,7 +479,8 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       return true;
     },
 
-    canNavigate(command: RoundCommand): boolean {
+    // Resolves an overdue Round before checking whether this player can navigate.
+    checkNavigationEligibility(command: RoundCommand): boolean {
       const duel = currentRound(command);
       return !!duel && !expireIfDue(command.lobbyId, duel) && isNavigable(duel)
         && !duel.players.find((player) => player.id === command.playerId)!.arrival;
@@ -490,7 +491,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       destination: NavigationDestination;
     }): Promise<boolean> {
       const duel = currentRound(command);
-      if (!duel || !this.canNavigate(command)) return false;
+      if (!duel || !this.checkNavigationEligibility(command)) return false;
       const index = duel.players[0].id === command.playerId ? 0 : 1;
       const player = duel.players[index];
       const article = player.article ?? duel.article;
@@ -503,7 +504,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       duel.players = index === 0 ? [pending, duel.players[1]] : [duel.players[0], pending];
       try {
         const result = await options.repository?.getByTitle(command.destination.title);
-        if (currentRound(command) !== duel || !this.canNavigate(command) || !result?.ok
+        if (currentRound(command) !== duel || !this.checkNavigationEligibility(command) || !result?.ok
           || duel.players[index] !== pending) return false;
         return acceptNavigation(command, duel, index, result.article.identity, result.article);
       } catch {
@@ -523,7 +524,7 @@ export function createDuelCore(options: CreateDuelCoreOptions) {
       expectedClicks: number; destination: NavigationDestination;
     }): boolean {
       const duel = currentRound(command);
-      if (!duel || !this.canNavigate(command)) return false;
+      if (!duel || !this.checkNavigationEligibility(command)) return false;
       const index = duel.players[0].id === command.playerId ? 0 : 1;
       const player = duel.players[index];
       if (player.clicks !== command.expectedClicks) return false;

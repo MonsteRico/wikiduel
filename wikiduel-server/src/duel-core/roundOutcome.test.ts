@@ -46,7 +46,7 @@ it("freezes the first arrival and lets the later fewer-click route win", async (
   setTime(104_000);
   core.recordNavigation({ ...command, expectedClicks: 1, destination: target });
   expect(latest()[0]!.duel).toMatchObject({ phase: "active", self: { arrived: true, arrivalElapsedMs: 1000, clicks: 2 } });
-  expect(core.canNavigate(command)).toBe(false);
+  expect(core.checkNavigationEligibility(command)).toBe(false);
   expect(core.recordNavigation({ ...command, expectedClicks: 2, destination: target })).toBe(false);
   expect(latest()[1]!.duel.opponent).toEqual({ id: "host", name: "host", role: "host", hp: 100, clicks: 2, connected: true, arrived: true });
   setTime(106_000);
@@ -110,7 +110,7 @@ it("has no deadline when disabled and still needs both arrivals after five minut
   expect(latest()[0]!.duel).toMatchObject({ expiresAt: null });
   core.recordNavigation({ ...command, expectedClicks: 0, destination: latest()[0]!.duel.round.prompt.target });
   setTime(900_000);
-  expect(core.canNavigate({ ...command, playerId: "opponent" })).toBe(true);
+  expect(core.checkNavigationEligibility({ ...command, playerId: "opponent" })).toBe(true);
   expect(latest()[0]!.duel.phase).toBe("active");
   expect(timers.filter((timer) => timer.delay === 300_000)).toHaveLength(0);
 });
@@ -187,7 +187,7 @@ it.each(["leave", "disconnect", "disband", "dispose"])("invalidates timers and w
   const count = events.length;
   setTime(500_000); timers.forEach((timer) => timer.callback());
   expect(events).toHaveLength(count);
-  expect(core.canNavigate(command)).toBe(false);
+  expect(core.checkNavigationEligibility(command)).toBe(false);
   expect(core.hasActiveDuel("lobby")).toBe(false);
   expect(core.continueToPostDuel(command)).toBe(false);
 });
@@ -205,7 +205,7 @@ it("publishes an immutable outcome and rejects duplicate or stale Navigation", a
   const saved = structuredClone(duel.outcome);
   const count = events.length;
   expect(core.recordNavigation({ ...command, expectedClicks: 1, destination: target })).toBe(false);
-  expect(core.canNavigate(command)).toBe(false);
+  expect(core.checkNavigationEligibility(command)).toBe(false);
   expect(events).toHaveLength(count);
   expect(() => Object.assign(duel.outcome.players[0]!.path[0]!, { title: "Changed" })).toThrow();
   expect(() => Object.assign(duel.outcome.damage, { finalDamage: 999 })).toThrow();
