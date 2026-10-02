@@ -1,6 +1,7 @@
 # Confirm Leave Duel and Forfeit
 
-Status: ready-for-agent
+Status: completed
+Completed: 2026-10-02 12:30 PM
 Scope: MVP required
 Category: enhancement
 
@@ -14,14 +15,14 @@ Complete the player-facing departure path around the core's existing disconnect 
 
 ## Acceptance criteria
 
-- [ ] Cancelling an explicit departure confirmation leaves the current Duel phase and state unchanged.
-- [ ] Confirming Leave Duel prevents further commands, produces one Forfeit, and disbands the Lobby exactly once.
-- [ ] In-app route changes and browser Back are treated as leave attempts and request confirmation where interception is supported.
-- [ ] Confirmed departure returns the departing player home and lets the remaining player leave a clear `Opponent left` notice for home.
-- [ ] Close, reload, or connection loss cannot leave a ghost Duel; the existing disconnect invariant terminates without requiring an impossible custom confirmation.
-- [ ] Forfeit enters no normal Round Outcome, Post-Round, winner, damage, or Post-Duel summary flow.
-- [ ] Stale confirmation, repeated departure, disconnect-after-confirmation, and duplicate close events cannot disband twice or emit conflicting terminal projections.
-- [ ] Client and two-socket tests cover cancellation, confirmation from each lifecycle phase, browser navigation where testable, unexpected disconnect, and terminal notices.
+- [x] Cancelling an explicit departure confirmation leaves the current Duel phase and state unchanged.
+- [x] Confirming Leave Duel prevents further commands, produces one Forfeit, and disbands the Lobby exactly once.
+- [x] In-app route changes and browser Back are treated as leave attempts and request confirmation where interception is supported.
+- [x] Confirmed departure returns the departing player home and lets the remaining player leave a clear `Opponent left` notice for home.
+- [x] Close, reload, or connection loss cannot leave a ghost Duel; the existing disconnect invariant terminates without requiring an impossible custom confirmation.
+- [x] Forfeit enters no normal Round Outcome, Post-Round, winner, damage, or Post-Duel summary flow.
+- [x] Stale confirmation, repeated departure, disconnect-after-confirmation, and duplicate close events cannot disband twice or emit conflicting terminal projections.
+- [x] Client and two-socket tests cover cancellation, confirmation from each lifecycle phase, browser navigation where testable, unexpected disconnect, and terminal notices.
 
 ## Blocked by
 
@@ -36,3 +37,4 @@ Complete the player-facing departure path around the core's existing disconnect 
 ## Comments
 
 - 2026-07-12: The core disconnect invariant lands earlier; this ticket owns explicit confirmation and complete departure UX.
+- 2026-10-02: Added one native confirmation dialog for explicit departure, in-app routes, and interceptable browser Back. Pending departure blocks commands; terminal events clear client state and show an opponent-left or departure notice at home. Confirmations belong to one Duel, including races with Rematch. Completed Duels retain their existing Lobby-close behavior. Client tests cover all six displayed phases, browser history, cancellation, and stale events. Two-socket tests cover either player leaving or disconnecting in all four active phases, repeated departure, and late timers. Validation passed: focused client and server tests, typecheck, full suite with 299 passed and 5 skipped, build, and lint with one existing HomePage warning.

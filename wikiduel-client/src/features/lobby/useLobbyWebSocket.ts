@@ -33,20 +33,24 @@ export function useLobbyWebSocket() {
     message: string
   }> | null>(null)
 
+  const clearDuelState = useCallback(() => {
+    currentDuel.current = null
+    pendingNavigation.current = null
+    setNavigating(false)
+    setLeaving(false)
+    setDuel(null)
+    setLobby(null)
+    setError(null)
+  }, [])
+
   useEffect(() => webSocket.subscribeStatus((nextStatus) => {
     setStatus(nextStatus)
     if (nextStatus === 'disconnected' && currentDuel.current) {
       departure.current = currentDuel.current.id
-      currentDuel.current = null
-      pendingNavigation.current = null
-      setNavigating(false)
-      setLeaving(false)
-      setDuel(null)
-      setLobby(null)
-      setError(null)
+      clearDuelState()
       setNotice({ title: 'Forfeit', message: 'Connection lost. The Duel ended and the Lobby has closed.' })
     }
-  }), [webSocket])
+  }), [webSocket, clearDuelState])
 
   useEffect(() => {
     const unsubscribeLobbyState = webSocket.subscribe('lobby-state', (message) => {
@@ -72,13 +76,7 @@ export function useLobbyWebSocket() {
     })
     const unsubscribeLobbyClosed = webSocket.subscribe('lobby-closed', (message) => {
       departure.current = currentDuel.current?.id ?? departure.current
-      currentDuel.current = null
-      pendingNavigation.current = null
-      setNavigating(false)
-      setLeaving(false)
-      setLobby(null)
-      setDuel(null)
-      setError(null)
+      clearDuelState()
       setNotice({ title: 'Lobby closed', message: message.message })
     })
     const unsubscribeDuelState = webSocket.subscribe('duel-state', (message) => {
@@ -139,25 +137,13 @@ export function useLobbyWebSocket() {
     const unsubscribeDuelForfeited = webSocket.subscribe('duel-forfeited', (message) => {
       if (currentDuel.current?.id !== message.duelId) return
       departure.current = message.duelId
-      currentDuel.current = null
-      pendingNavigation.current = null
-      setNavigating(false)
-      setLeaving(false)
-      setLobby(null)
-      setDuel(null)
-      setError(null)
+      clearDuelState()
       setNotice({ title: message.winnerId === clientId ? 'Opponent left' : 'Forfeit', message: message.message })
     })
     const unsubscribeDuelInterrupted = webSocket.subscribe('duel-interrupted', (message) => {
       if (currentDuel.current?.id !== message.duelId) return
       departure.current = message.duelId
-      currentDuel.current = null
-      pendingNavigation.current = null
-      setNavigating(false)
-      setLeaving(false)
-      setLobby(null)
-      setDuel(null)
-      setError(null)
+      clearDuelState()
       setNotice({ title: 'Interruption', message: message.message })
     })
     const unsubscribeFailure = webSocket.subscribeFailure((failure) => {
@@ -175,7 +161,7 @@ export function useLobbyWebSocket() {
       unsubscribeDuelInterrupted()
       unsubscribeFailure()
     }
-  }, [webSocket])
+  }, [webSocket, clearDuelState])
 
   const createLobby = useCallback(() => {
     setError(null)
