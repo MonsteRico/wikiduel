@@ -1,12 +1,13 @@
 import { buildApp } from "./app.js";
 import { createLivePlayableArticleRepository } from "./playable-articles/index.js";
 import { validatePromptCatalogFile } from "./prompt-catalog/validation.js";
+import { createLivePromptEndpointResolver } from "./prompt-catalog/live-resolver.js";
 
 // Reject invalid live upstream identity before Fastify can accept connections.
 const repository = createLivePlayableArticleRepository(process.env);
 const promptCatalogResult = await validatePromptCatalogFile(
   new URL("../prompts/production.json", import.meta.url),
-  repository,
+  createLivePromptEndpointResolver(process.env),
 );
 if (!promptCatalogResult.ok) {
   throw new Error(`Production Prompt Catalog validation failed:\n${promptCatalogResult.diagnostics

@@ -336,6 +336,45 @@ function gatewayFailure(error: unknown): PlayableArticleResult {
   return { ok: false, failure: { code: "upstream-unavailable" } };
 }
 
+type ArticleIdentityResult =
+  | Readonly<{ ok: true; article: Readonly<{ identity: NavigationDestination }> }>
+  | Extract<PlayableArticleResult, { ok: false }>;
+
+// Catalog validation needs canonical identity and playability, not an Article
+// Document. Loading images and every outgoing link here can exhaust upstream
+// request limits before the server has accepted a single connection.
+export function createPlayableArticleIdentityResolver(gateway: WikipediaGateway): {
+  getByTitle(requestedTitle: string): Promise<ArticleIdentityResult>;
+} {
+  const identities = new Map<string, ArticleIdentityResult>();
+  return {
+    async getByTitle(requestedTitle) {
+      if (!isValidWikipediaTitle(requestedTitle)) {
+        return { ok: false, failure: { code: "invalid-title" } };
+      }
+      const cached = identities.get(requestedTitle);
+      if (cached) return cached;
+      try {
+        const links = await gateway.resolveLinks([requestedTitle], { signal: AbortSignal.timeout(15_000) });
+        const link = links.find((candidate) => candidate.requestedTitle === requestedTitle);
+        if (!link) return { ok: false, failure: { code: "upstream-unavailable" } };
+        if (!link.exists) return { ok: false, failure: { code: "article-not-found" } };
+        const reason = classification(link);
+        if (reason) return { ok: false, failure: { code: "article-not-playable", reason } };
+        const result: ArticleIdentityResult = {
+          ok: true,
+          article: { identity: { pageId: link.pageId, title: link.title } },
+        };
+        identities.set(requestedTitle, result);
+        identities.set(link.title, result);
+        return result;
+      } catch (error) {
+        return gatewayFailure(error);
+      }
+    },
+  };
+}
+
 export function createPlayableArticleRepository(
   gateway: WikipediaGateway,
   options: PlayableArticleRepositoryOptions = {},

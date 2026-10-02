@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createLivePlayableArticleRepository } from "../playable-articles/index.js";
+import { createLivePromptEndpointResolver } from "./live-resolver.js";
 import type { PromptEndpointResolver } from "./catalog.js";
 import { validatePromptCatalogFile } from "./validation.js";
 
@@ -42,7 +42,7 @@ if (isMain) {
     process.exitCode = 2;
   } else {
     try {
-      const resolver: PromptEndpointResolver = createLivePlayableArticleRepository(process.env);
+      const resolver = createLivePromptEndpointResolver(process.env);
       const resolvedSeedPath = resolve(process.env.INIT_CWD ?? process.cwd(), seedPath);
       process.exitCode = await runPromptCatalogValidation({
         seedPath: resolvedSeedPath,

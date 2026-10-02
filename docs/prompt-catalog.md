@@ -1,8 +1,8 @@
 # Prompt Catalog
 
 The server-side Prompt Catalog loads a version-controlled JSON seed, resolves
-every endpoint through the Playable Article repository, and exposes canonical
-ordered Prompts for Duels. Production Prompt authorship remains a maintainer
+every endpoint through the Playable Article identity resolver, and exposes
+canonical ordered Prompts for Duels. Production Prompt authorship remains a maintainer
 task; deterministic server tests use `deterministicPromptCatalog` from
 `wikiduel-server/src/prompt-catalog/fixtures.ts` instead of loading that seed.
 
@@ -58,8 +58,8 @@ npm run prompts:validate -- wikiduel-server/prompts/production.json
 ```
 
 The command exits successfully only after JSON, structure, catalog-wide
-uniqueness, and live Playable Article endpoint validation all pass. Failures
-print a diagnostic code, JSON path, and explanation, for example:
+uniqueness, and live Playable Article identity and playability validation all
+pass. Failures print a diagnostic code, JSON path, and explanation, for example:
 
 ```text
 duplicate-id at $.prompts[4].id: Prompt ID 'example' duplicates $.prompts[1].id.
@@ -70,10 +70,16 @@ editorial suitability. Those remain explicit maintainer responsibilities.
 
 ## Server integration
 
-Server startup loads the production seed relative to the server module, validates
-it through the live repository, and passes the catalog to the application before
-listening. Deployment must include `wikiduel-server/prompts/production.json`
+Server startup loads the production seed relative to the server module and
+validates its canonical identities and playability through Wikipedia's query API.
+It passes the catalog to the application before listening. Deployment must
+include `wikiduel-server/prompts/production.json`
 alongside `dist/`. A validation failure prevents startup.
+
+Validation does not download article HTML, image metadata, or outgoing links.
+Those requests build the Article Document when a Round needs it. This reduces
+startup requests and the chance of hitting Wikipedia's request limits.
+Full Article Document preparation can still fail later if Wikipedia is unavailable.
 
 The maintainer supplied the initial ten ordered pairs. Agents may normalize
 article titles and run validation; selecting or replacing pairs remains the
